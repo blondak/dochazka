@@ -13,8 +13,8 @@ Rozbalte archiv **central-deploy.tar.gz** z vydání centrály a ve stejném adr
 ~~~dotenv
 TRAEFIK_NETWORK=traefik
 DB_PASSWORD=sem-vlozte-vygenerovane-heslo
-APP_IMAGE=ghcr.io/blondak/dochazka:php-1.2.3
-WEB_IMAGE=ghcr.io/blondak/dochazka:web-1.2.3
+APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.1
+WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.1
 SETUP_TOKEN=sem-vlozte-vygenerovany-kod
 PASSKEY_ORIGIN=https://dochazka.example.cz
 ~~~
@@ -68,21 +68,21 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 
 ### Ruční registrace stanice
 
-1. Rozbalte balíček **agent-vX.Y.Z-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
+1. Rozbalte balíček **agent-v0.0.1-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
 2. V centrále na kartě **Zařízení** zaregistrujte stanici. Kód uložte jako **JMENO-POCITACE.txt** do adresáře s registracemi. Na sdílení dejte každému počítačovému účtu právo číst jen jeho vlastní kód. Registraci proveďte během hodinové platnosti.
 3. Při pilotu spusťte příkaz níže jako správce. Pro nasazení přes Samba AD nastavte stejný příkaz jako spouštěcí PowerShell skript v konfiguraci počítače v doménové GPO. Při aktualizaci změňte **PackagePath** a **Release**. Služba si ponechá lokální frontu i registraci.
 4. V GPO povolte úspěšný audit přihlášení a odhlášení. Na pilotní stanici ověřte párování událostí 4624 a 4634 v protokolu Security a postup při práci bez připojení. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
 
 ~~~powershell
-& '\\server\dochazka\agent-v1.2.3\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v1.2.3' -Release '1.2.3' -EnrollmentDirectory '\\server\dochazka-registrace'
+& '\\server\dochazka\agent-v0.0.1\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.1' -Release '0.0.1' -EnrollmentDirectory '\\server\dochazka-registrace'
 ~~~
 
 ## Vydání
 
 | Tag v repozitáři | Výstup |
 | --- | --- |
-| **agent-v1.2.3** | Linux sestaví samostatný Windows x64 balíček. Windows ověří PowerShell instalátor a provede self-test agenta. GitHub Release obsahuje ZIP a SHA256SUMS. |
-| **docker-v1.2.3** | CI ověřuje centrálu i volitelnou registrační bránu pro GPO. GitHub Container Registry dostane tagy **php-1.2.3**, **web-1.2.3** a **enroll-1.2.3**. GitHub Release obsahuje nasazovací archiv. |
+| [agent-v0.0.1](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.1) | Samostatný balíček Windows x64 a kontrolní součet SHA256. CI ověřuje PowerShell instalátor a spouští self-test na Windows. |
+| [docker-v0.0.1](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.1) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.1`, `web-0.0.1` a `enroll-0.0.1` v GitHub Container Registry. |
 
 Integrační test **tests/workflow.py** potřebuje PHP 8.4 a přístup k testovací PostgreSQL přes proměnné **PGHOST**, **PGPORT**, **PGDATABASE**, **PGUSER** a **PGPASSWORD**. Vytvoří vlastní dočasné schéma. Samostatný test výpočtu výkazu spustíte jako **php tests/timesheet.php**.
 

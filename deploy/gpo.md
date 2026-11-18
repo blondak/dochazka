@@ -33,7 +33,7 @@ samba-tool group addmembers Dochazka-PC 'PILOT01$'
 5. Doplňte k proměnným centrály do `.env` následující hodnoty a spusťte bránu. Adresy jsou příklady. [Ověření Kerberos v Apache](https://github.com/gssapi/mod_auth_gssapi) · [Autorizace skupin v LDAP](https://httpd.apache.org/docs/2.4/mod/mod_authnz_ldap.html)
 
 ~~~dotenv
-GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-1.2.3
+GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.1
 GPO_REALM=EXAMPLE.CZ
 GPO_LDAP_HOST=dc.example.cz
 GPO_BASE_DN=DC=example,DC=cz
@@ -58,7 +58,7 @@ Pro vlastní sestavení ze zdrojového kódu použijte ve stejném projektu `doc
 2. V GPO v **Computer Configuration → Windows Settings → Scripts → Startup** nastavte spouštěcí PowerShell skript níže. Pro počítače, jež dostávají doménovou síť až po startu, nastavte ve stejné politice čekání na síť při startu a přihlášení. Při opakovaném běhu po dokončené registraci se použije existující token.
 
 ~~~powershell
-& '\\server\dochazka\agent-v1.2.3\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -EnrollmentServer 'https://enroll.example.cz' -PackagePath '\\server\dochazka\agent-v1.2.3' -Release '1.2.3'
+& '\\server\dochazka\agent-v0.0.1\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -EnrollmentServer 'https://enroll.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.1' -Release '0.0.1'
 ~~~
 
 3. Povolte úspěšné audity **Logon** i **Logoff** v Advanced Audit Policy. Restartujte pilotní stanici, ověřte službu `DochazkaAgent` a položku `PILOT01$@EXAMPLE.CZ` na kartě **Zařízení**. Proveďte místní interaktivní přihlášení a odhlášení již evidovaného zaměstnance. Po odeslání další dávky musí výkaz ukázat interval mezi těmito událostmi. Služba sleduje interaktivní a cached-interactive události 4624/4634, spánek a probuzení 42/107 v protokolu Kernel-Power. Zámek obrazovky sám směnu neukončuje. Při odpojení sítě se data ukládají do místní SQLite fronty. Po návratu spojení je agent znovu odešle.
