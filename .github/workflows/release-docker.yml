@@ -2,11 +2,13 @@ name: Release central Docker image
 on:
   push:
     tags: ['docker-v*']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency: release-${{ github.ref }}
 jobs:
   verify:
+    if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
   release:
     needs: verify
@@ -51,3 +53,41 @@ jobs:
           - Archiv \`central-deploy.tar.gz\` obsahuje instalační skript pro bránu na Debianu se Samba AD a Compose konfiguraci pro ověření brány externí centrálou.
           EOF
           gh release create "$TAG" --verify-tag --notes-file release-notes.txt central-deploy.tar.gz
+  latest:
+    needs: release
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.release.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions: {contents: read, packages: write}
+    concurrency:
+      group: docker-latest
+      cancel-in-progress: false
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish aliases for the newest stable Docker release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            | awk '/^docker-v[0-9]+\.[0-9]+\.[0-9]+$/' | sort -Vr | sed -n '1p')
+          : "${tag:?No published stable Docker release found}"
+          version="${tag#docker-v}"
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+
+          declare -A digests
+          for image in php web; do
+            digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$repository:$image-$version")
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            digests[$image]="$digest"
+          done
+          for image in php web; do
+            alias="$repository:$image-latest"
+            docker buildx imagetools create --prefer-index=false --tag "$alias" "$repository@${digests[$image]}"
+            digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$alias")
+            [[ "$digest" == "${digests[$image]}" ]]
+          done

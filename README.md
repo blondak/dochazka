@@ -26,6 +26,8 @@ docker compose -f compose.yaml -f deploy/compose.traefik.yaml up -d --no-build
 
 Traefik směruje na **http://dochazka-web:80**. Toto jméno funguje na sdílené Docker síti. Nginx obsluhuje frontend a dokumentaci a předává API interní službě PHP-FPM. Aplikace spouští migrace při startu. Dokumentace Stoplight Elements je dostupná na **/docs/**. Popis **/openapi.json** generuje při sestavení plugin Apitte z atributů controllerů.
 
+Pro nasazení nejnovějšího stabilního vydání použijte jako dvojici `ghcr.io/blondak/dochazka:php-latest` a `ghcr.io/blondak/dochazka:web-latest`. Po vydání se oba tagy posunou na nové obrazy. Nasazení konkrétní verze použije číslované tagy z ukázky výše.
+
 Při prvním otevření webu průvodce požádá o instalační kód a údaje správce. Po založení účtu se kód už nedá použít. Správce po přihlášení uvidí kartu **První kroky**.
 
 Konzolové příkazy spravuje Contributte Console. Správce lze založit i příkazem **docker compose exec app php bin/console account:admin spravce**. Heslo zadáte ze standardního vstupu. Další příkazy jsou **db:migrate** a **api:openapi**.
