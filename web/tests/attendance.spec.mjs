@@ -301,7 +301,7 @@ test('work rows must be from the same day and a manager confirms the merged rang
     await expect(dialog).toContainText('08:00 – 12:00')
     expect(merged).toBeUndefined()
     await dialog.getByRole('button', {name:'Potvrdit spojení'}).click()
-    await expect(page.getByRole('status')).toContainText('Vybrané pracovní úseky byly spojeny.')
+    await expect(page.getByRole('status').filter({hasText:'Vybrané pracovní úseky byly spojeny.'})).toBeVisible()
     expect(merged).toEqual({employee:employee.id, month:'2026-11', fingerprint:'test-fingerprint', rows:[0,1]})
 })
 
@@ -317,7 +317,7 @@ test('administrator changes the global automatic merge limit', async ({page}) =>
     await expect(limit).toHaveValue('0')
     await limit.fill('5')
     await page.getByRole('button', {name:'Uložit limit'}).click()
-    await expect(page.getByRole('status')).toContainText('Limit automatického spojování byl uložen.')
+    await expect(page.getByRole('status').filter({hasText:'Limit automatického spojování byl uložen.'})).toBeVisible()
     expect(saved).toEqual({gap_minutes:5})
 })
 

@@ -13,8 +13,8 @@ Rozbalte archiv **central-deploy.tar.gz** z vydání centrály a ve stejném adr
 ~~~dotenv
 TRAEFIK_NETWORK=traefik
 DB_PASSWORD=sem-vlozte-vygenerovane-heslo
-APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.3
-WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.3
+APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.4
+WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.4
 SETUP_TOKEN=sem-vlozte-vygenerovany-kod
 PASSKEY_ORIGIN=https://dochazka.example.cz
 ~~~
@@ -98,7 +98,7 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 | Tag v repozitáři | Výstup |
 | --- | --- |
 | [agent-v0.0.4](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.4) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
-| [docker-v0.0.3](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.3) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.3`, `web-0.0.3` a `enroll-0.0.3` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
+| [docker-v0.0.4](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.4) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.4`, `web-0.0.4` a `enroll-0.0.4` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
 
 Integrační test **tests/workflow.py** potřebuje PHP 8.4 a přístup k testovací PostgreSQL přes proměnné **PGHOST**, **PGPORT**, **PGDATABASE**, **PGUSER** a **PGPASSWORD**. Vytvoří vlastní dočasné schéma. Samostatný test výpočtu výkazu spustíte jako **php tests/timesheet.php**.
 

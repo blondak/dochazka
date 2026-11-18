@@ -67,7 +67,7 @@ samba-tool group addmembers Dochazka-PC 'PILOT01$'
 5. Doplňte k proměnným centrály do `.env` následující hodnoty a spusťte bránu. Adresy jsou příklady. [Ověření Kerberos v Apache](https://github.com/gssapi/mod_auth_gssapi) · [Autorizace skupin v LDAP](https://httpd.apache.org/docs/2.4/mod/mod_authnz_ldap.html)
 
 ~~~dotenv
-GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.3
+GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.4
 GPO_REALM=EXAMPLE.CZ
 GPO_LDAP_HOST=dc.example.cz
 GPO_BASE_DN=DC=example,DC=cz
@@ -123,7 +123,7 @@ Průběh instalace najdete v souboru `%ProgramFiles%\DochazkaAgent\Logs\startup.
 
 ## Servisní přihlášení
 
-Nasaďte centrálu `docker-v0.0.3` a balíček agenta `agent-v0.0.4` se změněným `-Release`. Instalátor nastaví spuštění ikony **Docházka** při interaktivním přihlášení. Pokud je ikona skrytá, otevřete skryté ikony v oznamovací oblasti Windows.
+Nasaďte centrálu `docker-v0.0.4` a balíček agenta `agent-v0.0.4` se změněným `-Release`. Instalátor nastaví spuštění ikony **Docházka** při interaktivním přihlášení. Pokud je ikona skrytá, otevřete skryté ikony v oznamovací oblasti Windows.
 
 Po samostatném místním přihlášení pod účtem zaměstnance zvolte **Označit relaci jako servisní**. Po doručení přihlášení do centrály ikona otevře jednorázový odkaz. Potvrďte celou relaci vlastním účtem správce pomocí passkey nebo hesla. Pokud agent ještě přihlášení neodeslal, zopakujte akci po další dávce. Zpětně upravíte příznak jako správce ve **Výkazu** pod **Relace počítače**.
 
