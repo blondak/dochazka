@@ -1,12 +1,27 @@
 <header class="app-header">
     <div class="header-content">
-        <span class="brand"><i class="pi pi-clock" aria-hidden="true"></i> Docházka</span>
+        <div class="header-brand">
+            <PvButton v-if="user && !starting && !serviceCode" label="Menu" icon="pi pi-bars" text
+                aria-haspopup="dialog" :aria-expanded="navigationVisible" @click="navigationVisible = true" />
+            <h1 v-if="user && !starting && !serviceCode && tab" id="page-title" tabindex="-1" class="section-title">
+                <i :class="tabIcons[tab] || 'pi pi-user'" aria-hidden="true"></i>
+                <span>{{ tab }}</span>
+            </h1>
+            <span v-else class="brand"><i class="pi pi-clock" aria-hidden="true"></i> Docházka</span>
+        </div>
         <div v-if="user" class="identity">
-            <span><strong>{{ user.name }}</strong><small>{{ roleNames(user.roles) }} · {{ user.team }}</small></span>
-            <div class="identity-actions">
-                <PvButton label="Nastavení účtu" icon="pi pi-cog" severity="secondary" text :disabled="busy" @click="showSettings" />
-                <PvButton label="Odhlásit" icon="pi pi-sign-out" severity="secondary" text :disabled="busy" @click="signOut" />
+            <div class="identity-profile">
+                <PvButton :label="user.name" icon="pi pi-chevron-down" icon-pos="right" severity="secondary" text
+                    class="identity-trigger" aria-haspopup="menu" :aria-expanded="accountMenuOpen"
+                    :aria-controls="accountMenuOpen ? 'account-options' : undefined" :disabled="busy"
+                    @click="$refs.accountMenu.toggle($event)" />
+                <small>{{ roleNames(user.roles) }}<template v-if="user.org_unit_path"> · {{ user.org_unit_path }}</template></small>
+                <PvMenu ref="accountMenu" popup aria-label="Uživatelský účet" :pt="{list:{id:'account-options'}}"
+                    :model="[{label:'Nastavení účtu', icon:'pi pi-cog', command:showSettings, disabled:busy}]"
+                    @show="accountMenuOpen = true" @hide="accountMenuOpen = false" />
             </div>
+            <PvButton icon="pi pi-sign-out" aria-label="Odhlásit" title="Odhlásit" v-tooltip.bottom="'Odhlásit'"
+                severity="secondary" text :disabled="busy" @click="signOut" />
         </div>
     </div>
 </header>
@@ -85,31 +100,24 @@
     </PvCard>
 
     <template v-else>
-        <nav class="app-navigation" aria-label="Sekce docházky">
-            <PvButton v-for="name in tabs" :key="name" :label="name" :icon="tabIcons[name]"
-                :severity="tab === name ? 'primary' : 'secondary'" :text="tab !== name"
-                :aria-current="tab === name ? 'page' : undefined" :disabled="busy" @click="changeTab(name)" />
-        </nav>
+        <PvDrawer v-model:visible="navigationVisible" header="Menu" position="left" block-scroll style="width:min(320px, 100vw)">
+            <nav class="settings-navigation" aria-label="Sekce docházky">
+                <PvButton v-for="name in mainTabs" :key="name" :label="name" :icon="tabIcons[name]"
+                    :severity="tab === name ? 'primary' : 'secondary'" :text="tab !== name"
+                    :aria-current="tab === name ? 'page' : undefined" @click="changeTab(name)" />
+                <template v-if="hasRole('admin')">
+                    <h2 class="navigation-group">Nastavení</h2>
+                    <PvButton v-for="name in adminTabs" :key="name" :label="name" :icon="tabIcons[name]"
+                        :severity="tab === name ? 'primary' : 'secondary'" :text="tab !== name"
+                        :aria-current="tab === name ? 'page' : undefined" @click="changeTab(name)" />
+                </template>
+            </nav>
+        </PvDrawer>
 
-        <div class="page-heading">
-            <h1 id="page-title" tabindex="-1">{{ tab }}</h1>
-            <div v-if="['Výkaz', 'Žádosti', 'Uzávěrka'].includes(tab)" class="fields">
-                <div v-if="scopePeople.length > 1 && tab !== 'Uzávěrka'" class="field">
-                    <span id="scope-person-label" class="field-label">Osoba</span>
-                    <PvSelect :model-value="person" input-id="scope-person" :options="scopePeople" option-label="name" option-value="id"
-                        :disabled="busy" aria-labelledby="scope-person-label" filter filter-placeholder="Vyhledat osobu"
-                        :pt="{pcFilter:{root:{'aria-label':'Vyhledat osobu'}}}" @update:model-value="selectPerson" />
-                </div>
-                <div class="field">
-                    <label for="scope-month">Období</label>
-                    <div class="month-controls">
-                        <PvButton aria-label="Předchozí měsíc" icon="pi pi-chevron-left" outlined :disabled="busy" @click="moveMonth(-1)" />
-                        <PvDatePicker :model-value="month" input-id="scope-month" view="month" date-format="yy-mm" update-model-type="string"
-                            :manual-input="false" :disabled="busy" @update:model-value="selectMonth" />
-                        <PvButton aria-label="Následující měsíc" icon="pi pi-chevron-right" outlined :disabled="busy" @click="moveMonth(1)" />
-                    </div>
-                </div>
-            </div>
+        <div v-if="['Žádosti', 'Uzávěrka'].includes(tab) || (tab === 'Výkaz' && !sheet)" class="page-heading scope-heading">
+            <PeriodSelector v-if="['Žádosti', 'Uzávěrka'].includes(tab) || (tab === 'Výkaz' && !sheet)" :person="person" :month="month" :people="scopePeople" :selected-name="selectedPerson?.name"
+                :show-person="tab !== 'Uzávěrka'" :editable-person="tab === 'Výkaz' && hasRole('admin')" :busy="busy"
+                @select-person="selectPerson" @edit-person="editPerson(selectedPerson)" @select-month="selectMonth" @move-month="moveMonth" />
         </div>
         <p v-if="busy && (['Výkaz', 'Žádosti'].includes(tab) && !sheet || tab === 'Uzávěrka' && !payroll)" role="status">Načítám údaje…</p>
         <PvButton v-if="error && !inActionDialog && !busy && (['Výkaz', 'Žádosti'].includes(tab) && !sheet || tab === 'Uzávěrka' && !payroll)"
@@ -121,6 +129,7 @@
                     <time v-if="daily" :datetime="daily.day">{{ day(daily.day) }}</time>
                 </template>
                 <template #end>
+                    <PvButton label="Kontrola svátků" icon="pi pi-calendar" outlined @click="openEditor({kind:'holiday-control'})" />
                     <PvButton label="Obnovit" icon="pi pi-refresh" outlined :loading="busy" @click="run(refresh)" />
                 </template>
             </PvToolbar>
@@ -145,6 +154,120 @@
             <p v-else-if="busy" role="status">Načítám stav týmu…</p>
         </template>
 
+        <section v-if="tab === 'Konta docházky'">
+            <PvToolbar class="table-toolbar" aria-label="Správa kont"><template #start>
+                <PvButton label="Nové konto" icon="pi pi-plus" @click="openEditor({kind:'account'})" />
+            </template></PvToolbar>
+            <div class="table-region" role="region" aria-label="Číselník kont" tabindex="0">
+                <PvDataTable :value="accounts" data-key="code" size="small" striped-rows :table-props="{'aria-label':'Konta docházky'}">
+                    <PvColumn field="code" header="Kód" />
+                    <PvColumn field="name" header="Název" />
+                    <PvColumn field="description" header="Popis" />
+                    <PvColumn header="Započítání"><template #body="{data}">{{ behaviors[data.behavior] }}</template></PvColumn>
+                    <PvColumn header="Doklad"><template #body="{data}">{{ data.requires_proof ? 'Povinný' : '—' }}</template></PvColumn>
+                    <PvColumn header="Stav"><template #body="{data}">{{ data.active ? 'Aktivní' : 'Deaktivováno' }}</template></PvColumn>
+                    <PvColumn header="Akce"><template #body="{data}">
+                        <PvButton icon="pi pi-pencil" :aria-label="'Upravit konto ' + data.name" text v-tooltip.top="'Upravit konto'"
+                            @click="openEditor({kind:'account', code:data.code})" />
+                    </template></PvColumn>
+                </PvDataTable>
+            </div>
+        </section>
+
+        <section v-if="tab === 'Svátky a dny volna'" class="catalog-sections">
+            <div>
+                <h2>Konto pro české svátky</h2>
+                <PvToolbar aria-label="Nástroje konta svátků" class="table-toolbar"><template #start>
+                    <PvButton label="Nastavit konto" icon="pi pi-pencil" @click="openEditor({kind:'holiday-account'})" />
+                </template></PvToolbar>
+                <PvDataTable :value="calendar.holiday_accounts" size="small" striped-rows :table-props="{'aria-label':'Konto pro české svátky'}">
+                    <PvColumn header="Platí od"><template #body="{data}">{{ data.effective_on === '0001-01-01' ? 'Výchozí nastavení' : day(data.effective_on) }}</template></PvColumn>
+                    <PvColumn header="Konto"><template #body="{data}">{{ accountName(data.account) }}</template></PvColumn>
+                </PvDataTable>
+            </div>
+            <div>
+                <h2>České svátky</h2>
+                <PvToolbar aria-label="Nástroje českých svátků" class="table-toolbar"><template #start>
+                    <PvButton label="Přidat pravidlo svátku" icon="pi pi-plus" @click="openEditor({kind:'holiday-rule'})" />
+                </template></PvToolbar>
+                <div class="table-region" role="region" aria-label="Číselník svátků" tabindex="0">
+                    <PvDataTable :value="calendar.holidays" data-key="id" size="small" striped-rows :table-props="{'aria-label':'České svátky'}">
+                        <PvColumn field="name" header="Svátek" />
+                        <PvColumn header="Datum"><template #body="{data}">{{ holidayDate(data) }}</template></PvColumn>
+                        <PvColumn header="Docházkové konto"><template #body="{data}">{{ data.account ? accountName(data.account) : defaultHolidayAccount.name }}</template></PvColumn>
+                        <PvColumn header="Platí od"><template #body="{data}">{{ day(data.valid_from) }}</template></PvColumn>
+                        <PvColumn header="Platí do"><template #body="{data}">{{ data.valid_to ? day(data.valid_to) : 'Bez omezení' }}</template></PvColumn>
+                        <PvColumn header="Akce"><template #body="{data}">
+                            <div class="record-actions">
+                                <PvButton icon="pi pi-pencil" text :aria-label="'Upravit svátek ' + data.name" v-tooltip.top="'Upravit pravidlo'"
+                                    @click="openEditor({kind:'holiday-rule',id:data.id})" />
+                                <PvButton v-if="!data.valid_to || data.valid_to > today" icon="pi pi-trash" text severity="danger"
+                                    :aria-label="'Odebrat svátek ' + data.name" v-tooltip.top="'Odebrat pravidlo'" @click="removeHolidayRule(data)" />
+                            </div>
+                        </template></PvColumn>
+                    </PvDataTable>
+                </div>
+            </div>
+            <div>
+                <h2>Firemní dny volna</h2>
+                <PvToolbar aria-label="Nástroje firemního volna" class="table-toolbar"><template #start>
+                    <PvButton label="Přidat den volna" icon="pi pi-plus" @click="openEditor({kind:'calendar-day'})" />
+                </template></PvToolbar>
+                <PvDataTable :value="calendar.days" data-key="day" size="small" striped-rows :table-props="{'aria-label':'Firemní dny volna'}">
+                    <PvColumn header="Den"><template #body="{data}">{{ day(data.day) }}</template></PvColumn>
+                    <PvColumn field="name" header="Název" />
+                    <PvColumn header="Konto"><template #body="{data}">{{ accountName(data.account) }}</template></PvColumn>
+                    <PvColumn header="Akce"><template #body="{data}">
+                        <PvButton icon="pi pi-pencil" text :aria-label="'Upravit ' + data.name" v-tooltip.top="'Upravit den volna'"
+                            @click="openEditor({kind:'calendar-day', day:data.day})" />
+                        <PvButton icon="pi pi-trash" severity="danger" text :aria-label="'Odebrat ' + data.name"
+                            v-tooltip.top="'Odebrat den volna'" @click="removeCalendarDay(data)" />
+                    </template></PvColumn>
+                    <template #empty>Žádné firemní dny volna.</template>
+                </PvDataTable>
+            </div>
+        </section>
+
+        <section v-if="tab === 'Pracovní modely'" aria-labelledby="page-title">
+            <PvToolbar class="table-toolbar" aria-label="Správa pracovních modelů"><template #start>
+                <PvButton label="Nový pracovní model" icon="pi pi-plus" @click="openEditor({kind:'model'})" />
+            </template></PvToolbar>
+            <div class="table-region" role="region" aria-label="Přehled pracovních modelů" tabindex="0">
+                <PvDataTable v-model:expanded-rows="expandedModels" :value="models" data-key="id" size="small" striped-rows :table-props="{'aria-labelledby':'page-title'}">
+                    <PvColumn expander />
+                    <PvColumn field="name" header="Model" />
+                    <PvColumn header="Účinnost"><template #body="{data}">
+                        <span v-if="activeModelVersion(data).effective_on > today">Plánováno od </span>{{ day(activeModelVersion(data).effective_on) }}
+                    </template></PvColumn>
+                    <PvColumn header="Týdenní fond"><template #body="{data}">{{ hours(modelSeconds(activeModelVersion(data).week)) }}</template></PvColumn>
+                    <PvColumn header="Akce"><template #body="{data}">
+                        <PvButton icon="pi pi-plus" :aria-label="'Přidat verzi modelu ' + data.name" text v-tooltip.top="'Přidat verzi'"
+                            @click="openEditor({kind:'model',id:data.id})" />
+                    </template></PvColumn>
+                    <template #expansion="{data}">
+                        <div class="stack model-version-detail">
+                            <div class="fields">
+                                <label class="field" :id="'model-version-label-' + data.id" :for="'model-version-' + data.id">Verze rozvrhu</label>
+                                <PvSelect :input-id="'model-version-' + data.id" :aria-labelledby="'model-version-label-' + data.id" :model-value="displayModelVersion(data).effective_on"
+                                    :options="data.versions.map(version => ({value:version.effective_on,label:day(version.effective_on)}))"
+                                    option-value="value" option-label="label" @update:model-value="selectedModelVersions[data.id] = $event" />
+                                <PvButton icon="pi pi-pencil" text aria-label="Opravit vybranou verzi" v-tooltip.top="'Opravit verzi'"
+                                    @click="openEditor({kind:'model',id:data.id,version:displayModelVersion(data).effective_on})" />
+                            </div>
+                            <dl class="weekly-model">
+                                <template v-for="(shift, index) in displayModelVersion(data).week" :key="index">
+                                    <dt>{{ weekdays[index] }}</dt>
+                                    <dd v-if="shift">{{ shift.start }}–{{ shift.end }}<span v-if="shift.break_start"> · Přestávka {{ shift.break_start }}–{{ shift.break_end }}</span></dd>
+                                    <dd v-else>Volno</dd>
+                                </template>
+                            </dl>
+                        </div>
+                    </template>
+                    <template #empty>Zatím není založený žádný pracovní model.</template>
+                </PvDataTable>
+            </div>
+        </section>
+
         <PvCard v-if="tab === 'Nastavení docházky' && gapMinutes !== null">
             <template #title><h2>Automatické spojování úseků</h2></template>
             <template #content>
@@ -162,7 +285,11 @@
         <PvCard v-if="tab === 'První kroky'">
             <template #content>
                 <article class="record">
-                    <div><h2>Založte uživatele</h2><p>Vytvořte zaměstnance, vedoucího ve stejném týmu a účet pro mzdovou účtárnu. Pokud evidujete docházku vedoucího, přidejte druhého vedoucího pro její schválení. Každému předejte pozvánku.</p></div>
+                    <div><h2>Uspořádejte organizační jednotky</h2><p>Vedoucí spravuje docházku ve své jednotce a ve všech jejích podřízených jednotkách.</p></div>
+                    <PvButton label="Otevřít organizační strukturu" outlined @click="changeTab('Organizační struktura')" />
+                </article>
+                <article class="record">
+                    <div><h2>Založte uživatele</h2><p>Vytvořte zaměstnance, vedoucího ve stejné nebo nadřazené jednotce a účet pro mzdovou účtárnu. Pokud evidujete docházku vedoucího, přidejte dalšího vedoucího ve stejné nebo nadřazené jednotce. Každému předejte pozvánku.</p></div>
                     <PvButton label="Otevřít zaměstnance" outlined @click="changeTab('Zaměstnanci')" />
                 </article>
                 <article class="record">
@@ -186,73 +313,234 @@
             Žádná osoba k zobrazení.
         </PvMessage>
         <template v-if="tab === 'Výkaz' && sheet">
-            <div class="metrics">
-                <PvCard><template #content><span>Odpracováno</span><strong>{{ hours(sheet.seconds) }}</strong></template></PvCard>
-                <PvCard><template #content><span>Čekající žádosti</span><strong>{{ sheet.pending }}</strong></template></PvCard>
-                <PvCard><template #content><span>Stav výkazu</span><strong>{{ sheet.approved ? 'Schválen' : 'Čeká na schválení' }}</strong></template></PvCard>
-            </div>
             <PvMessage v-if="sheet.missing_proofs" severity="warn">
-                Propustky k doložení: {{ sheet.missing_proofs }}.
+                Doklady k doložení: {{ sheet.missing_proofs }}.
                 <PvButton v-if="tabs.includes('Žádosti') && canSubmitRequest" label="Otevřít žádosti" size="small" text @click="changeTab('Žádosti')" />
             </PvMessage>
             <PvCard>
-                <template #title><h2 id="month-rows">Průběh měsíce</h2></template>
                 <template #content>
-                    <PvToolbar v-if="canReview && sheet.rows.some(row => row.kind === 'PRACE')" aria-label="Nástroje pracovních úseků" class="table-toolbar">
+                    <PvToolbar aria-label="Nástroje výkazu" class="table-toolbar sheet-toolbar">
                         <template #start>
-                            <PvButton label="Spojit vybrané úseky" icon="pi pi-link" outlined
-                                :disabled="busy || mergeRows.length < 2" @click="confirmMergeRows" />
+                            <PeriodSelector :person="person" :month="month" :people="scopePeople" :selected-name="selectedPerson?.name"
+                                :show-person="tab !== 'Uzávěrka'" :editable-person="tab === 'Výkaz' && hasRole('admin')" :busy="busy"
+                                @select-person="selectPerson" @edit-person="editPerson(selectedPerson)" @select-month="selectMonth" @move-month="moveMonth" />
+                            <div v-if="canReview" class="sheet-actions">
+                                <PvButton icon="pi pi-plus" aria-label="Přidat konto" title="Přidat konto" v-tooltip.focus.bottom="'Přidat konto'"
+                                    size="small" :disabled="busy" @click="editWork()" />
+                            </div>
+                        </template>
+                        <template #end>
+                            <PvButton v-if="sheet.pending" :label="'Čekající žádosti (' + sheet.pending + ')'" icon="pi pi-clock"
+                                severity="secondary" outlined size="small" @click="showPendingRequests" />
+                            <PvTag v-else value="Čekající žádosti (0)" severity="secondary" icon="pi pi-inbox" />
+                            <PvTag :value="sheet.approved ? 'Výkaz schválen' : 'Výkaz čeká na schválení'"
+                                :severity="sheet.approved ? 'success' : 'info'" :icon="sheet.approved ? 'pi pi-check-circle' : 'pi pi-hourglass'" />
                         </template>
                     </PvToolbar>
-                    <div class="table-region" role="region" aria-labelledby="month-rows" tabindex="0">
-                        <PvDataTable :value="sheet.rows" size="small" striped-rows :table-props="{'aria-labelledby':'month-rows'}">
-                            <PvColumn v-if="canReview && sheet.rows.some(row => row.kind === 'PRACE')" header="Výběr">
-                                <template #body="{ data, index }">
-                                    <PvCheckbox v-if="data.kind === 'PRACE'" binary :model-value="mergeRows.includes(index)"
-                                        :disabled="busy || !!mergeDay && data.day !== mergeDay"
-                                        :aria-label="'Vybrat pracovní úsek ' + day(data.day) + ' ' + time(data.from) + ' – ' + time(data.to)"
-                                        @update:model-value="toggleMergeRow(index)" />
+                    <div class="month-layout">
+                        <div>
+                            <h2 id="month-days-title">Dny v měsíci</h2>
+                            <div class="month-days" @click.capture="selectDayFromRow">
+                                <PvDataTable :value="monthDays" data-key="key" size="small" striped-rows
+                                    :row-class="entry => ({ 'selected-day': entry.key === selectedDay?.key, 'weekend-day': entry.weekend })"
+                                    :table-props="{'aria-labelledby':'month-days-title'}">
+                                    <PvColumn header="Den">
+                                        <template #body="{ data }">
+                                            <PvButton :label="data.label" :data-sheet-day="data.key" :aria-pressed="data.key === selectedDay?.key"
+                                                :aria-current="data.today ? 'date' : undefined" aria-controls="day-detail"
+                                                text size="small" />
+                                            <i v-if="data.holiday" class="pi pi-calendar" role="img" :aria-label="data.holiday.name"
+                                                v-tooltip.top="data.holiday.name"></i>
+                                            <PvTag v-if="data.today" value="Dnes" severity="info" class="today-tag" />
+                                            <i v-if="data.requests.some(request => request.status === 'pending')" class="pi pi-clock day-request-pending"
+                                                role="img" aria-label="Čekající žádost" v-tooltip.top="'Čekající žádost'"></i>
+                                            <i v-if="data.requests.some(request => request.status === 'rejected')" class="pi pi-times-circle day-request-rejected"
+                                                role="img" aria-label="Zamítnutá žádost" v-tooltip.top="'Zamítnutá žádost'"></i>
+                                        </template>
+                                    </PvColumn>
+                                    <PvColumn header="Uznaná doba">
+                                        <template #body="{ data }">{{ hours(data.seconds) }}
+                                            <small v-if="data.internal != null && data.internal !== data.seconds" class="muted-block">Interně {{ hours(data.internal) }}</small>
+                                        </template>
+                                    </PvColumn>
+                                    <PvColumn v-if="monthDays.some(entry => entry.holidaySeconds)" header="Svátek / volno">
+                                        <template #body="{data}">{{ data.holiday ? hours(data.holidaySeconds) : '—' }}</template>
+                                    </PvColumn>
+                                    <template #empty>V tomto měsíci není zaměstnanec vedený v evidenci.</template>
+                                </PvDataTable>
+                            </div>
+                        </div>
+                        <section id="day-detail" aria-labelledby="day-detail-title">
+                            <h2 id="day-detail-title" ref="dayHeading" tabindex="-1">
+                                Detail dne<span v-if="selectedDay"> · {{ day(selectedDay.key) }}</span>
+                            </h2>
+                            <div v-if="selectedDay?.holiday" class="day-holiday">
+                                <PvTag severity="warn" icon="pi pi-calendar" :value="selectedDay.holiday.name" />
+                                <small>Konto · {{ accountName(selectedDay.holiday.account) }}</small>
+                            </div>
+                            <p v-if="selectedDay && sheet.planned_shifts?.[selectedDay.key]" class="planned-shift">
+                                <strong>Plán směny</strong>
+                                {{ sheet.planned_shifts[selectedDay.key].map(shift => time(shift.from) + '–' + time(shift.to)).join(' · ') || 'Volno' }}
+                            </p>
+                            <div v-if="selectedDay" class="day-time-summary">
+                                <p v-for="item in (sheet.presence || []).filter(item => item.day === selectedDay.key)" :key="item.from">
+                                    <strong>Přítomnost</strong> {{ time(item.from) }}–{{ time(item.to) }}
+                                </p>
+                                <p v-for="item in (sheet.breaks || []).filter(item => item.day === selectedDay.key)" :key="item.from">
+                                    <strong>{{ item.source === 'proposed' ? 'Navržená přestávka' : 'Přestávka' }}</strong> {{ time(item.from) }}–{{ time(item.to) }}
+                                    <PvButton v-if="canReview" icon="pi pi-pencil" text size="small" :aria-label="'Upravit přestávku ' + time(item.from)"
+                                        v-tooltip.top="'Upravit přestávku'" @click="openEditor({kind:'break',day:selectedDay.key,from:item.from})" />
+                                </p>
+                                <p v-if="sheet.breaks?.some(item => item.day === selectedDay.key)">
+                                    <strong>Uznaná práce</strong> {{ hours(selectedDay.seconds) }}
+                                </p>
+                                <p v-for="(value, kind) in sheet.internal_by_day?.[selectedDay.key]" :key="kind">
+                                    {{ accountName(kind) }} · Interně započteno {{ hours(value.seconds) }}
+                                </p>
+                                <template v-for="(adjustment, index) in sheet.unresolved_adjustments" :key="adjustment.from">
+                                    <p v-if="adjustment.day === selectedDay.key">
+                                        Původní úpravu {{ time(adjustment.from) }}–{{ time(adjustment.to) }} je třeba prověřit.
+                                        <PvButton v-if="canReview" label="Prověřit úpravu" text size="small"
+                                            @click="openEditor({kind:'duration',row:index,stale:true,fingerprint:sheet.fingerprint})" />
+                                    </p>
                                 </template>
-                            </PvColumn>
-                            <PvColumn header="Datum"><template #body="{data}">{{ day(data.day) }}</template></PvColumn>
-                            <PvColumn header="Druh"><template #body="{data}">{{ labels[data.kind] }}</template></PvColumn>
-                            <PvColumn header="Od"><template #body="{data}">{{ data.from ? time(data.from) : 'Celý den' }}</template></PvColumn>
-                            <PvColumn header="Do"><template #body="{data}">{{ time(data.to) }}</template></PvColumn>
-                            <template #empty>V tomto měsíci zatím nejsou evidované úseky.</template>
-                        </PvDataTable>
+                                <div v-if="canReview" class="record-actions">
+                                    <PvButton v-if="selectedDay.key <= today && !sheet.breaks?.some(item => item.day === selectedDay.key)" icon="pi pi-pause" aria-label="Upravit přestávku" text size="small"
+                                        v-tooltip.top="'Upravit přestávku'" @click="openEditor({kind:'break',day:selectedDay.key})" />
+                                    <PvButton icon="pi pi-calendar" aria-label="Kontrola svátků zaměstnance" text size="small"
+                                        v-tooltip.top="'Kontrola svátků'" @click="openEditor({kind:'holiday-control',employee:person})" />
+                                </div>
+                            </div>
+                            <div v-if="selectedDay" class="table-region" role="region" aria-label="Úseky vybraného dne" tabindex="0">
+                                <PvDataTable :value="selectedDay.rows" data-key="sheetIndex" size="small" striped-rows
+                                    :table-props="{'aria-label':'Úseky vybraného dne'}">
+                                    <PvColumn v-if="canMergeDay" header="Výběr">
+                                        <template #body="{ data }">
+                                            <PvCheckbox v-if="data.kind === 'PRACE' && !data.generated_holiday" binary :model-value="mergeRows.includes(data.sheetIndex)"
+                                                :disabled="busy" :aria-label="'Vybrat pracovní úsek ' + time(data.from) + ' – ' + time(data.to)"
+                                                @update:model-value="toggleMergeRow(data.sheetIndex)" />
+                                        </template>
+                                    </PvColumn>
+                                    <PvColumn header="Druh"><template #body="{data}">
+                                        {{ accountName(data.kind) }}
+                                        <small v-if="data.generated_holiday" class="muted-block">Zápis z kalendáře</small>
+                                    </template></PvColumn>
+                                    <PvColumn header="Od"><template #body="{data}">{{ data.from ? time(data.from) : (data.partial_vacation ? '—' : 'Celý den') }}</template></PvColumn>
+                                    <PvColumn header="Do"><template #body="{data}">{{ time(data.to) }}</template></PvColumn>
+                                    <PvColumn header="Uznaná doba"><template #body="{data}">
+                                        {{ data.from || data.seconds != null ? hours(durationSeconds(data)) : '—' }}
+                                        <small v-if="data.calculated_seconds != null" class="muted-block">Upraveno z {{ hours(data.calculated_seconds) }}</small>
+                                    </template></PvColumn>
+                                    <PvColumn v-if="canReview && selectedDay.rows.some(row => workBehaviors.has(row.kind) && !row.generated_holiday)" header="Akce">
+                                        <template #body="{data}">
+                                            <PvButton v-if="data.kind === 'PRACE' && !data.generated_holiday" icon="pi pi-pencil" text size="small"
+                                                :aria-label="'Upravit pracovní úsek ' + time(data.from) + ' – ' + time(data.to)"
+                                                v-tooltip.top="'Upravit pracovní úsek'" :disabled="busy" @click="editWork(data.sheetIndex)" />
+                                            <PvButton v-if="workBehaviors.has(data.kind) && !data.generated_holiday" icon="pi pi-stopwatch" text size="small"
+                                                :aria-label="'Upravit uznanou dobu ' + time(data.from) + ' – ' + time(data.to)"
+                                                v-tooltip.top="'Upravit uznanou dobu'" :disabled="busy" @click="openEditor({kind:'duration',row:data.sheetIndex,fingerprint:sheet.fingerprint})" />
+                                        </template>
+                                    </PvColumn>
+                                    <template #empty>Pro tento den nejsou evidované úseky.</template>
+                                </PvDataTable>
+                            </div>
+                            <div v-if="canMergeDay" class="day-merge-action">
+                                <PvButton icon="pi pi-link" aria-label="Spojit vybrané úseky" title="Spojit vybrané úseky"
+                                    v-tooltip.top="'Spojit vybrané úseky'" outlined size="small"
+                                    :disabled="busy || mergeRows.length < 2" @click="confirmMergeRows" />
+                            </div>
+                            <section v-if="selectedDay?.requests.length" class="day-records" aria-labelledby="day-requests-title">
+                                <h2 id="day-requests-title" tabindex="-1">Žádosti</h2>
+                                <div class="table-region" role="region" aria-label="Žádosti vybraného dne" tabindex="0">
+                                    <PvDataTable :value="selectedDay.requests" data-key="id" size="small" striped-rows
+                                        :table-props="{'aria-label':'Žádosti vybraného dne'}">
+                                        <PvColumn header="Druh"><template #body="{data}">{{ requestTitle(data) }}</template></PvColumn>
+                                        <PvColumn header="Období"><template #body="{data}">
+                                            {{ requestPeriod(data) }}
+                                            <div v-if="data.scheduled_seconds != null">{{ hours(data.scheduled_seconds) }}</div>
+                                            <small v-if="data.vacation_estimate?.length">Odhad {{ data.vacation_estimate.map(part => time(part.from) + '–' + time(part.to)).join(' · ') }}</small>
+                                            <small v-if="data.needs_actual && data.status === 'approved'">
+                                                {{ data.actual_returned ? 'Vráceno k doplnění' : data.actual_from ? 'Skutečnost ' + moment(data.actual_from) + ' – ' + moment(data.actual_to) : 'Čeká na skutečný čas' }}
+                                            </small>
+                                        </template></PvColumn>
+                                        <PvColumn header="Stav"><template #body="{data}">
+                                            <PvTag :severity="requestSeverities[data.status]" :value="labels[data.status]" />
+                                        </template></PvColumn>
+                                        <PvColumn v-if="canReview || ownSheet" header="Akce">
+                                            <template #body="{data}">
+                                                <div class="record-actions">
+                                                    <PvButton v-if="data.needs_actual && data.status === 'approved' && (ownSheet || canReview)" icon="pi pi-clock" text size="small"
+                                                        aria-label="Doplnit skutečnost" v-tooltip.top="'Doplnit skutečnost'" @click="openEditor({kind:'actual',id:data.id})" />
+                                                    <PvButton v-if="data.actual_from && !data.actual_returned && data.status === 'approved' && canReview" icon="pi pi-replay" text size="small"
+                                                        aria-label="Vrátit skutečnost" v-tooltip.top="'Vrátit skutečnost'" @click="returnActual(data)" />
+                                                    <PvButton v-if="ownSheet && data.vacation_seconds && !data.vacation_consent && data.status === 'pending'" icon="pi pi-check" text size="small"
+                                                        aria-label="Potvrdit částečnou dovolenou" v-tooltip.top="'Potvrdit částečnou dovolenou'"
+                                                        @click="submit('request-vacation-consent',{id:data.id},'Souhlas byl uložen.')" />
+                                                    <PvButton v-if="data.has_proof" icon="pi pi-image" aria-label="Zobrazit propustku"
+                                                        v-tooltip.top="'Zobrazit propustku'" size="small" text :disabled="busy" @click="showProof(data.id)" />
+                                                    <PvButton v-if="canReview && !data.generated_holiday && data.status === 'pending'" icon="pi pi-check" aria-label="Schválit"
+                                                        v-tooltip.top="'Schválit'" size="small" text :disabled="busy" @click="decide(data, 'approved')" />
+                                                    <PvButton v-if="canReview && !data.generated_holiday && data.status !== 'rejected' && !data.replaces_from"
+                                                        :icon="data.status === 'pending' ? 'pi pi-times' : 'pi pi-undo'"
+                                                        :aria-label="data.status === 'pending' ? 'Zamítnout' : 'Odvolat schválení'"
+                                                        v-tooltip.top="data.status === 'pending' ? 'Zamítnout' : 'Odvolat schválení'"
+                                                        severity="danger" size="small" text :disabled="busy" @click="decide(data, 'rejected')" />
+                                                </div>
+                                            </template>
+                                        </PvColumn>
+                                    </PvDataTable>
+                                </div>
+                            </section>
+                            <section v-if="hasRole('admin') || visibleSessions.length" class="day-records" aria-labelledby="day-sessions-title">
+                                <h2 id="day-sessions-title">{{ sessionsLabel }}</h2>
+                                <PvToolbar v-if="hasRole('admin')" aria-label="Nástroje relací počítače" class="table-toolbar">
+                                    <template #start>
+                                        <div class="check-field">
+                                            <PvCheckbox v-model="showServiceSessions" input-id="show-service-sessions" binary />
+                                            <label for="show-service-sessions">Zobrazit servisní relace</label>
+                                        </div>
+                                    </template>
+                                </PvToolbar>
+                                <div class="table-region" role="region" aria-labelledby="day-sessions-title" tabindex="0">
+                                    <PvDataTable :value="visibleSessions" size="small" striped-rows :table-props="{'aria-label':sessionsLabel}">
+                                        <PvColumn field="station" header="Zařízení" />
+                                        <PvColumn header="Přihlášení"><template #body="{ data }">{{ moment(data.from) }}</template></PvColumn>
+                                        <PvColumn header="Odhlášení"><template #body="{ data }">{{ moment(data.to) }}</template></PvColumn>
+                                        <PvColumn header="Druh">
+                                            <template #body="{ data }"><PvTag v-if="data.service" value="Servisní" severity="secondary" /><span v-else>Pracovní</span></template>
+                                        </PvColumn>
+                                        <PvColumn v-if="hasRole('admin')" header="Akce">
+                                            <template #body="{ data }">
+                                                <PvButton :icon="data.service ? 'pi pi-undo' : 'pi pi-wrench'"
+                                                    :aria-label="data.service ? 'Zrušit servisní označení' : 'Označit jako servisní'"
+                                                    v-tooltip.top="data.service ? 'Zrušit servisní označení' : 'Označit jako servisní'"
+                                                    text size="small" :disabled="busy" @click="changeServiceSession(data)" />
+                                            </template>
+                                        </PvColumn>
+                                        <template #empty>Žádné relace k zobrazení.</template>
+                                    </PvDataTable>
+                                </div>
+                            </section>
+                        </section>
                     </div>
                 </template>
             </PvCard>
-            <PvToolbar aria-label="Nástroje relací počítače" class="table-toolbar">
-                <template #start>
-                    <PvButton v-if="hasRole('admin')" label="Relace počítače" icon="pi pi-desktop" outlined
-                        :aria-pressed="showSessionTable" @click="showSessionTable = !showSessionTable" />
-                    <PvButton label="Zobrazit servisní relace" icon="pi pi-wrench"
-                        :outlined="!showServiceSessions" :aria-pressed="showServiceSessions" @click="showServiceSessions = !showServiceSessions" />
-                </template>
-            </PvToolbar>
-            <PvCard v-if="showSessionTable || showServiceSessions">
-                <template #title><h2 id="computer-sessions">{{ showSessionTable ? 'Relace počítače' : 'Servisní relace' }}</h2></template>
+            <PvCard>
+                <template #title><h2 id="month-summary-title">Souhrn za měsíc</h2></template>
                 <template #content>
-                    <div class="table-region" role="region" aria-labelledby="computer-sessions" tabindex="0">
-                        <PvDataTable :value="visibleSessions" size="small" striped-rows :table-props="{'aria-labelledby':'computer-sessions'}">
-                            <PvColumn field="station" header="Zařízení" />
-                            <PvColumn header="Přihlášení"><template #body="{ data }">{{ moment(data.from) }}</template></PvColumn>
-                            <PvColumn header="Odhlášení"><template #body="{ data }">{{ moment(data.to) }}</template></PvColumn>
-                            <PvColumn header="Druh">
-                                <template #body="{ data }"><PvTag v-if="data.service" value="Servisní" severity="secondary" /><span v-else>Pracovní</span></template>
-                            </PvColumn>
-                            <PvColumn v-if="hasRole('admin')" header="Akce">
-                                <template #body="{ data }">
-                                    <PvButton :icon="data.service ? 'pi pi-undo' : 'pi pi-wrench'"
-                                        :aria-label="data.service ? 'Zrušit servisní označení' : 'Označit jako servisní'"
-                                        v-tooltip.top="data.service ? 'Zrušit servisní označení' : 'Označit jako servisní'"
-                                        text size="small" :disabled="busy" @click="changeServiceSession(data)" />
-                                </template>
-                            </PvColumn>
-                            <template #empty>Žádné relace k zobrazení.</template>
-                        </PvDataTable>
-                    </div>
+                    <PvDataTable :value="sheet.account_totals ? sheet.account_totals.map(account => ({
+                        label:account.code === 'PRACE' ? account.name + ' (uznaná doba)' : account.name,
+                        value:account.legacy_days ? hours(account.seconds) + ' + ' + account.legacy_days + ' kalendářních dnů' : hours(account.seconds),
+                        internal:account.internal_seconds == null ? '—' : hours(account.internal_seconds),
+                    })) : [
+                        {label:'Přítomnost (uznaná doba)', value:hours(sheet.seconds)},
+                        {label:'Dovolená (kalendářní dny)', value:monthAbsences.vacationDays},
+                        {label:'Lékař', value:hours(monthAbsences.doctorSeconds)},
+                    ]" data-key="label" size="small" striped-rows :table-props="{'aria-labelledby':'month-summary-title'}">
+                        <PvColumn field="label" header="Konto" />
+                        <PvColumn field="value" header="Celkem" />
+                        <PvColumn v-if="sheet.account_totals?.some(account => account.internal_seconds != null)" field="internal" header="Interně započteno" />
+                    </PvDataTable>
                 </template>
             </PvCard>
             <PvCard v-if="sheet.issues.length">
@@ -260,7 +548,7 @@
                 <template #content><ul><li v-for="issue in sheet.issues" :key="issue">{{ issue }}</li></ul></template>
             </PvCard>
             <PvMessage v-if="hasRole('manager') && ownSheet && selectedPerson?.attendance_enabled && !sheet.approved" severity="info">
-                Váš výkaz může schválit druhý vedoucí ve vašem týmu.
+                Váš výkaz může schválit jiný vedoucí ve vaší nebo nadřazené jednotce.
             </PvMessage>
             <PvCard v-if="canReview && !sheet.approved">
                 <template #title><h2>Schválení výkazu</h2></template>
@@ -268,7 +556,7 @@
                     <ul v-if="approvalBlockers.length">
                         <li v-for="blocker in approvalBlockers" :key="blocker">{{ blocker }}</li>
                     </ul>
-                    <PvButton v-if="sheet.pending" label="Vyřídit žádosti" outlined @click="changeTab('Žádosti')" />
+                    <PvButton v-if="sheet.pending" label="Vyřídit žádosti" outlined @click="showPendingRequests" />
                     <PvButton v-if="!approvalBlockers.length" label="Schválit výkaz" icon="pi pi-check" :disabled="busy" @click="approveSheet" />
                 </template>
             </PvCard>
@@ -284,19 +572,28 @@
                 <template #title><h2>Žádosti za období</h2></template>
                 <template #content>
                     <p v-if="hasRole('manager') && ownSheet && sheet.requests.some(r => r.status === 'pending')">
-                        Vaše žádosti může vyřídit druhý vedoucí ve vašem týmu.
+                        Vaše žádosti může vyřídit jiný vedoucí ve vaší nebo nadřazené jednotce.
                     </p>
                     <article v-for="request in sheet.requests" :key="request.id" class="record"
-                        :aria-label="(request.merged_work ? 'Spojení pracovních úseků' : labels[request.kind]) + ' · ' + requestPeriod(request)">
+                        :aria-label="requestTitle(request) + ' · ' + requestPeriod(request)">
                         <div class="record-info">
                             <div class="record-title">
-                                <strong>{{ request.merged_work ? 'Spojení pracovních úseků' : labels[request.kind] }}</strong>
+                                <strong>{{ requestTitle(request) }}</strong>
                                 <PvTag :severity="requestSeverities[request.status]" :value="labels[request.status]" />
-                                <PvTag v-if="request.kind === 'LEKAR' && request.status === 'approved'"
+                                <PvTag v-if="(request.requires_proof ?? request.kind === 'LEKAR') && request.status === 'approved'"
                                     :severity="request.has_proof ? 'success' : 'warn'"
-                                    :value="request.has_proof ? 'Propustka doložena' : 'Čeká na propustku'" />
+                                    :value="request.kind === 'LEKAR' ? (request.has_proof ? 'Propustka doložena' : 'Čeká na propustku') : (request.has_proof ? 'Doklad doložen' : 'Čeká na doklad')" />
                             </div>
-                            <div>{{ requestPeriod(request) }}</div>
+                            <div>{{ requestPeriod(request) }} <span v-if="request.scheduled_seconds != null"> · {{ hours(request.scheduled_seconds) }}</span></div>
+                            <p v-if="request.needs_actual && request.status === 'approved'">
+                                {{ request.actual_returned ? 'Vráceno k doplnění' : request.actual_from ? 'Skutečnost ' + moment(request.actual_from) + ' – ' + moment(request.actual_to) : 'Čeká na skutečný čas' }}
+                                <span v-if="request.actual_from && !request.actual_returned && (!request.requires_proof || request.has_proof)">
+                                    · {{ sheet.approved ? 'Potvrzeno ve výkazu' : 'K potvrzení ve výkazu' }}
+                                </span>
+                            </p>
+                            <p v-if="request.vacation_estimate?.length">Odhad {{ request.vacation_estimate.map(part => time(part.from) + '–' + time(part.to)).join(' · ') }}</p>
+                            <p v-if="request.vacation_seconds && !request.vacation_consent && request.status === 'pending'">Čeká na souhlas zaměstnance</p>
+                            <p v-if="request.replaces_from">Původní úsek {{ moment(request.replaces_from) }} – {{ moment(request.replaces_to) }}</p>
                             <p v-if="request.note && !request.merged_work">{{ request.note }}</p>
                             <p v-if="request.reason">Důvod rozhodnutí: {{ request.reason }}</p>
                             <div v-if="canUploadProof(request)" class="proof-upload">
@@ -308,9 +605,16 @@
                             </div>
                         </div>
                         <div class="record-actions">
+                            <PvButton v-if="request.needs_actual && request.status === 'approved' && (ownSheet || canReview)"
+                                label="Doplnit skutečnost" icon="pi pi-clock" size="small" outlined @click="openEditor({kind:'actual',id:request.id})" />
+                            <PvButton v-if="request.actual_from && !request.actual_returned && request.status === 'approved' && canReview"
+                                label="Vrátit skutečnost" icon="pi pi-replay" size="small" text @click="returnActual(request)" />
+                            <PvButton v-if="ownSheet && request.vacation_seconds && !request.vacation_consent && request.status === 'pending'"
+                                label="Potvrdit částečnou dovolenou" icon="pi pi-check" size="small"
+                                @click="submit('request-vacation-consent',{id:request.id},'Souhlas byl uložen.')" />
                             <PvButton v-if="request.has_proof && (ownSheet || managesPerson)" label="Zobrazit propustku" icon="pi pi-image" size="small" outlined
                                 :disabled="busy" @click="showProof(request.id)" />
-                            <template v-if="canReview">
+                            <template v-if="canReview && !request.replaces_from && !request.generated_holiday">
                                 <PvButton v-if="request.status === 'pending'" label="Schválit" size="small" :disabled="busy"
                                     @click="decide(request, 'approved')" />
                                 <PvButton v-if="request.status !== 'rejected'" :label="request.status === 'pending' ? 'Zamítnout' : 'Odvolat schválení'"
@@ -323,6 +627,24 @@
             </PvCard>
         </template>
 
+        <section v-if="tab === 'Organizační struktura'" aria-labelledby="page-title">
+            <PvToolbar aria-label="Nástroje organizační struktury" class="table-toolbar">
+                <template #start><PvButton label="Nová jednotka" icon="pi pi-plus" @click="openEditor({kind:'unit'})" /></template>
+            </PvToolbar>
+            <PvTreeTable :value="unitTree" aria-label="Organizační jednotky">
+                <PvColumn field="name" header="Organizační jednotka" expander />
+                <PvColumn header="Akce"><template #body="{node}">
+                    <PvButton as="a" :href="'?sekce=zamestnanci&amp;jednotka=' + node.data.id" text icon="pi pi-users"
+                        :aria-label="'Zaměstnanci jednotky ' + node.data.path" v-tooltip.top="'Zobrazit zaměstnance včetně podřízených jednotek'"
+                        @click.exact.prevent="openUnitDirectory(node.data.id)" />
+                    <PvButton icon="pi pi-pencil" v-tooltip.top="'Upravit jednotku'" :aria-label="'Upravit ' + node.data.path" text
+                        @click="openEditor({kind:'unit',id:node.data.id})" />
+                    <PvButton icon="pi pi-trash" v-tooltip.top="'Smazat jednotku'" :aria-label="'Smazat ' + node.data.path" text severity="danger"
+                        @click="deleteUnit(node.data)" />
+                </template></PvColumn>
+                <template #empty>Žádné organizační jednotky.</template>
+            </PvTreeTable>
+        </section>
         <section v-if="tab === 'Zaměstnanci'" aria-labelledby="page-title">
             <PvToolbar aria-label="Nástroje adresáře" class="table-toolbar">
                 <template #start>
@@ -335,11 +657,16 @@
                     </div>
                 </template>
             </PvToolbar>
+            <div v-if="unitFilter !== null" class="record-actions table-toolbar">
+                <span>{{ filteredUnit?.path ?? 'Neznámá jednotka' }} · včetně podřízených jednotek</span>
+                <PvButton icon="pi pi-filter-slash" aria-label="Zrušit filtr jednotky" v-tooltip.top="'Zrušit filtr jednotky'"
+                    text size="small" @click="openUnitDirectory(null)" />
+            </div>
             <div class="table-region" role="region" aria-label="Seznam zaměstnanců" tabindex="0">
                 <PvDataTable :value="directoryPeople" data-key="id" size="small" striped-rows :table-props="{'aria-label':'Zaměstnanci'}">
                     <PvColumn field="name" header="Jméno" sortable />
                     <PvColumn field="number" header="Osobní číslo" />
-                    <PvColumn field="team" header="Tým" sortable />
+                    <PvColumn field="org_unit_path" header="Organizační jednotka" sortable />
                     <PvColumn header="Role"><template #body="{data}">{{ roleNames(data.roles) }}</template></PvColumn>
                     <PvColumn header="Evidence">
                         <template #body="{data}">
@@ -461,6 +788,167 @@
 
 <input ref="cameraInput" type="file" accept="image/*" capture="environment" hidden @change="captureProof" />
 
+<PvDialog :visible="editor?.kind === 'holiday-rule'" @update:visible="dismissEditor" modal
+    :header="editor?.id ? 'Upravit pravidlo svátku' : 'Přidat pravidlo svátku'" class="editor-dialog" :closable="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="saveHolidayRule">
+        <label class="field">Kód svátku<PvInputText v-model.trim="holidayRuleForm.code" :readonly="!!editor?.id" required /></label>
+        <label class="field">Název svátku<PvInputText v-model.trim="holidayRuleForm.name" required /></label>
+        <div class="field"><label id="rule-account-label">Docházkové konto svátku</label>
+            <PvSelect v-model="holidayRuleForm.account" aria-labelledby="rule-account-label" :options="holidayRuleAccounts" option-label="name" option-value="code" /></div>
+        <div class="field"><label id="holiday-rule-type">Určení data</label>
+            <PvSelect v-model="holidayRuleForm.type" aria-labelledby="holiday-rule-type" :options="ruleTypes" option-label="label" option-value="value" /></div>
+        <div v-if="holidayRuleForm.type === 'fixed'" class="employee-fields">
+            <label class="field">Den v měsíci<PvInputText v-model="holidayRuleForm.day" type="number" min="1" max="31" required /></label>
+            <label class="field">Měsíc<PvInputText v-model="holidayRuleForm.month" type="number" min="1" max="12" required /></label>
+        </div>
+        <label v-else class="field">Posun ve dnech od velikonoční neděle
+            <PvInputText v-model="holidayRuleForm.offset" type="number" step="1" required aria-describedby="easter-offset-help" />
+            <small id="easter-offset-help">Velký pátek má posun −2, Velikonoční pondělí +1.</small>
+        </label>
+        <div class="employee-fields">
+            <label class="field">Platnost od<PvInputText v-model="holidayRuleForm.valid_from" type="date" required /></label>
+            <label class="field">Platnost do včetně<PvInputText v-model="holidayRuleForm.valid_to" type="date" :min="holidayRuleForm.valid_from" /></label>
+        </div>
+        <div class="record-actions"><PvButton type="submit" label="Uložit pravidlo" :loading="busy" />
+            <PvButton label="Zrušit" text @click="dismissEditor" /></div>
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'holiday-account'" @update:visible="dismissEditor" modal header="Nastavit konto svátků" class="editor-dialog" :closable="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submit('calendar-holiday-account', holidayForm, 'Konto svátků bylo nastaveno.')">
+        <label class="field">Platí od<PvInputText v-model="holidayForm.effective_on" type="date" required /></label>
+        <div class="field"><label id="holiday-account-label">Konto pro svátky</label>
+            <PvSelect v-model="holidayForm.account" aria-labelledby="holiday-account-label" :options="calendarAccounts" option-label="name" option-value="code" /></div>
+        <div class="record-actions"><PvButton type="submit" label="Uložit nastavení" :loading="busy" :disabled="!holidayForm.account" />
+            <PvButton label="Zrušit" text @click="dismissEditor" /></div>
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'calendar-day'" @update:visible="dismissEditor" modal :header="editor?.day ? 'Upravit den volna' : 'Přidat den volna'" class="editor-dialog" :closable="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submit('calendar-day', calendarDayForm, 'Den volna byl uložen.')">
+        <label class="field">Datum volna<PvInputText v-model="calendarDayForm.day" type="date" :readonly="!!editor?.day" required /></label>
+        <label class="field">Název dne<PvInputText v-model.trim="calendarDayForm.name" required /></label>
+        <div class="field"><label id="day-account-label">Konto dne volna</label>
+            <PvSelect v-model="calendarDayForm.account" aria-labelledby="day-account-label" :options="calendarAccounts" option-label="name" option-value="code" /></div>
+        <div class="record-actions"><PvButton type="submit" label="Uložit den volna" :loading="busy" :disabled="!calendarDayForm.account" />
+            <PvButton label="Zrušit" text @click="dismissEditor" /></div>
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'account'" @update:visible="dismissEditor" modal class="editor-dialog"
+    :header="editor?.code ? 'Upravit konto' : 'Nové konto'" :closable="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" novalidate @submit.prevent="saveAttendanceAccount">
+        <PvTabs v-model:value="accountPanel" scrollable>
+            <PvTabList>
+                <PvTab value="general">Základní údaje</PvTab>
+                <PvTab value="calculation">Započítání</PvTab>
+                <PvTab v-if="accountForm.behavior === 'work'" value="breaks">Přestávky</PvTab>
+                <PvTab value="payroll">Mzdy</PvTab>
+            </PvTabList>
+            <PvTabPanels>
+                <PvTabPanel value="general">
+                    <div class="stack" data-account-panel="general">
+                        <label class="field">Kód konta<PvInputText v-model.trim="accountForm.code" :readonly="!!editor?.code" required pattern="[A-Z][A-Z0-9_]{0,31}" /></label>
+                        <label class="field">Název konta<PvInputText v-model.trim="accountForm.name" required maxlength="160" /></label>
+                        <label class="field">Popis<PvInputText v-model.trim="accountForm.description" maxlength="2000" /></label>
+                        <label class="field">Pořadí<PvInputText :model-value="String(accountForm.position)" @update:model-value="accountForm.position = Number($event)"
+                            type="number" min="0" max="9999" required /></label>
+                        <div class="check-field"><PvCheckbox v-model="accountForm.active" input-id="account-active" binary :disabled="accountForm.system" />
+                            <label for="account-active">Aktivní</label></div>
+                    </div>
+                </PvTabPanel>
+                <PvTabPanel value="calculation">
+                    <div class="stack" data-account-panel="calculation">
+                        <div v-if="!accountForm.system" class="field">
+                            <label id="account-behavior-label">Započítání</label>
+                            <PvSelect v-model="accountForm.behavior" :options="behaviorOptions" option-label="label" option-value="value" aria-labelledby="account-behavior-label" />
+                        </div>
+                        <div class="check-field"><PvCheckbox v-model="accountForm.requires_proof" input-id="account-proof" binary :disabled="accountForm.system" />
+                            <label for="account-proof">Vyžadovat doklad</label></div>
+                        <fieldset class="stack model-day">
+                            <legend>Interní zaokrouhlování</legend>
+                            <label class="check-field"><PvCheckbox v-model="roundingEdit.change" binary /> Upravit pravidlo</label>
+                            <template v-if="roundingEdit.change">
+                                <div class="field"><label id="account-rounding-mode">Způsob</label>
+                                    <PvSelect v-model="roundingEdit.mode" aria-labelledby="account-rounding-mode" option-label="label" option-value="value"
+                                        :options="[{value:'off',label:'Vypnuto'},{value:'down',label:'Dolů'},{value:'up',label:'Nahoru'},{value:'nearest',label:'Na nejbližší násobek'}]" />
+                                </div>
+                                <label v-if="roundingEdit.mode !== 'off'" class="field">Krok v minutách<PvInputText v-model.number="roundingEdit.minutes" type="number" min="1" max="1440" required /></label>
+                                <label class="field">Platí od<PvInputText v-model="roundingEdit.effective_on" type="date" required /></label>
+                            </template>
+                        </fieldset>
+                    </div>
+                </PvTabPanel>
+                <PvTabPanel v-if="accountForm.behavior === 'work'" value="breaks">
+                    <div class="stack" data-account-panel="breaks">
+                        <label class="check-field"><PvCheckbox v-model="breakRuleEdit.change" binary /> Upravit pravidlo přestávky</label>
+                        <template v-if="breakRuleEdit.change">
+                            <label class="check-field"><PvCheckbox v-model="breakRuleEdit.enabled" binary /> Navrhovat přestávku</label>
+                            <label class="field">Platí od<PvInputText v-model="breakRuleEdit.effective_on" type="date" required /></label>
+                            <div v-if="breakRuleEdit.enabled" class="fields">
+                                <label class="field">Délka v minutách<PvInputText v-model.number="breakRuleEdit.minutes" type="number" min="30" max="180" required /></label>
+                                <label class="field">Navrhnout po (minuty)<PvInputText v-model.number="breakRuleEdit.preferred" type="number" min="1" :max="breakRuleEdit.deadline || 360" required /></label>
+                                <label class="field">Nejpozději po (minuty)<PvInputText v-model.number="breakRuleEdit.deadline" type="number" min="1" max="360" required /></label>
+                            </div>
+                        </template>
+                    </div>
+                </PvTabPanel>
+                <PvTabPanel value="payroll">
+                    <div class="stack" data-account-panel="payroll">
+                        <div v-if="accountForm.payroll_versions?.length">
+                            <strong>Platnost mzdových kódů</strong>
+                            <div v-for="version in accountForm.payroll_versions" :key="version.effective_on">
+                                {{ version.payroll_code }} · {{ version.effective_on === '0001-01-01' ? 'Výchozí' : 'Od ' + day(version.effective_on) }}
+                            </div>
+                        </div>
+                        <label class="field">Nový mzdový kód (nepovinný)<PvInputText v-model.trim="accountForm.payroll_code" maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,39}" /></label>
+                        <label v-if="accountForm.payroll_code" class="field">Účinnost mzdového kódu<PvInputText v-model="accountForm.effective_on" type="date" required /></label>
+                    </div>
+                </PvTabPanel>
+            </PvTabPanels>
+        </PvTabs>
+        <div class="record-actions">
+            <PvButton label="Uložit konto" type="submit" :loading="busy" />
+            <PvButton label="Zrušit" text @click="dismissEditor" :disabled="busy" />
+        </div>
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'model'" @update:visible="dismissEditor" modal class="editor-dialog"
+    :header="editor?.version ? 'Opravit verzi modelu' : editor?.id ? 'Nová verze modelu' : 'Nový pracovní model'" :closable="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="saveWorkModel">
+        <label class="field">Název modelu<PvInputText v-model.trim="modelForm.name" required maxlength="160" /></label>
+        <label class="field">Účinnost modelu<PvInputText v-model="modelForm.effective_on" type="date" required /></label>
+        <fieldset v-for="(shift, index) in modelForm.week" :key="index" class="model-day">
+            <legend>{{ weekdays[index] }}</legend>
+            <div class="check-field">
+                <PvCheckbox :input-id="'model-shift-' + index" :model-value="!!shift" binary
+                    @update:model-value="modelForm.week[index] = $event ? defaultShift() : null" />
+                <label :for="'model-shift-' + index">Pracovní den</label>
+            </div>
+            <div v-if="shift" class="fields">
+                <label class="field">Začátek<PvInputText v-model="shift.start" type="time" required /></label>
+                <label class="field">Konec<PvInputText v-model="shift.end" type="time" required /></label>
+                <label class="field">Přestávka od<PvInputText v-model="shift.break_start" type="time" /></label>
+                <label class="field">Přestávka do<PvInputText v-model="shift.break_end" type="time" /></label>
+            </div>
+        </fieldset>
+        <label v-if="editor?.version || (modelForm.id && modelForm.effective_on < today)" class="field">Důvod opravy
+            <PvInputText v-model.trim="modelForm.reason" required />
+        </label>
+        <p v-if="pendingModelImpact">{{ pendingModelImpact }}</p>
+        <div class="record-actions">
+            <PvButton label="Uložit model" type="submit" :loading="busy" />
+            <PvButton label="Zrušit" text @click="dismissEditor" :disabled="busy" />
+        </div>
+    </form>
+</PvDialog>
+
 <PvDialog :visible="editor?.kind === 'request'" @update:visible="dismissEditor" modal
     :header="ownSheet ? 'Nová žádost nebo oprava' : 'Nová žádost nebo oprava za ' + selectedPerson?.name"
     class="editor-dialog" :closable="!busy" :close-on-escape="!busy">
@@ -473,20 +961,21 @@
                     aria-labelledby="request-kind-label" option-label="label" option-value="value" />
             </div>
             <div class="field">
-                <label for="request-from">{{ form.kind === 'DOVOLENA' ? 'První den' : 'Datum začátku' }}</label>
+                <label for="request-from">{{ fullShiftRequest ? 'První den' : 'Datum začátku' }}</label>
                 <PvDatePicker v-model="form.from" input-id="request-from" date-format="yy-mm-dd" update-model-type="string"
+                    @update:model-value="value => {if (form.kind === 'DOVOLENA' && form.vacationMode !== 'full') form.to = value}"
                     :show-on-focus="false" show-icon required />
             </div>
-            <div v-if="form.kind !== 'DOVOLENA'" class="field">
+            <div v-if="!fullShiftRequest" class="field">
                 <label for="request-from-time">Čas začátku (ČR)</label>
                 <PvInputText id="request-from-time" v-model="form.fromTime" type="time" required />
             </div>
-            <div class="field">
-                <label for="request-to">{{ form.kind === 'DOVOLENA' ? 'Poslední den včetně' : 'Datum konce' }}</label>
+            <div v-if="form.kind !== 'DOVOLENA' || form.vacationMode === 'full'" class="field">
+                <label for="request-to">{{ fullShiftRequest ? 'Poslední den včetně' : 'Datum konce' }}</label>
                 <PvDatePicker v-model="form.to" input-id="request-to" date-format="yy-mm-dd" update-model-type="string"
                     :show-on-focus="false" show-icon required />
             </div>
-            <div v-if="form.kind !== 'DOVOLENA'" class="field">
+            <div v-if="!fullShiftRequest" class="field">
                 <label for="request-to-time">Čas konce (ČR)</label>
                 <PvInputText id="request-to-time" v-model="form.toTime" type="time" required />
             </div>
@@ -494,51 +983,231 @@
                 <label for="request-note">Poznámka (nepovinná)</label><PvInputText id="request-note" v-model="form.note" />
             </div>
         </div>
-        <p v-if="form.kind === 'LEKAR'">{{ ownSheet ? 'Propustku přiložíte' : 'Zaměstnanec přiloží propustku' }} po návratu ze schválené návštěvy.</p>
+        <template v-if="form.kind === 'DOVOLENA'">
+            <label class="field">Rozsah dovolené
+                <PvSelect v-model="form.vacationMode" option-label="label" option-value="value"
+                    :options="[{value:'full',label:'Celé směny'},{value:'half-start',label:'První polovina směny'},{value:'half-end',label:'Druhá polovina směny'},
+                        {value:'custom-start',label:'Počet hodin od začátku směny'},{value:'custom-end',label:'Počet hodin od konce směny'}]"
+                    @update:model-value="value => {if (value !== 'full') form.to = form.from}" />
+            </label>
+            <label v-if="form.vacationMode.startsWith('custom')" class="field">Délka (H:MM)<PvInputText v-model.trim="form.vacationHours" placeholder="4:00" required /></label>
+            <label v-if="ownSheet && form.vacationMode !== 'full'" class="check-field">
+                <PvCheckbox v-model="form.consent" binary /> Souhlasím s částečným čerpáním dovolené
+            </label>
+            <p v-if="requestEstimate?.intervals?.length">{{ requestEstimate.intervals.map(part => time(part.from) + '–' + time(part.to)).join(' · ') }}</p>
+        </template>
+        <p v-if="proofRequest">{{ ownSheet ? 'Doklad přiložíte' : 'Zaměstnanec přiloží doklad' }} po skončení schválené žádosti.</p>
+        <PvMessage v-if="requestEstimateError" severity="warn">{{ requestEstimateError }}</PvMessage>
+        <p v-if="requestEstimate" aria-live="polite">Plánované čerpání {{ hours(requestEstimate.seconds) }}</p>
         <div class="record-actions">
-            <PvButton type="submit" label="Odeslat žádost" icon="pi pi-send" :loading="busy" />
+            <PvButton type="submit" label="Odeslat žádost" icon="pi pi-send" :loading="busy" :disabled="fullShiftRequest && !requestEstimate" />
             <PvButton type="button" label="Zrušit" severity="secondary" text :disabled="busy" @click="dismissEditor" />
         </div>
     </form>
 </PvDialog>
 
+<PvDialog :visible="editor?.kind === 'duration'" @update:visible="dismissEditor" modal header="Upravit uznanou dobu" class="editor-dialog">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submitDuration">
+        <p>{{ time(durationEdit.from) }}–{{ time(durationEdit.to) }} · Vypočteno {{ hours(durationEdit.maximum) }}</p>
+        <label v-if="!editor?.stale" class="check-field"><PvCheckbox v-model="durationEdit.reset" binary /> Obnovit vypočtenou dobu</label>
+        <p v-else>Podklad úseku se změnil. Odeberte původní úpravu a případně nastavte dobu na aktuálním úseku.</p>
+        <label v-if="!durationEdit.reset" class="field">Uznaná doba (H:MM)<PvInputText v-model.trim="durationEdit.value" required /></label>
+        <label class="field">Důvod<PvInputText v-model.trim="durationEdit.reason" required /></label>
+        <PvButton type="submit" label="Uložit uznanou dobu" :loading="busy" />
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'break'" @update:visible="dismissEditor" modal header="Upravit přestávku" class="editor-dialog">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submitBreak">
+        <label class="field">Způsob evidence
+            <PvSelect v-model="breakEdit.mode" option-label="label" option-value="value"
+                :options="[{value:'record',label:'Zaznamenat skutečnou přestávku'},{value:'none',label:'Přestávka neproběhla'},...(breakEdit.id ? [{value:'ack',label:'Zachovat doloženou přestávku s nesrovnalostí'}] : []),{value:'auto',label:'Použít automatický návrh'}]" />
+        </label>
+        <template v-if="breakEdit.mode === 'record'">
+            <label class="field">Od<PvInputText v-model="breakEdit.from" type="time" required /></label>
+            <label class="field">Do<PvInputText v-model="breakEdit.to" type="time" required /></label>
+        </template>
+        <label class="field">Důvod<PvInputText v-model.trim="breakEdit.reason" required /></label>
+        <PvButton type="submit" label="Uložit přestávku" :loading="busy" />
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'actual'" @update:visible="dismissEditor" modal header="Doplnit skutečnost" class="editor-dialog">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submitActual">
+        <label class="field">Skutečný odchod<PvInputText v-model="actualEdit.from" type="datetime-local" required /></label>
+        <label class="field">Skutečný návrat<PvInputText v-model="actualEdit.to" type="datetime-local" required /></label>
+        <label v-if="!ownSheet" class="field">Důvod zastoupení<PvInputText v-model.trim="actualEdit.reason" required /></label>
+        <div v-if="ownSheet && actualProofRequired" class="record-actions">
+            <PvFileUpload mode="basic" choose-label="Vybrat fotografii" choose-icon="pi pi-image"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif" custom-upload auto :disabled="busy"
+                @uploader="selectProof(editor.id, $event)" />
+            <PvButton v-if="mobileCamera" type="button" label="Vyfotit propustku" icon="pi pi-camera" outlined @click="openCamera(editor.id)" />
+            <span v-if="actualEdit.photo" role="status">Propustka připravena k uložení</span>
+        </div>
+        <PvButton type="submit" label="Uložit skutečný čas" :loading="busy" />
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'holiday-control'" @update:visible="dismissEditor" modal header="Kontrola svátků a firemního volna" class="editor-dialog">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submitHolidayControl">
+        <p>{{ editor?.employee ? selectedPerson?.name : 'Vaše organizační větev' }}</p>
+        <label class="field">Od<PvInputText v-model="holidayControl.from" type="date" required /></label>
+        <label class="field">Do včetně<PvInputText v-model="holidayControl.to" type="date" required /></label>
+        <p v-if="holidayControl.token">Přidáno {{ holidayControl.added }} · Změněno {{ holidayControl.changed }} · Odebráno {{ holidayControl.removed }}</p>
+        <PvButton type="submit" :label="holidayControl.token ? 'Potvrdit kontrolní běh' : 'Zobrazit náhled'" :loading="busy" />
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'work'" @update:visible="dismissEditor" modal
+    :header="editor?.row === undefined ? 'Přidat konto' : 'Upravit pracovní úsek'"
+    class="editor-dialog" :closable="!busy" :close-on-escape="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submitWorkCorrection">
+        <p>{{ selectedPerson?.name }}</p>
+        <div v-if="editor?.row === undefined" class="field">
+            <label id="entry-kind-label" for="entry-kind">Konto</label>
+            <PvSelect v-model="workEdit.kind" input-id="entry-kind" :options="requestKinds" aria-labelledby="entry-kind-label"
+                option-label="label" option-value="value" fluid />
+        </div>
+        <div v-if="editor?.row === undefined" class="field">
+            <label for="work-edit-day">Den</label>
+            <PvDatePicker v-model="workEdit.day" input-id="work-edit-day" date-format="yy-mm-dd" update-model-type="string"
+                :show-on-focus="false" show-icon required fluid />
+        </div>
+        <p v-else>{{ day(workEdit.day) }}</p>
+        <template v-if="fullShiftEntry">
+            <PvMessage v-if="requestEstimateError" severity="warn">{{ requestEstimateError }}</PvMessage>
+            <p v-if="requestEstimate" aria-live="polite">Plánované čerpání {{ hours(requestEstimate.seconds) }}</p>
+        </template>
+        <template v-else>
+            <p>Časové pásmo Praha</p>
+            <div class="field">
+                <label for="work-edit-start">Začátek</label>
+                <PvInputText id="work-edit-start" v-model="workEdit.from" type="time" step="1" required fluid />
+            </div>
+            <div class="field">
+                <label for="work-edit-end">Konec</label>
+                <PvInputText id="work-edit-end" v-model="workEdit.to" type="time" step="1"
+                    :disabled="workEdit.untilMidnight" :required="!workEdit.untilMidnight" fluid />
+            </div>
+            <div class="check-field">
+                <PvCheckbox v-model="workEdit.untilMidnight" input-id="work-edit-midnight" binary />
+                <label for="work-edit-midnight">Do konce dne</label>
+            </div>
+        </template>
+        <p v-if="proofEntry">Zaměstnanec přiloží doklad po skončení absence nebo práce.</p>
+        <label class="field" for="work-edit-reason">Důvod úpravy<PvInputText id="work-edit-reason" v-model.trim="workEdit.reason" required maxlength="4000" fluid /></label>
+        <div class="record-actions">
+            <PvButton type="submit" :label="editor?.row === undefined ? 'Zapsat konto' : 'Uložit úsek'" :loading="busy"
+                :disabled="!workEdit.reason || !workEdit.day || (fullShiftEntry && !requestEstimate)" />
+            <PvButton type="button" label="Zrušit" text :disabled="busy" @click="dismissEditor" />
+        </div>
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'unit'" @update:visible="dismissEditor" modal
+    :header="unitEdit.id ? 'Upravit jednotku' : 'Nová jednotka'" class="editor-dialog" :closable="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submit('org-unit', unitEdit, 'Jednotka byla uložena.')">
+        <label class="field">Název jednotky<PvInputText v-model.trim="unitEdit.name" required autofocus fluid /></label>
+        <div class="field"><label id="unit-parent-label" for="unit-parent">Nadřazená jednotka</label>
+            <PvSelect v-model="unitEdit.parent_id" input-id="unit-parent" aria-labelledby="unit-parent-label" :options="parentOptions" option-value="id"
+                option-label="path" filter show-clear placeholder="Nejvyšší úroveň" fluid />
+        </div>
+        <PvMessage v-if="originalUnit && originalUnit.parent_id !== unitEdit.parent_id" severity="warn">
+            Přesouváte {{ originalUnit.path }} do umístění {{ newUnitPath }}. Nové vedení získá přístup i ke starším výkazům a propustkám celé větve.
+        </PvMessage>
+        <div class="record-actions">
+            <PvButton type="submit" :label="originalUnit && originalUnit.parent_id !== unitEdit.parent_id ? 'Potvrdit přesun' : 'Uložit jednotku'" :loading="busy" />
+            <PvButton label="Zrušit" text :disabled="busy" @click="dismissEditor" />
+        </div>
+    </form>
+</PvDialog>
 <PvDialog :visible="editor?.kind === 'employee'" @update:visible="dismissEditor" modal :header="edit.id ? 'Upravit zaměstnance' : 'Nový zaměstnanec'" class="editor-dialog"
     :closable="!busy" :close-on-escape="!busy">
     <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
-    <form class="stack" @submit.prevent="submit('employee', edit, 'Zaměstnanec byl uložen.')">
-        <div class="employee-fields">
-            <label class="field" for="employee-name">Jméno<PvInputText id="employee-name" v-model="edit.name" autofocus required fluid /></label>
-            <label class="field" for="employee-number">
-                {{ edit.attendance_enabled ? 'Osobní číslo' : 'Osobní číslo (nepovinné)' }}
-                <PvInputText id="employee-number" v-model.trim="edit.number" :required="edit.attendance_enabled" fluid />
-            </label>
-            <label class="field">Uživatelské jméno<PvInputText v-model="edit.login" required fluid /></label>
-            <label class="field">Tým<PvInputText v-model="edit.team" required fluid /></label>
-            <fieldset class="role-options">
-                <legend>Role</legend>
-                <div v-for="role in roles" :key="role.value" class="check-field">
-                    <PvCheckbox v-model="edit.roles" :input-id="'role-' + role.value" :value="role.value" />
-                    <label :for="'role-' + role.value">{{ role.label }}</label>
-                </div>
-            </fieldset>
-            <div class="check-field attendance-option">
-                <PvCheckbox v-model="edit.attendance_enabled" input-id="employee-attendance" binary />
-                <label for="employee-attendance">Zpracovávat docházku</label>
-            </div>
-            <label class="field">Doménový SID<PvInputText v-model="edit.sid" :readonly="!!edit.id && !!people.find(p => p.id === edit.id)?.sid" fluid /></label>
-            <div class="field">
-                <label for="employee-starts">Začátek evidence</label>
-                <PvDatePicker v-model="edit.starts" input-id="employee-starts" date-format="yy-mm-dd" update-model-type="string"
-                    :show-on-focus="false" show-icon required fluid />
-            </div>
-            <div class="field">
-                <label for="employee-ends">Konec evidence</label>
-                <PvDatePicker v-model="edit.ends" input-id="employee-ends" date-format="yy-mm-dd" update-model-type="string"
-                    :show-on-focus="false" show-icon fluid />
-            </div>
-        </div>
+    <form class="stack" novalidate @submit.prevent="submitEmployee">
+        <PvTabs v-model:value="employeePanel">
+            <PvTabList><PvTab value="general">Základní údaje</PvTab><PvTab value="access">Přístup</PvTab><PvTab value="attendance">Docházka</PvTab></PvTabList>
+            <PvTabPanels>
+                <PvTabPanel value="general">
+                    <div class="employee-fields">
+                        <label class="field" for="employee-name">Jméno<PvInputText id="employee-name" v-model="edit.name" autofocus required fluid /></label>
+                        <label class="field" for="employee-number">
+                            {{ edit.attendance_enabled ? 'Osobní číslo' : 'Osobní číslo (nepovinné)' }}
+                            <PvInputText id="employee-number" v-model.trim="edit.number" :required="edit.attendance_enabled" fluid />
+                        </label>
+                        <div class="field"><label id="employee-unit-label" for="employee-unit">Organizační jednotka</label>
+                            <PvTreeSelect input-id="employee-unit" v-model="employeeUnit" :options="unitTree" filter filter-placeholder="Hledat jednotku" fluid
+                                aria-labelledby="employee-unit-label" placeholder="Vyberte jednotku">
+                                <template #value>{{ units.find(u => u.id === edit.org_unit_id)?.path || 'Vyberte jednotku' }}</template>
+                            </PvTreeSelect>
+                        </div>
+                    </div>
+                </PvTabPanel>
+                <PvTabPanel value="access">
+                    <div class="employee-fields">
+                        <label class="field">Uživatelské jméno<PvInputText id="employee-login" v-model="edit.login" required fluid /></label>
+                        <fieldset class="role-options">
+                            <legend>Role</legend>
+                            <div v-for="role in roles" :key="role.value" class="check-field">
+                                <PvCheckbox v-model="edit.roles" :input-id="'role-' + role.value" :value="role.value" />
+                                <label :for="'role-' + role.value">{{ role.label }}</label>
+                            </div>
+                        </fieldset>
+                    </div>
+                </PvTabPanel>
+                <PvTabPanel value="attendance">
+                    <div class="employee-fields">
+                        <div class="check-field attendance-option">
+                            <PvCheckbox v-model="edit.attendance_enabled" input-id="employee-attendance" binary />
+                            <label for="employee-attendance">Zpracovávat docházku</label>
+                        </div>
+                        <label class="field sid-field">Doménový SID<PvInputText v-model="edit.sid" :readonly="!!edit.id && !!people.find(p => p.id === edit.id)?.sid" fluid /></label>
+                        <div class="field">
+                            <label for="employee-starts">Začátek evidence</label>
+                            <PvDatePicker v-model="edit.starts" input-id="employee-starts" date-format="yy-mm-dd" update-model-type="string"
+                                :show-on-focus="false" show-icon required fluid />
+                        </div>
+                        <div class="field">
+                            <label for="employee-ends">Konec evidence</label>
+                            <PvDatePicker v-model="edit.ends" input-id="employee-ends" date-format="yy-mm-dd" update-model-type="string"
+                                :show-on-focus="false" show-icon fluid />
+                        </div>
+                        <div v-if="edit.attendance_enabled" class="model-assignment stack">
+                            <h2>Pracovní model</h2>
+                            <p v-if="employeeModelsLoading">Načítám pracovní modely…</p>
+                            <p v-else-if="!employeeAssignments.length">Bez přiřazení</p>
+                            <div v-for="assignment in employeeAssignments" :key="assignment.effective_on" class="record-actions">
+                                <span>{{ day(assignment.effective_on) }} · {{ employeeModels.find(item => item.id === assignment.model)?.name }}</span>
+                                <PvButton icon="pi pi-pencil" text :aria-label="'Opravit přiřazení od ' + day(assignment.effective_on)"
+                                    v-tooltip.top="'Opravit přiřazení'" @click="editAssignment(assignment)" />
+                            </div>
+                            <div class="fields">
+                                <div class="field"><label id="employee-model-label" for="employee-model">Pracovní model</label>
+                                    <PvSelect v-model="employeeModelEdit.model" input-id="employee-model" aria-labelledby="employee-model-label" :options="employeeModels"
+                                        option-value="id" option-label="name" show-clear placeholder="Vyberte pracovní model" :loading="employeeModelsLoading" />
+                                </div>
+                                <label v-if="employeeModelEdit.model !== null" class="field">Platí od
+                                    <PvDatePicker v-model="employeeModelEdit.effective_on" input-id="employee-model-date"
+                                        date-format="yy-mm-dd" update-model-type="string" show-icon :show-on-focus="false" />
+                                </label>
+                            </div>
+                            <label v-if="employeeAssignmentReason" class="field" for="employee-model-reason">Důvod opravy
+                                <PvInputText id="employee-model-reason" v-model.trim="employeeModelEdit.reason" />
+                            </label>
+                            <p v-if="pendingModelImpact">{{ pendingModelImpact }}</p>
+                        </div>
+                    </div>
+                </PvTabPanel>
+            </PvTabPanels>
+        </PvTabs>
         <div class="record-actions">
-            <PvButton type="submit" label="Uložit zaměstnance" :loading="busy" :disabled="!edit.roles.length" />
+            <PvButton type="submit" label="Uložit zaměstnance" :loading="busy"  />
             <PvButton type="button" label="Zrušit" severity="secondary" text :disabled="busy" @click="dismissEditor" />
         </div>
     </form>
@@ -592,6 +1261,7 @@
     <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
     <form v-if="confirmation" class="stack confirmation-form" @submit.prevent="confirmAction">
         <p>{{ confirmation.description }}</p>
+        <p v-if="confirmation.details">{{ confirmation.details }}</p>
         <div v-if="confirmation.reasonRequired || confirmation.reasonLabel" class="field">
             <label for="decision-reason">{{ confirmation.reasonLabel ?? 'Důvod rozhodnutí' }}</label>
             <PvInputText id="decision-reason" v-model="decisionReason" :required="confirmation.reasonRequired" fluid />

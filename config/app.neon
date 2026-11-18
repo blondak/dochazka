@@ -55,8 +55,17 @@ services:
     - Dochazka\Identity\SetupController
     - Dochazka\Identity\CreateAdminCommand
     - Dochazka\Infrastructure\MigrateCommand(directory: %projectRoot%/migrations)
+    - Dochazka\Staff\OrgUnits
+    - Dochazka\Staff\OrgUnitController
     - Dochazka\Staff\Directory
     - Dochazka\Staff\StaffController
+    - Dochazka\Attendance\Catalog
+    - Dochazka\Attendance\FillHolidaysCommand
+    - Dochazka\Attendance\HolidayEntries
+    - Dochazka\Attendance\HolidayRules
+    - Dochazka\Attendance\AttendanceCalendar
+    - Dochazka\Attendance\WorkModels
+    - Dochazka\Attendance\CatalogController
     - Dochazka\Attendance\Timesheets
     - Dochazka\Attendance\DailyAttendance
     - Dochazka\Attendance\MergePolicy

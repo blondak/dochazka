@@ -6,12 +6,13 @@ namespace Dochazka\Identity;
 
 use Dochazka\Http\Problem;
 use Dochazka\Staff\Employee;
+use Dochazka\Staff\OrgUnits;
 use Doctrine\ORM\EntityManagerInterface;
 
 final class InitialSetup
 {
     public function __construct(
-        private EntityManagerInterface $em,
+        private OrgUnits $units, private EntityManagerInterface $em,
         #[\SensitiveParameter] private string $token,
     ) {}
 
@@ -40,7 +41,7 @@ final class InitialSetup
             throw new Problem('Heslo musí mít 12 až 72 bajtů.');
         }
 
-        $this->em->persist(Employee::administrator($login, $name, $password));
+        $this->em->persist(Employee::administrator($login, $name, $password, $this->units->adminUnit()));
         return ['ok' => true];
     }
 }

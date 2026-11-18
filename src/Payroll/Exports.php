@@ -48,7 +48,7 @@ final class Exports
         $people = $hashes = [];
         $csv = $closeBy !== null ? fopen('php://temp', 'w+') : null;
         if ($csv !== null) {
-            fputcsv($csv, ['osobni_cislo','datum','druh','od','do'], ';', '"', '', "\r\n");
+            fputcsv($csv, ['osobni_cislo','datum','druh','od','do','sekundy'], ';', '"', '', "\r\n");
         }
         foreach ($this->roster($month) as $person) {
             $s = $this->sheets->sheet($person,$month);
@@ -58,7 +58,7 @@ final class Exports
             if ($csv !== null) {
                 EmployeeNumber::validate($person['number']);
                 foreach ($s['rows'] as $r) {
-                    fputcsv($csv, [$person['number'], $r['day'], $r['kind'], $r['from'], $r['to']], ';', '"', '', "\r\n");
+                    fputcsv($csv, [$person['number'], $r['day'], $r['payroll_code'], $r['from'], $r['to'], $r['seconds']], ';', '"', '', "\r\n");
                 }
             }
         }

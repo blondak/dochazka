@@ -67,7 +67,7 @@ samba-tool group addmembers Dochazka-PC 'PILOT01$'
 5. Doplňte k proměnným centrály do `.env` následující hodnoty a spusťte bránu. Adresy jsou příklady. [Ověření Kerberos v Apache](https://github.com/gssapi/mod_auth_gssapi) · [Autorizace skupin v LDAP](https://httpd.apache.org/docs/2.4/mod/mod_authnz_ldap.html)
 
 ~~~dotenv
-GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.4
+GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.5
 GPO_REALM=EXAMPLE.CZ
 GPO_LDAP_HOST=dc.example.cz
 GPO_BASE_DN=DC=example,DC=cz
@@ -94,7 +94,7 @@ Pro vlastní sestavení ze zdrojového kódu použijte ve stejném projektu `doc
 ~~~powershell
 $ErrorActionPreference = 'Stop'
 
-$package = '\\server\dochazka\agent-v0.0.4'
+$package = '\\server\dochazka\agent-v0.0.5'
 $logDirectory = Join-Path $env:ProgramFiles 'DochazkaAgent\Logs'
 $log = Join-Path $logDirectory 'startup.log'
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
@@ -104,7 +104,7 @@ $installParams = @{
     Server           = 'https://dochazka.example.cz'
     EnrollmentServer = 'https://enroll.example.cz'
     PackagePath      = $package
-    Release          = '0.0.4'
+    Release          = '0.0.5'
 }
 
 try {
@@ -118,14 +118,16 @@ try {
 
 Průběh instalace najdete v souboru `%ProgramFiles%\DochazkaAgent\Logs\startup.log`.
 
-3. Povolte úspěšné audity **Logon** i **Logoff** v Advanced Audit Policy. Restartujte pilotní stanici, ověřte službu `DochazkaAgent` a položku `PILOT01$@EXAMPLE.CZ` na kartě **Zařízení**. Proveďte místní interaktivní přihlášení a odhlášení již evidovaného zaměstnance. Po odeslání další dávky musí výkaz ukázat interval mezi těmito událostmi. Služba sleduje interaktivní a cached-interactive události 4624/4634, spánek a probuzení 42/107 v protokolu Kernel-Power. Zámek obrazovky sám směnu neukončuje. Při odpojení sítě se data ukládají do místní SQLite fronty. Po návratu spojení je agent znovu odešle.
+3. Povolte úspěšné audity **Logon** i **Logoff** v Advanced Audit Policy. Restartujte pilotní stanici, ověřte službu `DochazkaAgent` a položku `PILOT01$@EXAMPLE.CZ` na kartě **Zařízení**. Proveďte místní interaktivní přihlášení a odhlášení již evidovaného zaměstnance. Po odeslání další dávky musí výkaz ukázat interval mezi těmito událostmi. Služba páruje místní interaktivní přihlášení k ploše z události 4624 s odhlášením 4634. Rozlišuje přihlašovací proces Windows od spuštění programu pod jiným účtem a spojené tokeny správce eviduje jako jednu relaci. Spánek a probuzení čte z událostí 42/107 v protokolu Kernel-Power. Zámek obrazovky sám směnu neukončuje. Při odpojení sítě se data ukládají do místní SQLite fronty. Po návratu spojení je agent znovu odešle. Na pilotní stanici vyzkoušejte přímé přihlášení běžného účtu i správce, potom **Spustit jako správce** s potvrzením i se zadáním účtu správce a **Spustit jako jiný uživatel**. Po skončení programu má ve výkazu zůstat původní otevřená relace až do odhlášení z Windows.
 4. Pokud chybí vazba na zaměstnance, centrála na kartě **Zařízení** zobrazí upozornění s nepřiřazeným SID. Doplňte jej v adresáři. Agent doručení zopakuje každou hodinu a pokouší se o přiřazení po dobu 30 dnů od prvního odmítnutí. Chyby sběru a spojení najdete také v aplikačním protokolu Windows pod zdrojem `DochazkaAgent`.
+
+Při řízeném vypnutí Windows se služba pokusí načíst poslední události včetně odhlášení a odeslat čekající dávky. Na ukončení služby je vyhrazeno nejvýše pět sekund a jeden požadavek má limit dvě sekundy. Nepotvrzené dávky zůstanou ve frontě. Události zapsané později načte agent při dalším startu z protokolu Windows.
 
 ## Servisní přihlášení
 
-Nasaďte centrálu `docker-v0.0.4` a balíček agenta `agent-v0.0.4` se změněným `-Release`. Instalátor nastaví spuštění ikony **Docházka** při interaktivním přihlášení. Pokud je ikona skrytá, otevřete skryté ikony v oznamovací oblasti Windows.
+Nasaďte centrálu `docker-v0.0.5` a balíček agenta `agent-v0.0.5` se změněným `-Release`. Instalátor nastaví spuštění ikony **Docházka** při interaktivním přihlášení. Pokud je ikona skrytá, otevřete skryté ikony v oznamovací oblasti Windows.
 
-Po samostatném místním přihlášení pod účtem zaměstnance zvolte **Označit relaci jako servisní**. Po doručení přihlášení do centrály ikona otevře jednorázový odkaz. Potvrďte celou relaci vlastním účtem správce pomocí passkey nebo hesla. Pokud agent ještě přihlášení neodeslal, zopakujte akci po další dávce. Zpětně upravíte příznak jako správce ve **Výkazu** pod **Relace počítače**.
+Po samostatném místním přihlášení pod účtem zaměstnance zvolte **Označit relaci jako servisní**. Po doručení přihlášení do centrály ikona otevře jednorázový odkaz. Potvrďte celou relaci vlastním účtem správce pomocí passkey nebo hesla. Pokud agent ještě přihlášení neodeslal, zopakujte akci po další dávce. Zpětně upravíte příznak jako správce ve **Výkazu** na záložce **Relace počítače**.
 
 Servisní relace zůstává uložená a v běžném výkazu se zobrazí po zapnutí **Zobrazit servisní relace**. Evidované servisní úseky se vynechávají ze součtu odpracované doby a z mzdového exportu.
 

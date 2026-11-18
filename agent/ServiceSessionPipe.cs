@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
+using Microsoft.Data.Sqlite;
 using Microsoft.Win32.SafeHandles;
 
 namespace Dochazka.Agent;
@@ -16,7 +17,7 @@ internal static class ServiceSessionPipe
     private const string Name = "DochazkaAgent.ServiceSession";
     private const PipeAccessRights ClientRights = PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize;
 
-    public static async Task Listen(Func<Settings> loadSettings, CancellationToken stop)
+    public static async Task Listen(Func<Settings> loadSettings, string journalPath, CancellationToken stop)
     {
         var access = new PipeSecurity();
         access.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.NetworkSid, null), ClientRights, AccessControlType.Deny));
@@ -35,7 +36,7 @@ internal static class ServiceSessionPipe
                 var command = new byte[1];
                 await pipe.ReadExactlyAsync(command, request.Token);
                 if (command[0] != 1) continue;
-                var result = await Issue(pipe, loadSettings, request.Token);
+                var result = await Issue(pipe, loadSettings, journalPath, request.Token);
                 await pipe.WriteAsync(Encoding.ASCII.GetBytes(result), request.Token);
             }
             catch (IOException) { }
@@ -60,7 +61,7 @@ internal static class ServiceSessionPipe
         return IsCode(code) ? code : throw new InvalidDataException();
     }
 
-    private static async Task<string> Issue(NamedPipeServerStream pipe, Func<Settings> loadSettings, CancellationToken stop)
+    private static async Task<string> Issue(NamedPipeServerStream pipe, Func<Settings> loadSettings, string journalPath, CancellationToken stop)
     {
         try
         {
@@ -76,18 +77,26 @@ internal static class ServiceSessionPipe
             if (sid == null || logon == null || !sid.StartsWith("S-1-5-21-", StringComparison.Ordinal)) return "2";
             var boot = Journal.Boot(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
             if (boot == "unknown") return "2";
+            string session;
+            using (var db = new SqliteConnection(new SqliteConnectionStringBuilder
+                { DataSource = journalPath, Mode = SqliteOpenMode.ReadOnly, DefaultTimeout = 2 }.ToString()))
+            {
+                db.Open();
+                session = new Journal(db).ResolveSessionKey(boot + "." + logon, sid);
+            }
             var settings = loadSettings();
             using var http = new HttpClient(settings.CreateHandler()) { Timeout = TimeSpan.FromSeconds(10) };
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
             using var response = await http.PostAsJsonAsync(settings.Server.TrimEnd('/') + "/api/v1/service-session-link",
-                new { sid, session = boot + "." + logon }, stop);
+                new { sid, session }, stop);
             if (response.StatusCode == HttpStatusCode.Conflict) return "1";
             if (!response.IsSuccessStatusCode) return "2";
             var result = await response.Content.ReadFromJsonAsync<SessionLink>(stop);
             return result?.Code is { } code && IsCode(code) ? "0" + code : "2";
         }
         catch (Exception error) when (error is IOException or HttpRequestException or System.Text.Json.JsonException
-            or UnauthorizedAccessException or InvalidOperationException or OperationCanceledException or System.ComponentModel.Win32Exception)
+            or UnauthorizedAccessException or InvalidOperationException or OperationCanceledException or System.ComponentModel.Win32Exception
+            or SqliteException)
         {
             return "2";
         }

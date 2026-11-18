@@ -12,7 +12,7 @@ def check_accounts(connect, client_class, admin, password):
     today = datetime.now(ZoneInfo("Europe/Prague")).date()
     login = "session-test"
     profile = {
-        "name": "Test relací", "login": login, "team": "T",
+        "name": "Test relací", "login": login, "org_unit_id": admin.call("org-units")[0]["id"],
         "roles": ["employee"], "attendance_enabled": False, "starts": today.isoformat(),
     }
     admin.call("employee", dict(profile, starts="2024-02-30"), 422)

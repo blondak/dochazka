@@ -26,7 +26,9 @@ class Employee
     #[ORM\Column(name: 'attendance_enabled')] public bool $attendanceEnabled = true;
     #[ORM\Column(name: 'archived_on', type: 'date_immutable', nullable: true)]
     public ?DateTimeImmutable $archivedOn = null;
-    #[ORM\Column(type: 'text')] public string $team;
+    #[ORM\ManyToOne(targetEntity: OrgUnit::class)]
+    #[ORM\JoinColumn(name: 'org_unit_id', nullable: false)]
+    public OrgUnit $orgUnit;
     #[ORM\Column(type: 'text', unique: true, nullable: true)] public ?string $sid = null;
     #[ORM\Column(type: 'date_immutable')] public DateTimeImmutable $starts;
     #[ORM\Column(type: 'date_immutable', nullable: true)] public ?DateTimeImmutable $ends = null;
@@ -34,14 +36,14 @@ class Employee
     #[ORM\Column(name: 'invite_until', type: 'datetimetz_immutable', nullable: true)]
     public ?DateTimeImmutable $inviteUntil = null;
 
-    public static function administrator(string $login, string $name, #[\SensitiveParameter] string $password): self
+    public static function administrator(string $login, string $name, #[\SensitiveParameter] string $password, OrgUnit $unit): self
     {
         $employee = new self;
         $employee->login = $login;
         $employee->name = $name;
         $employee->roles = ['admin'];
         $employee->attendanceEnabled = false;
-        $employee->team = 'IT';
+        $employee->orgUnit = $unit;
         $employee->passwordHash = password_hash($password, PASSWORD_DEFAULT);
         $employee->credentialsReady = true;
         $employee->starts = new DateTimeImmutable('today');
@@ -56,7 +58,7 @@ class Employee
             'roles' => $this->roles,
             'attendance_enabled' => $this->attendanceEnabled,
             'archived_on' => $this->archivedOn?->format('Y-m-d'),
-            'team' => $this->team,
+            'org_unit_id' => $this->orgUnit->id,
             'number' => $this->number,
             'sid' => $this->sid,
         ];

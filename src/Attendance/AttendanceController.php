@@ -20,6 +20,33 @@ final class AttendanceController implements IController
         private MergePolicy $mergePolicy,
     ) {}
 
+    #[Path('/holiday-control'), Method('POST'), LoggedIn, Role('manager')]
+    #[OpenApi(<<<'NEON'
+operationId: holidayControl
+summary: "Náhled nebo potvrzení kontrolního běhu svátků a firemního volna"
+tags: [Evidence]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+security: [{session: []}]
+requestBody:
+    required: true
+    content:
+        application/json:
+            schema:
+                type: object
+                required: [from, to]
+                properties:
+                    employee: {type: integer}
+                    from: {type: string, format: date}
+                    to: {type: string, format: date}
+                    token: {type: string}
+responses:
+    '200': {description: Počet přidaných, změněných a odebraných zápisů a otisk náhledu}
+NEON)]
+    public function holidayControl(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->service->holidayControl(...));
+    }
+
     #[Path('/daily-attendance'), Method('POST')]
     #[OpenApi(<<<'NEON'
 operationId: dailyAttendance
@@ -68,6 +95,105 @@ NEON)]
     public function merge(ApiRequest $request, ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, $this->service->merge(...), maxBytes: 8192);
+    }
+
+    #[Path('/save-work-row'), Method('POST')]
+    #[OpenApi(<<<'NEON'
+operationId: saveWorkRow
+summary: "Vedoucí zapíše konto do výkazu nebo upraví pracovní úsek. Zápis se ihned schválí a uloží se důvod."
+tags: [Evidence]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+security: [{session: []}]
+requestBody:
+    required: true
+    content:
+        application/json:
+            schema:
+                type: object
+                required: [employee, month, fingerprint, day, reason]
+                properties:
+                    employee: {type: integer}
+                    month: {type: string}
+                    fingerprint: {type: string}
+                    day: {type: string, format: date}
+                    row: {type: integer, minimum: 0, description: "Index upravovaného úseku. Při vložení se vynechá."}
+                    kind: {type: string, default: PRACE, description: "Aktivní konto. Úprava existujícího úseku používá PRACE."}
+                    from: {type: string, description: "Povinné pro časové konto.", example: '08:05'}
+                    to: {type: string, description: "Povinné pro časové konto. Pro konec dne použijte 24:00.", example: '16:00'}
+                    reason: {type: string, minLength: 1}
+responses:
+    '200': {$ref: '#/components/responses/Activate'}
+    '401': {$ref: '#/components/responses/Error401'}
+    '403': {$ref: '#/components/responses/Error403'}
+    '409': {$ref: '#/components/responses/Error409'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    #[LoggedIn, Role('manager')]
+    public function saveWork(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->service->saveWork(...), maxBytes: 8192);
+    }
+
+    #[Path('/attendance-break'), Method('POST'), LoggedIn, Role('manager')]
+    #[OpenApi(<<<'NEON'
+operationId: adjustBreak
+summary: "Opravit nebo doložit přestávku"
+tags: [Evidence]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+security: [{session: []}]
+requestBody:
+    required: true
+    content:
+        application/json:
+            schema:
+                type: object
+                required: [employee, month, fingerprint, reason]
+                properties:
+                    employee: {type: integer}
+                    month: {type: string}
+                    fingerprint: {type: string}
+                    reason: {type: string}
+                    day: {type: string, format: date}
+                    mode: {type: string, enum: [record, none, ack, auto]}
+                    id: {type: integer}
+                    from: {type: string}
+                    to: {type: string}
+responses:
+    '200': {$ref: '#/components/responses/Activate'}
+NEON)]
+    public function adjustBreak(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->service->adjustBreak(...));
+    }
+
+    #[Path('/adjust-recognized-work'), Method('POST'), LoggedIn, Role('manager')]
+    #[OpenApi(<<<'NEON'
+operationId: adjustDuration
+summary: "Upravit uznanou délku úseku"
+tags: [Evidence]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+security: [{session: []}]
+requestBody:
+    required: true
+    content:
+        application/json:
+            schema:
+                type: object
+                required: [employee, month, fingerprint, reason]
+                properties:
+                    employee: {type: integer}
+                    month: {type: string}
+                    fingerprint: {type: string}
+                    reason: {type: string}
+                    row: {type: integer}
+                    seconds: {type: [integer, 'null']}
+                    stale: {type: boolean}
+responses:
+    '200': {$ref: '#/components/responses/Activate'}
+NEON)]
+    public function adjustDuration(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->service->adjustDuration(...));
     }
 
     #[Path('/attendance-merge-settings'), Method('POST')]

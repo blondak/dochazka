@@ -11,7 +11,7 @@ use Dochazka\Identity\Accounts;
 
 final class DailyAttendance
 {
-    public function __construct(private Connection $db, private Accounts $accounts, private MergePolicy $mergePolicy) {}
+    public function __construct(private Connection $db, private Accounts $accounts, private \Dochazka\Staff\OrgUnits $units, private MergePolicy $mergePolicy, private Catalog $catalog, private WorkModels $models) {}
 
     public function view(): array
     {
@@ -22,9 +22,9 @@ final class DailyAttendance
         $roster = $this->db->createQueryBuilder()
             ->select('id', 'name', 'sid')
             ->from('employee')
-            ->where('team = :team', 'attendance_enabled = true', 'archived_on IS NULL', 'starts <= :day')
+            ->where('org_unit_id IN (:units)', 'attendance_enabled = true', 'archived_on IS NULL', 'starts <= :day')
             ->andWhere('(ends IS NULL OR ends >= :day)')
-            ->setParameter('team', $actor['team'])
+            ->setParameter('units', array_keys($this->units->managed($actor)), ArrayParameterType::INTEGER)
             ->setParameter('day', $start->format('Y-m-d'))
             ->orderBy('name')->addOrderBy('id')
             ->fetchAllAssociative();
@@ -49,10 +49,11 @@ final class DailyAttendance
         }
         $requests = [];
         if ($roster !== []) {
-            $approved = $this->db->createQueryBuilder()->select('employee', 'kind', 'begins', 'ends', 'status', 'merged_work')
-                ->from('request')
-                ->where('employee IN (:ids)', "status = 'approved'", 'begins < :now', 'ends > :start')
-                ->andWhere("(kind <> 'PRACE' OR (merged_work AND ends <= :now))")
+            $approved = $this->db->createQueryBuilder()
+                ->select('r.*', 'EXISTS(SELECT 1 FROM medical_proof p WHERE p.request_id = r.id) AS has_proof')
+                ->from('request', 'r')
+                ->where('employee IN (:ids)', 'NOT generated_holiday', "status = 'approved'", 'begins < :now', 'ends > :start')
+                ->andWhere("(kind <> 'PRACE' OR ((merged_work OR replaces_from IS NOT NULL) AND ends <= :now))")
                 ->setParameter('ids', array_column($roster, 'id'), ArrayParameterType::INTEGER)
                 ->setParameter('now', $now->format(DATE_ATOM))
                 ->setParameter('start', $start->format(DATE_ATOM))
@@ -63,17 +64,33 @@ final class DailyAttendance
         }
         $limits = $this->mergePolicy->limits($start, $end);
         $people = [];
+        $accounts = $this->catalog->accounts();
+        $breakRules = $this->catalog->durationRules('break');
+        $corrections = $exceptions = [];
+        if ($roster) {
+            $scope = ['ids' => array_column($roster, 'id'), 'day' => $start->format('Y-m-d')];
+            $rows = $this->db->createQueryBuilder()->select('employee', 'day', 'account AS kind', 'begins AS "from"', 'ends AS "to"', 'seconds')
+                ->from('recognized_work')->where('employee IN (:ids)', 'day = :day')
+                ->setParameters($scope, ['ids' => ArrayParameterType::INTEGER])->fetchAllAssociative();
+            foreach ($rows as $row) $corrections[$row['employee']][DurationRules::rowKey($row)] = $row;
+            $exceptions = $this->db->createQueryBuilder()->select('employee', 'mode')->from('attendance_break_exception')
+                ->where('employee IN (:ids)', 'day = :day')
+                ->setParameters($scope, ['ids' => ArrayParameterType::INTEGER])->fetchAllKeyValue();
+        }
         foreach ($roster as $person) {
+            $exception = $exceptions[$person['id']] ?? null;
+            $policy = ['break_rules' => $breakRules, 'adjustments' => $corrections[$person['id']] ?? [],
+                'break_exceptions' => $exception ? [$start->format('Y-m-d') => $exception] : []];
             $people[] = ['id' => (int) $person['id'], 'name' => $person['name']] + (
                 $person['sid'] === null
                     ? ['status' => 'untracked', 'worked_seconds' => null]
-                    : self::summarize($bySid[$person['sid']] ?? [], $requests[$person['id']] ?? [], $start, $end, $limits)
+                    : self::summarize($bySid[$person['sid']] ?? [], $requests[$person['id']] ?? [], $start, $end, $limits, $accounts, $this->models->schedule($person['id'], $start, $end), $policy)
             );
         }
         return ['day' => $start->format('Y-m-d'), 'updated' => $now->format(DATE_ATOM), 'people' => $people];
     }
 
-    private static function summarize(array $events, array $requests, DateTimeImmutable $start, DateTimeImmutable $end, array $limits): array
+    private static function summarize(array $events, array $requests, DateTimeImmutable $start, DateTimeImmutable $end, array $limits, array $accounts, array $schedule, array $policy): array
     {
         $loggedIn = $present = $closed = $serviceRanges = [];
         foreach ($events as $event) {
@@ -108,7 +125,7 @@ final class DailyAttendance
         $completed = array_values(array_filter($events, static fn(array $event) =>
             isset($closed[$event['device'].'/'.$event['session_key']])));
         $seconds = $closed
-            ? Timesheet::build($start->format('Y-m'), $completed, $requests, $start, $end, $limits, $serviceRanges)['seconds']
+            ? Timesheet::build($start->format('Y-m'), $completed, $requests, $start, $end, $limits, $serviceRanges, $accounts, $schedule, policies: $policy)['seconds']
             : null;
         return [
             'status' => $present ? 'present' : ($closed ? 'finished' : 'absent'),

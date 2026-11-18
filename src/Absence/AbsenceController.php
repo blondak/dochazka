@@ -18,7 +18,7 @@ final class AbsenceController implements IController
     #[Path('/request'), Method('POST')]
     #[OpenApi(<<<'NEON'
 operationId: request
-summary: "Podat žádost nebo opravu. Dovolená používá první a poslední kalendářní den, ostatní druhy místní čas v Europe/Prague."
+summary: "Podat žádost. Celosměnová konta používají první a poslední kalendářní den, časová konta místní čas v Europe/Prague."
 tags: [Evidence]
 requestBody: {$ref: '#/components/requestBodies/Request'}
 parameters: [{$ref: '#/components/parameters/WebHeader'}]
@@ -34,6 +34,26 @@ NEON)]
     public function request(ApiRequest $request,ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, fn(array $input) => $this->service->submit($input));
+    }
+
+    #[Path('/request-preview'), Method('POST'), LoggedIn]
+    #[OpenApi(<<<'NEON'
+operationId: requestPreview
+summary: "Spočítat čerpání žádosti před podáním"
+tags: [Evidence]
+requestBody: {$ref: '#/components/requestBodies/Request'}
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+security: [{session: []}]
+responses:
+    '200': {$ref: '#/components/responses/RequestPreview'}
+    '401': {$ref: '#/components/responses/Error401'}
+    '403': {$ref: '#/components/responses/Error403'}
+    '409': {$ref: '#/components/responses/Error409'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    public function preview(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->service->preview(...), readOnly: true, maxBytes: 8192);
     }
 
     #[Path('/decide'), Method('POST')]
@@ -55,6 +75,51 @@ NEON)]
     public function decide(ApiRequest $request,ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, fn(array $input) => $this->service->decide($input));
+    }
+
+    #[Path('/request-actual'), Method('POST'), LoggedIn]
+    #[OpenApi(<<<'NEON'
+operationId: requestActual
+summary: "Doplnit skutečný interval nebo vrátit podklady k opravě"
+tags: [Evidence]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+security: [{session: []}]
+requestBody:
+    required: true
+    content:
+        application/json:
+            schema:
+                type: object
+                required: [id]
+                properties:
+                    id: {type: integer}
+                    from: {type: string}
+                    to: {type: string}
+                    reason: {type: string}
+                    return: {type: boolean}
+                    photo: {type: string}
+responses:
+    '200': {$ref: '#/components/responses/Activate'}
+NEON)]
+    public function actual(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->service->actual(...), maxBytes: 7340032);
+    }
+
+    #[Path('/request-vacation-consent'), Method('POST'), LoggedIn]
+    #[OpenApi(<<<'NEON'
+operationId: requestVacationConsent
+summary: "Souhlas zaměstnance s částečným čerpáním dovolené"
+tags: [Evidence]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+security: [{session: []}]
+requestBody: {$ref: '#/components/requestBodies/Invite'}
+responses:
+    '200': {$ref: '#/components/responses/Activate'}
+NEON)]
+    public function vacationConsent(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->service->consent(...));
     }
 
     #[Path('/request-proof'), Method('POST')]
@@ -81,7 +146,7 @@ NEON)]
     #[Path('/request-proof-upload'), Method('POST'), LoggedIn]
     #[OpenApi(<<<'NEON'
 operationId: requestProofUpload
-summary: "Přiložit fotografii po skončení schválené návštěvy lékaře"
+summary: "Přiložit povinný doklad po skončení schválené žádosti"
 tags: [Evidence]
 requestBody: {$ref: '#/components/requestBodies/MedicalProofUpload'}
 parameters: [{$ref: '#/components/parameters/WebHeader'}]

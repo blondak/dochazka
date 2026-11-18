@@ -24,7 +24,7 @@ trap cleanup EXIT
 compose build dc
 if [[ $build_gateway == true ]]; then compose build enroll; fi
 compose up -d --no-build --wait --wait-timeout 150
-compose exec -T db psql -v ON_ERROR_STOP=1 -U dochazka -d dochazka -c "INSERT INTO employee(number,name,login,password_hash,roles,attendance_enabled,team,sid) VALUES ('pilot','Pilot','pilot','!',jsonb_build_array('employee'::text),true,'Pilot','S-1-5-21-1-2-3-44')"
+compose exec -T db psql -v ON_ERROR_STOP=1 -U dochazka -d dochazka -c "WITH pilot_unit AS (INSERT INTO org_unit (name) VALUES ('Pilot') RETURNING id) INSERT INTO employee(number,name,login,password_hash,roles,attendance_enabled,org_unit_id,sid) VALUES ('pilot','Pilot','pilot','!',jsonb_build_array('employee'::text),true,(SELECT id FROM pilot_unit),'S-1-5-21-1-2-3-44')"
 compose exec -T dc python3 /opt/enrollment.py
 configure_native() {
     compose exec -T dc bash -ec 'ip=$(hostname -i); python3 /opt/debian/install.py --configure-only \

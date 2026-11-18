@@ -64,4 +64,25 @@ $r = Timesheet::build('2026-11', [
     signal('login', '2026-11-03 00:04'), signal('logout', '2026-11-03 00:09'),
 ], [], mergeLimits: $limits);
 check($r['seconds'] === 600, 'restart at midnight is not merged across days');
+$rule = ['enabled' => true, 'minutes' => 30, 'preferred' => 240, 'deadline' => 360, 'effective_on' => '2026-01-01'];
+$policies = ['break_rules' => ['PRACE' => [$rule]]];
+$signals = [signal('login', '2026-11-02 09:10'), signal('logout', '2026-11-02 17:40')];
+$r = Timesheet::build('2026-11', $signals, [], policies: $policies);
+check($r['seconds'] === 28800 && str_contains($r['breaks'][0]['from'], 'T13:10:'), 'break follows actual arrival');
+$late = Timesheet::build('2026-11', $signals, [absence('PRESTAVKA','2026-11-02 16:00','2026-11-02 16:30')], policies: $policies);
+check($late['seconds'] === 28800 && $late['breaks'][0]['source'] === 'recorded' && $late['unresolved_breaks'] === 1,
+    'a late recorded break is flagged without deducting another break');
+$long = [signal('login', '2026-11-02 06:00'), signal('logout', '2026-11-02 20:00')];
+$r = Timesheet::build('2026-11', $long, [], policies: $policies);
+check(count($r['breaks']) === 2 && $r['seconds'] === 13 * 3600, 'long work receives a second break');
+$r = Timesheet::build('2026-11', [signal('login','2026-11-02 06:00'),signal('logout','2026-11-02 12:00')], [], policies:$policies);
+check($r['seconds'] === 21600 && empty($r['breaks']), 'exactly six hours');
+$overnight = [signal('login','2026-11-02 20:00'),signal('logout','2026-11-03 04:30')];
+$r = Timesheet::build('2026-11', $overnight, [], policies:$policies);
+check($r['seconds'] === 28800 && str_contains($r['breaks'][0]['from'], 'T00:00:'), 'a midnight within a shift is not a break');
+$round = \Dochazka\Attendance\DurationRules::rounded(...);
+check($round(28020,['mode'=>'down','minutes'=>30]) === 27000, 'rounding down');
+check($round(28020,['mode'=>'up','minutes'=>30]) === 28800, 'rounding up');
+check($round(27900,['mode'=>'nearest','minutes'=>30]) === 28800, 'nearest increments at the halfway point');
+check($round(1,['mode'=>'off','minutes'=>30]) === 1, 'no rounding');
 echo "Timesheet OK\n";

@@ -34,7 +34,7 @@ p, small {
 }
 
 .header-content, .app-content {
-    width: min(100%, 1160px);
+    width: min(100%, 1600px);
     margin-inline: auto;
     padding-inline: clamp(1rem, 3vw, 2rem);
 }
@@ -70,21 +70,59 @@ p, small {
     display: flex;
     align-items: center;
     gap: .8rem;
+    min-width: 0;
 }
 
-.identity-actions, .month-controls {
+.header-brand, .month-controls {
     display: flex;
     align-items: center;
     gap: .35rem;
+}
+
+.header-brand {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.header-brand > .p-button, .section-title > i {
+    flex: none;
+}
+
+.section-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: .65rem;
+    font-size: clamp(1rem, 2.5vw, 1.4rem);
+}
+
+.section-title > span {
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .identity small {
     display: block;
 }
 
-.identity > span {
+.identity-profile {
+    display: grid;
+    justify-items: start;
+    line-height: 1.35;
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.identity .identity-trigger {
+    padding: .25rem .4rem;
+    margin-inline-start: -.4rem;
+    max-width: 100%;
+    text-align: start;
+    font-weight: 650;
+}
+
+.identity-trigger .p-button-icon {
+    font-size: .75rem;
 }
 
 .app-content {
@@ -94,10 +132,32 @@ p, small {
     padding-block: 1.5rem 3rem;
 }
 
-.app-navigation, .fields, .record-actions, .record-title {
+.fields, .record-actions, .record-title {
     display: flex;
     flex-wrap: wrap;
     gap: .65rem;
+}
+
+.settings-navigation {
+    display: grid;
+    gap: .4rem;
+}
+
+.settings-navigation .p-button {
+    justify-content: flex-start;
+}
+
+.person-controls, .sheet-actions {
+    display: flex;
+    gap: .35rem;
+    align-items: flex-end;
+    min-width: 0;
+}
+
+.navigation-group {
+    margin-top: .65rem;
+    padding: .65rem .75rem 0;
+    border-top: 1px solid var(--p-content-border-color);
 }
 
 .page-heading, .record {
@@ -164,6 +224,157 @@ p, small {
     margin-bottom: .75rem;
 }
 
+.sheet-toolbar, .sheet-toolbar .p-toolbar-start, .sheet-toolbar .p-toolbar-end {
+    flex-wrap: wrap;
+    gap: .6rem;
+}
+
+.sheet-toolbar .p-toolbar-start {
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sheet-toolbar .p-toolbar-end {
+    margin-inline-start: auto;
+    justify-content: flex-end;
+}
+
+.period-selector, .period-selector .field {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sheet-toolbar .period-selector {
+    display: contents;
+}
+
+.sheet-toolbar .scope-caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.sheet-toolbar .person-controls + .period-controls, .sheet-toolbar .sheet-actions {
+    border-inline-start: 1px solid var(--p-content-border-color);
+    padding-inline-start: .65rem;
+}
+
+.sheet-toolbar .p-toolbar-start :is(.p-button, .p-select, .p-datepicker, .p-datepicker-input) {
+    height: 2.5rem;
+}
+
+.sheet-toolbar .p-toolbar-start .p-button-icon-only {
+    width: 2.5rem;
+}
+
+.month-layout {
+    display: grid;
+    grid-template-columns: minmax(15rem, 2fr) minmax(0, 3fr);
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.month-layout h2 {
+    margin-bottom: .6rem;
+}
+
+.day-holiday {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .25rem .6rem;
+    margin-bottom: .6rem;
+}
+
+.day-holiday .p-tag {
+    max-width: 100%;
+    color: var(--p-amber-900);
+    background: var(--p-amber-50);
+    overflow-wrap: anywhere;
+}
+
+.day-merge-action {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: .5rem;
+}
+
+.day-records {
+    margin-top: 1.25rem;
+}
+
+.month-days .p-datatable-tbody > tr > td {
+    padding-block: .1rem;
+}
+
+.month-days .p-button {
+    padding-block: .2rem;
+}
+
+.month-days .today-tag {
+    margin-inline-start: .25rem;
+    font-size: .7rem;
+    padding-block: 0;
+}
+
+.day-request-pending, .day-request-rejected {
+    margin-inline-start: .4rem;
+}
+
+.day-request-pending {
+    color: var(--p-amber-700);
+}
+
+.day-request-rejected {
+    color: var(--p-red-700);
+}
+
+#day-detail {
+    position: sticky;
+    top: 1rem;
+}
+
+.month-days .p-datatable-tbody > .weekend-day {
+    background: var(--p-amber-50);
+}
+
+.month-days .weekend-day > td:first-child {
+    box-shadow: inset 3px 0 var(--p-amber-500);
+}
+
+.month-days .p-datatable-tbody > .selected-day {
+    background: var(--p-primary-50);
+}
+
+.month-days tbody > tr {
+    cursor: pointer;
+}
+
+.month-days tbody > tr:hover {
+    background: var(--p-highlight-background);
+}
+
+.month-days td:last-child {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 760px) {
+    .month-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1rem;
+    }
+
+    #day-detail {
+        position: static;
+    }
+}
+
 .check-field {
     display: flex;
     align-items: center;
@@ -176,6 +387,19 @@ p, small {
 
 .editor-dialog .employee-fields {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+.employee-fields .sid-field {
+    grid-column: 1 / -1;
+}
+
+.editor-dialog .employee-fields .field {
+    align-content: start;
+}
+
+.editor-dialog .employee-fields :is(.p-inputtext, .p-treeselect, .p-datepicker) {
+    height: 2.5rem;
+    margin-block: 0;
 }
 
 .role-options {
@@ -211,7 +435,7 @@ label, .field-label {
     margin-bottom: .85rem;
 }
 
-.stack .p-inputtext {
+.stack .p-inputtext:not(.p-datepicker-input) {
     margin-bottom: .4rem;
 }
 
@@ -234,16 +458,10 @@ label, .field-label {
     height: calc(100% - .4rem);
 }
 
-.metrics, .employee-fields {
+.employee-fields {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
     gap: .85rem;
-}
-
-.metrics strong {
-    display: block;
-    margin-top: .15rem;
-    font-size: 1.35rem;
 }
 
 .employee-fields {
@@ -317,13 +535,7 @@ code {
 
     .identity {
         width: 100%;
-        align-items: flex-start;
-        flex-direction: column;
-        gap: .35rem;
-    }
-
-    .identity-actions {
-        flex-wrap: wrap;
+        justify-content: space-between;
     }
 
     .page-heading .fields {
@@ -334,7 +546,40 @@ code {
         max-width: 100%;
     }
 
-    .metrics {
-        grid-template-columns: 1fr;
-    }
+}
+
+.catalog-sections {
+    display: grid;
+    gap: 1.2rem;
+}
+
+.model-day {
+    margin: 0;
+    padding: .6rem;
+    min-width: 0;
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .35rem;
+}
+
+.model-day .fields, .planned-shift {
+    margin-block: .5rem;
+}
+
+.scope-heading {
+    justify-content: flex-end;
+}
+
+.weekly-model {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: .35rem 1rem;
+    margin: 0;
+}
+
+.weekly-model dd {
+    margin: 0;
+}
+
+.model-assignment {
+    grid-column: 1 / -1;
 }

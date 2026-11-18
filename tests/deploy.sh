@@ -25,7 +25,7 @@ trap cleanup EXIT
 
 compose up -d --no-build --wait --wait-timeout 90
 address=$(compose port web 80)
-python3 tests/workflow.py --deployment "${address##*:}"
+DEPLOYMENT_COMPOSE_PROJECT="$project" python3 tests/workflow.py --deployment "${address##*:}"
 
 # The workflow populated this disposable cluster with a medical proof and versioned exports.
 contents() {

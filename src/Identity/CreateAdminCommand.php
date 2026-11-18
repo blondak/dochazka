@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Dochazka\Identity;
 
 use Dochazka\Staff\Employee;
+use Dochazka\Staff\OrgUnits;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -16,7 +17,7 @@ use Symfony\Component\Console\Question\Question;
 #[AsCommand('account:admin', 'Vytvoří účet správce.')]
 final class CreateAdminCommand extends Command
 {
-    public function __construct(private EntityManagerInterface $em)
+    public function __construct(private OrgUnits $units, private EntityManagerInterface $em)
     {
         parent::__construct();
     }
@@ -45,7 +46,7 @@ final class CreateAdminCommand extends Command
         }
         $this->em->wrapInTransaction(function (EntityManagerInterface $em) use ($login, $password): void {
             $em->getConnection()->executeStatement('SELECT pg_advisory_xact_lock(718312)');
-            $em->persist(Employee::administrator($login, 'Správce', $password));
+            $em->persist(Employee::administrator($login, 'Správce', $password, $this->units->adminUnit()));
         });
         $output->writeln('Účet správce byl vytvořen.');
         return Command::SUCCESS;

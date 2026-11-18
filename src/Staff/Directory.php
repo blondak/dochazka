@@ -8,34 +8,33 @@ use Doctrine\ORM\EntityManagerInterface;
 use Dochazka\Http\Problem;
 use Dochazka\Identity\Accounts;
 use Dochazka\Audit\AuditTrail;
+use Dochazka\Attendance\WorkModels;
+use Dochazka\Attendance\HolidayEntries;
 
 final class Directory
 {
-    public function __construct(private EntityManagerInterface $em, private Accounts $accounts, private AuditTrail $audit) {}
-
-    public static function manages(array $actor, string $team): bool
-    {
-        return in_array('manager', $actor['roles'], true) && $actor['team'] === $team;
-    }
+    public function __construct(private EntityManagerInterface $em, private OrgUnits $units, private Accounts $accounts, private AuditTrail $audit, private WorkModels $models, private HolidayEntries $holidayEntries) {}
 
     public function person(array $actor,int $id,bool $review=false): array
     {
         $p = $this->em->find(Employee::class, $id);
         if (!$p) throw new Problem('Osoba nenalezena.',404);
         $canReadAll = array_intersect(['payroll', 'admin'], $actor['roles']) !== [];
-        if (!self::manages($actor, $p->team) && ($review || ($actor['id'] !== $id && !$canReadAll))) {
+        $managed = isset($this->units->managed($actor)[$p->orgUnit->id]);
+        if (!$managed && ($review || ($actor['id'] !== $id && !$canReadAll))) {
             throw new Problem('Přístup zamítnut.', 403);
         }
-        return $p->summary() + ['starts' => $p->starts->format('Y-m-d'), 'ends' => $p->attendanceEnd()?->format('Y-m-d')];
+        return $p->summary() + ['managed' => $managed, 'org_unit_path' => $this->units->path($p->orgUnit->id), 'starts' => $p->starts->format('Y-m-d'), 'ends' => $p->attendanceEnd()?->format('Y-m-d')];
     }
 
     public function people(): array
     {
         $actor=$this->accounts->actor();
         $admin = in_array('admin', $actor['roles'], true);
+        $managed = $this->units->managed($actor);
         $criteria = match (true) {
             $admin || in_array('payroll', $actor['roles'], true) => [],
-            in_array('manager', $actor['roles'], true) => ['team' => $actor['team']],
+            in_array('manager', $actor['roles'], true) => ['orgUnit' => array_keys($managed)],
             default => null,
         };
         if ($criteria === null) {
@@ -43,8 +42,10 @@ final class Directory
             return [$actor + ['archived_on' => null]];
         }
         $employees = $this->em->getRepository(Employee::class)->findBy($criteria, ['name' => 'ASC']);
-        return array_map(static function (Employee $employee) use ($admin): array {
-            $person = $employee->summary();
+        $units = $criteria === [] ? $this->units->catalog() : $managed;
+        return array_map(static function (Employee $employee) use ($admin, $units, $managed): array {
+            $id = $employee->orgUnit->id;
+            $person = $employee->summary() + ['org_unit_path' => $units[$id]['path'], 'managed' => isset($managed[$id])];
             if ($admin) {
                 return $person + [
                     'starts' => $employee->starts->format('Y-m-d'),
@@ -102,8 +103,9 @@ final class Directory
             $this->requireOtherAdmin($e);
         }
         $login = self::field($i, 'login');
-        $team = self::field($i, 'team');
-        if ($e->id !== null && ($e->roles !== $normalizedRoles || $e->login !== $login || $e->team !== $team
+        $unit = $this->units->requireUnit($i['org_unit_id'] ?? null);
+        $previousUnit = $e->id === null ? null : $e->orgUnit->id;
+        if ($e->id !== null && ($e->roles !== $normalizedRoles || $e->login !== $login || $previousUnit !== $unit->id
             || $e->starts != $starts || $e->ends != $ends || $e->attendanceEnabled !== $attendanceEnabled)) {
             ++$e->sessionVersion;
         }
@@ -111,7 +113,7 @@ final class Directory
         $e->roles = $normalizedRoles;
         $e->attendanceEnabled = $attendanceEnabled;
         $e->login = $login;
-        $e->team = $team;
+        $e->orgUnit = $unit;
         $e->name = self::field($i, 'name');
         $e->number = $number === '' ? null : $number;
         $e->starts = $starts;
@@ -119,8 +121,14 @@ final class Directory
         if (!$e->id) $e->passwordHash=password_hash(bin2hex(random_bytes(32)),PASSWORD_DEFAULT);
         $this->em->persist($e); $this->em->flush();
         $this->audit->audit($who, 'employee', [
-            'employee' => $e->id, 'roles' => $e->roles, 'team' => $e->team, 'attendance_enabled' => $e->attendanceEnabled,
+            'employee' => $e->id, 'roles' => $e->roles, 'org_unit_id' => $unit->id, 'previous_unit_id' => $previousUnit, 'attendance_enabled' => $e->attendanceEnabled,
         ]);
+        if (isset($i['work_model'])) {
+            if (!is_array($i['work_model'])) throw new Problem('Zkontrolujte pracovní model.');
+            $result = $this->models->assign($who, ['id' => $e->id, 'attendance_enabled' => $e->attendanceEnabled,
+                'starts' => $e->starts->format('Y-m-d'), 'ends' => $e->attendanceEnd()?->format('Y-m-d')], $i['work_model']);
+            $this->holidayEntries->reconcileExisting($result['impact'], $who);
+        }
         return ['id'=>$e->id];
     }
 

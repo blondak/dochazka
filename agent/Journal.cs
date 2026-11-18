@@ -23,6 +23,9 @@ internal sealed class Journal(SqliteConnection db)
             CREATE TABLE IF NOT EXISTS cursor(channel TEXT PRIMARY KEY, seq INTEGER, stamp TEXT);
             CREATE TABLE IF NOT EXISTS queue(id TEXT PRIMARY KEY, payload TEXT);
             CREATE TABLE IF NOT EXISTS sessions(k TEXT PRIMARY KEY,sid TEXT,begin TEXT,finish TEXT);
+            CREATE TABLE IF NOT EXISTS desktop_logon(
+                k TEXT PRIMARY KEY, sid TEXT NOT NULL, session_key TEXT NOT NULL, closes_session INTEGER NOT NULL);
+            CREATE INDEX IF NOT EXISTS desktop_logon_session ON desktop_logon(session_key);
             CREATE TABLE IF NOT EXISTS health(message TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS deferred(event_id TEXT PRIMARY KEY, sid TEXT, first_seen INTEGER, retry_at INTEGER);
             CREATE INDEX IF NOT EXISTS deferred_sid ON deferred(sid);
@@ -114,33 +117,113 @@ internal sealed class Journal(SqliteConnection db)
         return rec==null ? "unknown" : rec.TimeCreated!.Value.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture);
     }
 
-    internal static (string Sid, string LogonId)? InteractiveAccount(XElement xml)
+    internal sealed record DesktopAccount(string Sid, string LogonId, string? LinkedLogonId, bool Elevated);
+
+    internal static DesktopAccount? InteractiveAccount(int eventId, XElement xml)
     {
+        if (eventId is not (4624 or 4634)) return null;
         var ns=xml.Name.Namespace;
         var fields=xml.Descendants(ns+"Data").Where(n=>n.Attribute("Name")!=null)
             .ToDictionary(n=>n.Attribute("Name")!.Value,n=>n.Value);
         if(fields.GetValueOrDefault("LogonType") is not ("2" or "11")) return null;
         var sid=fields.GetValueOrDefault("TargetUserSid") ?? "";
-        var logonId=fields.GetValueOrDefault("TargetLogonId");
-        if(!sid.StartsWith("S-1-5-21-",StringComparison.Ordinal) || string.IsNullOrEmpty(logonId)) return null;
-        return (sid, logonId);
+        var logonId=NormalizeLogonId(fields.GetValueOrDefault("TargetLogonId"));
+        if(!sid.StartsWith("S-1-5-21-",StringComparison.Ordinal) || logonId == null) return null;
+        if (eventId == 4624)
+        {
+            if (!string.Equals(fields.GetValueOrDefault("LogonProcessName")?.Trim(), "User32", StringComparison.OrdinalIgnoreCase))
+                return null;
+            var process = fields.GetValueOrDefault("ProcessName")?.Split('\\', '/').LastOrDefault();
+            if (!string.Equals(process, "winlogon.exe", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(process, "svchost.exe", StringComparison.OrdinalIgnoreCase))
+                return null;
+        }
+        return new DesktopAccount(sid, logonId, NormalizeLogonId(fields.GetValueOrDefault("TargetLinkedLogonId")),
+            fields.GetValueOrDefault("ElevatedToken") == "%%1842");
+    }
+
+    private static string? NormalizeLogonId(string? value)
+    {
+        if (value == null || !value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            || !ulong.TryParse(value.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var number) || number == 0)
+            return null;
+        return "0x" + number.ToString("x", CultureInfo.InvariantCulture);
+    }
+
+    internal string ResolveSessionKey(string key, string sid, SqliteTransaction? tx = null)
+    {
+        using var command = Command("SELECT session_key FROM desktop_logon WHERE k=$p0 AND sid=$p1", tx, key, sid);
+        return command.ExecuteScalar() as string ?? key;
     }
 
     private void Security(EventRecord rec,SqliteTransaction tx)
     {
-        var account = InteractiveAccount(XElement.Parse(rec.ToXml()));
+        var account = InteractiveAccount(rec.Id, XElement.Parse(rec.ToXml()));
         if (account == null) return;
-        var (sid, logonId) = account.Value;
         var at=Stamp(rec);
-        var boot=Boot(at);
-        var key=boot+"."+logonId;
         var id=$"{rec.RecordId}.{rec.TimeCreated!.Value.ToUniversalTime().Ticks}";
-        if(boot=="unknown") { Enqueue(new Signal(id,"gap",at,sid,key),tx); return; }
-        bool login=rec.Id==4624;
-        using var cmd=login ? Command("INSERT OR REPLACE INTO sessions(k,sid,begin) VALUES($p0,$p1,$p2)",tx,key,sid,at)
-            : Command("UPDATE sessions SET finish=$p1 WHERE k=$p0",tx,key,at);
-        cmd.ExecuteNonQuery();
-        Enqueue(new Signal(id,login?"login":"logout",at,sid,key),tx);
+        RecordSecurity(rec.Id, account, Boot(at), id, at, tx);
+    }
+
+    internal void RecordSecurity(int eventId, DesktopAccount account, string boot, string id, string at, SqliteTransaction tx)
+    {
+        string sid = account.Sid;
+        string key = boot + "." + account.LogonId;
+        if (boot == "unknown")
+        {
+            if (eventId == 4624) Enqueue(new Signal(id, "gap", at, sid, key), tx);
+            return;
+        }
+        if (eventId == 4634)
+        {
+            string sessionKey = ResolveSessionKey(key, sid, tx);
+            using var close = Command("""
+                UPDATE sessions SET finish=$p1 WHERE k=$p0 AND sid=$p2 AND finish IS NULL
+                AND NOT EXISTS(SELECT 1 FROM desktop_logon WHERE k=$p3 AND sid=$p2 AND closes_session=0)
+                """, tx, sessionKey, at, sid, key);
+            if (close.ExecuteNonQuery() > 0) Enqueue(new Signal(id, "logout", at, sid, sessionKey), tx);
+            return;
+        }
+
+        string existingKey = ResolveSessionKey(key, sid, tx);
+        if (HasSession(existingKey, sid, tx)) return;
+        if (account.LinkedLogonId is { } linked && linked != account.LogonId)
+        {
+            string linkedKey = boot + "." + linked;
+            string sessionKey = ResolveSessionKey(linkedKey, sid, tx);
+            if (HasSession(sessionKey, sid, tx))
+            {
+                // Keep the first key sent to the server. The desktop uses the filtered token
+                // at sign-out when both the standard and elevated logons were recorded.
+                using var keepLinked = Command("INSERT OR IGNORE INTO desktop_logon VALUES($p0,$p1,$p2,1)", tx, linkedKey, sid, sessionKey);
+                keepLinked.ExecuteNonQuery();
+                if (!account.Elevated)
+                {
+                    using var preferDesktop = Command("UPDATE desktop_logon SET closes_session=0 WHERE session_key=$p0 AND sid=$p1", tx, sessionKey, sid);
+                    preferDesktop.ExecuteNonQuery();
+                }
+                using var alias = Command("INSERT INTO desktop_logon VALUES($p0,$p1,$p2,$p3)", tx, key, sid, sessionKey, account.Elevated ? 0 : 1);
+                alias.ExecuteNonQuery();
+                return;
+            }
+        }
+        using var open = Command("INSERT OR IGNORE INTO sessions(k,sid,begin) VALUES($p0,$p1,$p2)", tx, key, sid, at);
+        if (open.ExecuteNonQuery() == 0) return;
+        if (account.LinkedLogonId is { } companion && companion != account.LogonId)
+        {
+            using var first = Command("INSERT INTO desktop_logon VALUES($p0,$p1,$p0,$p2)", tx, key, sid, account.Elevated ? 0 : 1);
+            first.ExecuteNonQuery();
+            using var alias = Command("INSERT OR IGNORE INTO desktop_logon VALUES($p0,$p1,$p2,$p3)",
+                tx, boot + "." + companion, sid, key, account.Elevated ? 1 : 0);
+            alias.ExecuteNonQuery();
+        }
+        Enqueue(new Signal(id, "login", at, sid, key), tx);
+    }
+
+    private bool HasSession(string key, string sid, SqliteTransaction tx)
+    {
+        using var command = Command("SELECT 1 FROM sessions WHERE k=$p0 AND sid=$p1", tx, key, sid);
+        return command.ExecuteScalar() != null;
     }
 
     private void Power(EventRecord rec,SqliteTransaction tx)

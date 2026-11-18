@@ -28,8 +28,15 @@ async function openPilotMonth(page) {
     await expect(page.getByLabel('Období')).toHaveValue(month)
 }
 
+async function navigate(page, section) {
+    await page.getByRole('button', {name:'Menu', exact:true}).click()
+    const nav = page.getByRole('navigation', {name:'Sekce docházky'})
+    await nav.getByRole('button', {name:section, exact:true}).click()
+    await expect(nav).toBeHidden()
+}
+
 async function openRequests(page) {
-    await page.getByRole('navigation').getByRole('button', {name:'Žádosti', exact:true}).click()
+    await navigate(page, 'Žádosti')
 }
 
 try {
@@ -56,15 +63,15 @@ try {
     await openPilotMonth(manager)
     await manager.getByRole('combobox', {name:'Osoba'}).click()
     await manager.getByRole('option', {name:credentials.employee.name}).click()
-    await expect(manager.getByText('8 h 0 min', {exact:true})).toBeVisible()
+    await expect(manager.getByRole('table', {name:'Souhrn za měsíc'}).getByText('8:00', {exact:true})).toBeVisible()
     await openRequests(manager)
     await manager.getByRole('button', {name:'Schválit', exact:true}).click()
     const decision = manager.getByRole('dialog', {name:'Schválit žádost'})
     await expect(decision).toContainText(credentials.employee.name)
     await decision.getByRole('button', {name:'Schválit žádost'}).click()
     await expect(manager.getByText('Čeká na propustku')).toBeVisible()
-    await manager.getByRole('navigation').getByRole('button', {name:'Výkaz', exact:true}).click()
-    await expect(manager.getByText('Zaměstnanec musí doložit propustky.')).toBeVisible()
+    await navigate(manager, 'Výkaz')
+    await expect(manager.getByText('Zaměstnanec musí přiložit povinné doklady.')).toBeVisible()
     await expect(manager.getByRole('button', {name:'Schválit výkaz'})).toHaveCount(0)
 
     const payroll = await login('payroll')
@@ -72,10 +79,13 @@ try {
     await expect(payroll.getByText('Měsíc lze uzavřít po schválení všech výkazů.')).toBeVisible()
     await expect(payroll.getByRole('button', {name:'Uzavřít měsíc'})).toHaveCount(0)
 
-    await employee.getByRole('navigation').getByRole('button', {name:'Výkaz', exact:true}).click()
+    await navigate(employee, 'Výkaz')
     await openRequests(employee)
+    await employee.getByRole('button', {name:'Doplnit skutečnost'}).click()
+    const actual = employee.getByRole('dialog', {name:'Doplnit skutečnost'})
+    await expect(actual.getByLabel('Skutečný odchod')).toHaveValue(visitDate + 'T09:15')
     const chooseFile = employee.waitForEvent('filechooser')
-    await employee.getByRole('button', {name:'Vyfotit propustku'}).click()
+    await actual.getByRole('button', {name:'Vyfotit propustku'}).click()
     await (await chooseFile).setFiles(await documentPhoto(employee))
     const preview = employee.getByRole('dialog', {name:'Doložit propustku'})
     await expect(preview.getByRole('img')).toBeVisible()
@@ -84,6 +94,7 @@ try {
     expect((await worker).headers()['content-security-policy']).toContain("'unsafe-eval'")
     await expect(preview.getByRole('button', {name:'Použít celý snímek'})).toBeVisible({timeout:15000})
     await preview.getByRole('button', {name:'Uložit propustku'}).click()
+    await actual.getByRole('button', {name:'Uložit skutečný čas'}).click()
     await expect(employee.getByText('Propustka doložena')).toBeVisible()
 
     await openRequests(manager)
@@ -92,14 +103,14 @@ try {
     await expect(attachment.getByRole('img')).toHaveAttribute('src', /^data:image\/jpeg;base64,\/9j\//)
     await manager.keyboard.press('Escape')
     await expect(attachment).toBeHidden()
-    await manager.getByRole('navigation').getByRole('button', {name:'Výkaz', exact:true}).click()
+    await navigate(manager, 'Výkaz')
     await manager.getByRole('button', {name:'Schválit výkaz'}).click()
     await manager.getByRole('dialog', {name:'Schválit výkaz'}).getByRole('button', {name:'Potvrdit schválení'}).click()
     await expect(manager.getByRole('status')).toContainText('Výkaz byl schválen.')
 
     await payroll.getByRole('button', {name:'Zobrazit výkaz · ' + credentials.employee.name}).click()
-    await expect(payroll.getByText('Schválen', {exact:true})).toBeVisible()
-    await payroll.getByRole('navigation').getByRole('button', {name:'Uzávěrka', exact:true}).click()
+    await expect(payroll.getByRole('toolbar',{name:'Nástroje výkazu'}).getByText('Výkaz schválen', {exact:true})).toBeVisible()
+    await navigate(payroll, 'Uzávěrka')
     await payroll.getByRole('button', {name:'Uzavřít měsíc'}).click()
     const close = payroll.getByRole('dialog', {name:'Uzavřít měsíc'})
     await expect(close).toContainText(month)

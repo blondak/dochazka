@@ -7,13 +7,175 @@
   },
   "components": {
     "schemas": {
+      "AttendanceAccount": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "behavior": {
+            "type": "string",
+            "enum": [
+              "work",
+              "timed_absence",
+              "shift_absence",
+              "break",
+              "calendar"
+            ]
+          },
+          "requires_proof": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "system": {
+            "type": "boolean"
+          },
+          "payroll_versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "payroll_code": {
+                  "type": "string"
+                },
+                "effective_on": {
+                  "type": "string",
+                  "format": "date"
+                }
+              }
+            }
+          },
+          "rounding_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttendanceRoundingRule"
+            }
+          },
+          "break_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttendanceBreakRule"
+            }
+          }
+        }
+      },
+      "WorkShift": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "break_start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "break_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WorkModelVersion": {
+        "type": "object",
+        "properties": {
+          "week": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkShift"
+            },
+            "minItems": 7,
+            "maxItems": 7
+          },
+          "effective_on": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "week",
+          "effective_on"
+        ]
+      },
+      "WorkAssignment": {
+        "type": "object",
+        "properties": {
+          "employee": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "integer"
+          },
+          "effective_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "original_effective_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "preview_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "employee",
+          "model",
+          "effective_on"
+        ]
+      },
+      "WorkModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkModelVersion"
+            }
+          }
+        }
+      },
       "EmployeeRoles": {
         "type": "array",
         "minItems": 1,
         "uniqueItems": true,
         "items": {
           "type": "string",
-          "enum": ["employee", "manager", "payroll", "admin"]
+          "enum": [
+            "employee",
+            "manager",
+            "payroll",
+            "admin"
+          ]
         }
       },
       "Person": {
@@ -23,7 +185,10 @@
             "type": "integer"
           },
           "number": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "login": {
             "type": "string"
@@ -38,10 +203,19 @@
             "type": "boolean"
           },
           "archived_on": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date"
           },
-          "team": {
+          "org_unit_id": {
+            "type": "integer"
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "org_unit_path": {
             "type": "string"
           },
           "sid": {
@@ -102,41 +276,66 @@
       "Row": {
         "type": "object",
         "properties": {
+          "payroll_code": {
+            "type": "string"
+          },
+          "seconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "day": {
             "type": "string",
             "format": "date"
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "PRACE",
-              "LEKAR",
-              "DOVOLENA",
-              "PRESTAVKA"
-            ]
+            "description": "Stabilní kód konta docházky."
           },
           "from": {
             "type": "string"
           },
           "to": {
             "type": "string"
+          },
+          "generated_holiday": {
+            "type": "boolean",
+            "description": "Automatický zápis doplněný podle kalendáře za prázdný den."
+          },
+          "calculated_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "partial_vacation": {
+            "type": "boolean"
           }
         }
       },
       "Request": {
         "type": "object",
         "properties": {
+          "account_name": {
+            "type": "string"
+          },
+          "behavior": {
+            "type": "string"
+          },
+          "requires_proof": {
+            "type": "boolean"
+          },
+          "scheduled_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "id": {
             "type": "integer"
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "PRACE",
-              "LEKAR",
-              "DOVOLENA",
-              "PRESTAVKA"
-            ]
+            "description": "Stabilní kód konta docházky."
           },
           "begins": {
             "type": "string",
@@ -169,32 +368,130 @@
           "merged_work": {
             "type": "boolean",
             "description": "Žádost představuje potvrzené ruční spojení pracovních úseků."
+          },
+          "replaces_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "replaces_to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "generated_holiday": {
+            "type": "boolean",
+            "description": "Automatický zápis doplněný podle kalendáře za prázdný den."
+          },
+          "vacation_side": {
+            "type": "string",
+            "enum": [
+              "start",
+              "end"
+            ]
+          },
+          "vacation_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "vacation_consent": {
+            "type": "boolean"
+          },
+          "needs_actual": {
+            "type": "boolean"
+          },
+          "actual_returned": {
+            "type": "boolean"
+          },
+          "actual_from": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actual_to": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vacation_estimate": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "to": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
           }
         }
       },
       "AttendanceMergeLimit": {
         "type": "object",
-        "required": ["gap_minutes"],
+        "required": [
+          "gap_minutes"
+        ],
         "properties": {
-          "gap_minutes": {"type": "integer", "minimum": 0, "maximum": 1439, "description": "Nula vypne automatické spojování."}
+          "gap_minutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1439,
+            "description": "Nula vypne automatické spojování."
+          }
         }
       },
       "DailyAttendance": {
         "type": "object",
-        "required": ["day", "updated", "people"],
+        "required": [
+          "day",
+          "updated",
+          "people"
+        ],
         "properties": {
-          "day": {"type": "string", "format": "date"},
-          "updated": {"type": "string", "format": "date-time"},
+          "day": {
+            "type": "string",
+            "format": "date"
+          },
+          "updated": {
+            "type": "string",
+            "format": "date-time"
+          },
           "people": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["id", "name", "status", "worked_seconds"],
+              "required": [
+                "id",
+                "name",
+                "status",
+                "worked_seconds"
+              ],
               "properties": {
-                "id": {"type": "integer"},
-                "name": {"type": "string"},
-                "status": {"type": "string", "enum": ["present", "finished", "absent", "untracked"]},
-                "worked_seconds": {"type": ["integer", "null"], "minimum": 0}
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "present",
+                    "finished",
+                    "absent",
+                    "untracked"
+                  ]
+                },
+                "worked_seconds": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                }
               }
             }
           }
@@ -202,26 +499,110 @@
       },
       "ServiceSessionCode": {
         "type": "object",
-        "required": ["code"],
+        "required": [
+          "code"
+        ],
         "properties": {
-          "code": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+          "code": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
         }
       },
       "ComputerSession": {
         "type": "object",
-        "required": ["device", "station", "session", "from", "to", "service"],
+        "required": [
+          "device",
+          "station",
+          "session",
+          "from",
+          "to",
+          "service"
+        ],
         "properties": {
-          "device": {"type": "integer"},
-          "station": {"type": "string"},
-          "session": {"type": "string"},
-          "from": {"type": "string", "format": "date-time"},
-          "to": {"type": ["string", "null"], "format": "date-time"},
-          "service": {"type": "boolean"}
+          "device": {
+            "type": "integer"
+          },
+          "station": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "service": {
+            "type": "boolean"
+          }
         }
       },
       "Sheet": {
         "type": "object",
         "properties": {
+          "planned_shifts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "to": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          },
+          "account_totals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "seconds": {
+                  "type": "integer"
+                },
+                "legacy_days": {
+                  "type": "integer"
+                },
+                "internal_seconds": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "attendance_start": {
+            "type": "string",
+            "format": "date"
+          },
+          "attendance_end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Poslední den evidence včetně případného data archivace."
+          },
           "rows": {
             "type": "array",
             "items": {
@@ -230,7 +611,9 @@
           },
           "sessions": {
             "type": "array",
-            "items": {"$ref": "#/components/schemas/ComputerSession"}
+            "items": {
+              "$ref": "#/components/schemas/ComputerSession"
+            }
           },
           "seconds": {
             "type": "integer"
@@ -240,7 +623,7 @@
           },
           "missing_proofs": {
             "type": "integer",
-            "description": "Počet schválených návštěv lékaře, ke kterým ještě chybí propustka."
+            "description": "Počet schválených žádostí, ke kterým ještě chybí povinný doklad."
           },
           "vacation_conflict": {
             "type": "boolean",
@@ -274,6 +657,116 @@
                 "type": "object"
               }
             ]
+          },
+          "calendar_days": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "account": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "account"
+              ]
+            }
+          },
+          "presence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "from": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "to": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "presence",
+                    "recorded",
+                    "proposed"
+                  ]
+                }
+              }
+            }
+          },
+          "breaks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "from": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "to": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "presence",
+                    "recorded",
+                    "proposed"
+                  ]
+                }
+              }
+            }
+          },
+          "missing_actual": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unresolved_breaks": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unresolved_adjustments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Row"
+            }
+          },
+          "internal_by_day": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "seconds": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "recognized_seconds": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "absence_conflict": {
+            "type": "boolean"
           }
         }
       },
@@ -359,6 +852,231 @@
         "required": [
           "error"
         ]
+      },
+      "HolidayAccount": {
+        "type": "object",
+        "properties": {
+          "effective_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "account": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "effective_on",
+          "account"
+        ]
+      },
+      "CalendarDay": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date"
+          },
+          "name": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "name",
+          "account"
+        ]
+      },
+      "CalendarSettings": {
+        "type": "object",
+        "properties": {
+          "holiday_accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HolidayAccount"
+            }
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarDay"
+            }
+          },
+          "holidays": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HolidayRule"
+            }
+          }
+        },
+        "required": [
+          "holiday_accounts",
+          "days",
+          "holidays"
+        ]
+      },
+      "HolidayRule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,39}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "valid_to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Poslední den platnosti včetně."
+          },
+          "month": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 12
+          },
+          "day": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 31
+          },
+          "easter_offset": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -366,
+            "maximum": 366,
+            "description": "Posun ve dnech od velikonoční neděle."
+          },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Konto konkrétního svátku. Prázdná hodnota použije výchozí konto platné pro daný den."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "valid_from"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "month",
+              "day"
+            ],
+            "properties": {
+              "month": {
+                "type": "integer"
+              },
+              "day": {
+                "type": "integer"
+              },
+              "easter_offset": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "required": [
+              "easter_offset"
+            ],
+            "properties": {
+              "month": {
+                "type": "null"
+              },
+              "day": {
+                "type": "null"
+              },
+              "easter_offset": {
+                "type": "integer"
+              }
+            }
+          }
+        ]
+      },
+      "AttendanceRoundingRule": {
+        "type": "object",
+        "properties": {
+          "effective_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "down",
+              "up",
+              "nearest"
+            ]
+          },
+          "minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          }
+        },
+        "required": [
+          "effective_on",
+          "mode",
+          "minutes"
+        ]
+      },
+      "AttendanceBreakRule": {
+        "type": "object",
+        "properties": {
+          "effective_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "minutes": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 180
+          },
+          "preferred": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 360
+          },
+          "deadline": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 360
+          }
+        },
+        "required": [
+          "effective_on",
+          "enabled"
+        ]
       }
     },
     "securitySchemes": {
@@ -398,16 +1116,88 @@
       }
     },
     "responses": {
+      "AttendanceAccounts": {
+        "description": "Úspěšný požadavek.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/AttendanceAccount"
+              }
+            }
+          }
+        }
+      },
+      "WorkModels": {
+        "description": "Úspěšný požadavek.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/WorkModel"
+              }
+            }
+          }
+        }
+      },
+      "RequestPreview": {
+        "description": "Úspěšný požadavek.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "seconds": {
+                  "type": "integer"
+                },
+                "days": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                },
+                "intervals": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "to": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "AttendanceMergeLimit": {
         "description": "Aktuální limit v minutách.",
         "content": {
-          "application/json": {"schema": {"$ref": "#/components/schemas/AttendanceMergeLimit"}}
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AttendanceMergeLimit"
+            }
+          }
         }
       },
       "DailyAttendance": {
         "description": "Dnešní stav osob v týmu vedoucího.",
         "content": {
-          "application/json": {"schema": {"$ref": "#/components/schemas/DailyAttendance"}}
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DailyAttendance"
+            }
+          }
         }
       },
       "Activate": {
@@ -448,7 +1238,11 @@
       "Error404": {
         "description": "Požadovaný údaj, relace nebo odkaz nejsou dostupné.",
         "content": {
-          "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
         }
       },
       "Error409": {
@@ -474,7 +1268,11 @@
       "Error429": {
         "description": "Příliš mnoho pokusů o ověření.",
         "content": {
-          "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
         }
       },
       "Close": {
@@ -654,13 +1452,144 @@
             }
           }
         }
+      },
+      "CalendarSettings": {
+        "description": "Úspěch",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CalendarSettings"
+            }
+          }
+        }
       }
     },
     "requestBodies": {
+      "SaveAttendanceAccount": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "position": {
+                  "type": "integer"
+                },
+                "behavior": {
+                  "type": "string",
+                  "enum": [
+                    "work",
+                    "timed_absence",
+                    "shift_absence",
+                    "break",
+                    "calendar"
+                  ]
+                },
+                "requires_proof": {
+                  "type": "boolean"
+                },
+                "active": {
+                  "type": "boolean"
+                },
+                "payroll_code": {
+                  "type": "string"
+                },
+                "effective_on": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "rounding": {
+                  "$ref": "#/components/schemas/AttendanceRoundingRule"
+                },
+                "break_rule": {
+                  "$ref": "#/components/schemas/AttendanceBreakRule"
+                }
+              },
+              "required": [
+                "code",
+                "name",
+                "description",
+                "position",
+                "behavior",
+                "requires_proof",
+                "active"
+              ]
+            }
+          }
+        }
+      },
+      "SaveWorkModel": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "effective_on": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "week": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkShift"
+                  },
+                  "minItems": 7,
+                  "maxItems": 7
+                },
+                "original_effective_on": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "preview_token": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "effective_on",
+                "week"
+              ]
+            }
+          }
+        }
+      },
+      "AssignWorkModel": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/WorkAssignment"
+            }
+          }
+        }
+      },
       "ServiceSessionCode": {
         "required": true,
         "content": {
-          "application/json": {"schema": {"$ref": "#/components/schemas/ServiceSessionCode"}}
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ServiceSessionCode"
+            }
+          }
         }
       },
       "ServiceSessionVerify": {
@@ -669,25 +1598,60 @@
           "application/json": {
             "schema": {
               "allOf": [
-                {"$ref": "#/components/schemas/ServiceSessionCode"},
+                {
+                  "$ref": "#/components/schemas/ServiceSessionCode"
+                },
                 {
                   "type": "object",
                   "properties": {
-                    "login": {"type": "string"},
-                    "password": {"type": "string", "format": "password"},
+                    "login": {
+                      "type": "string"
+                    },
+                    "password": {
+                      "type": "string",
+                      "format": "password"
+                    },
                     "passkey": {
                       "type": "object",
-                      "required": ["id", "clientDataJSON", "authenticatorData", "signature", "userHandle"],
+                      "required": [
+                        "id",
+                        "clientDataJSON",
+                        "authenticatorData",
+                        "signature",
+                        "userHandle"
+                      ],
                       "properties": {
-                        "id": {"type": "string"},
-                        "clientDataJSON": {"type": "string"},
-                        "authenticatorData": {"type": "string"},
-                        "signature": {"type": "string"},
-                        "userHandle": {"type": "string"}
+                        "id": {
+                          "type": "string"
+                        },
+                        "clientDataJSON": {
+                          "type": "string"
+                        },
+                        "authenticatorData": {
+                          "type": "string"
+                        },
+                        "signature": {
+                          "type": "string"
+                        },
+                        "userHandle": {
+                          "type": "string"
+                        }
                       }
                     }
                   },
-                  "oneOf": [{"required": ["login", "password"]}, {"required": ["passkey"]}]
+                  "oneOf": [
+                    {
+                      "required": [
+                        "login",
+                        "password"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "passkey"
+                      ]
+                    }
+                  ]
                 }
               ]
             }
@@ -839,7 +1803,10 @@
                   "type": "integer"
                 },
                 "number": {
-                  "type": ["string", "null"],
+                  "type": [
+                    "string",
+                    "null"
+                  ],
                   "description": "Osobní číslo je povinné při zpracování docházky. Pro ostatní účty lze pole vynechat nebo použít null."
                 },
                 "login": {
@@ -854,8 +1821,8 @@
                 "attendance_enabled": {
                   "type": "boolean"
                 },
-                "team": {
-                  "type": "string"
+                "org_unit_id": {
+                  "type": "integer"
                 },
                 "sid": {
                   "type": [
@@ -873,23 +1840,62 @@
                     "null"
                   ],
                   "format": "date"
+                },
+                "work_model": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "integer"
+                    },
+                    "effective_on": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "original_effective_on": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "preview_token": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "model",
+                    "effective_on"
+                  ]
                 }
               },
               "required": [
                 "name",
-                "team",
+                "org_unit_id",
                 "login",
                 "roles",
                 "attendance_enabled",
                 "starts"
               ],
               "if": {
-                "required": ["attendance_enabled"],
-                "properties": { "attendance_enabled": { "const": true } }
+                "required": [
+                  "attendance_enabled"
+                ],
+                "properties": {
+                  "attendance_enabled": {
+                    "const": true
+                  }
+                }
               },
               "then": {
-                "required": ["number"],
-                "properties": { "number": { "type": "string", "minLength": 1 } }
+                "required": [
+                  "number"
+                ],
+                "properties": {
+                  "number": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
               }
             }
           }
@@ -928,7 +1934,10 @@
                   }
                 },
                 "resolved_warning": {
-                  "type": ["string", "null"],
+                  "type": [
+                    "string",
+                    "null"
+                  ],
                   "description": "Označí dřívější hlášení této stanice za vyřešené."
                 },
                 "warning": {
@@ -1023,12 +2032,7 @@
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": [
-                    "PRACE",
-                    "LEKAR",
-                    "DOVOLENA",
-                    "PRESTAVKA"
-                  ]
+                  "description": "Stabilní kód konta docházky."
                 },
                 "from": {
                   "type": "string"
@@ -1041,6 +2045,20 @@
                 },
                 "note": {
                   "type": "string"
+                },
+                "vacation_side": {
+                  "type": "string",
+                  "enum": [
+                    "start",
+                    "end"
+                  ]
+                },
+                "vacation_seconds": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "consent": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -1063,7 +2081,10 @@
           "application/json": {
             "schema": {
               "type": "object",
-              "required": ["id", "photo"],
+              "required": [
+                "id",
+                "photo"
+              ],
               "properties": {
                 "id": {
                   "type": "integer",
@@ -1095,6 +2116,57 @@
                   "example": "2026-11"
                 }
               }
+            }
+          }
+        }
+      },
+      "HolidayAccount": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HolidayAccount"
+            }
+          }
+        }
+      },
+      "SaveCalendarDay": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/CalendarDay"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "day": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "remove": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "day",
+                    "remove"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "HolidayRule": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HolidayRule"
             }
           }
         }

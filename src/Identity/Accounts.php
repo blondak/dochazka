@@ -8,13 +8,14 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Dochazka\Http\Problem;
 use Dochazka\Staff\Employee;
+use Dochazka\Staff\OrgUnits;
 use Nette\Http\Session;
 
 final class Accounts
 {
     public function __construct(
         private Connection $db,
-        private EntityManagerInterface $em,
+        private OrgUnits $units, private EntityManagerInterface $em,
         private Session $session,
     ) {}
 
@@ -23,7 +24,7 @@ final class Accounts
         $auth = $this->session->getSection('auth');
         $id = $auth->get('user');
         $employee = $id === null ? null : $this->em->createQueryBuilder()
-            ->select('e.id', 'e.name', 'e.roles', 'e.team', 'e.number', 'e.sid', 'e.attendanceEnabled AS attendance_enabled')
+            ->select('e.id', 'e.name', 'e.roles', 'IDENTITY(e.orgUnit) AS org_unit_id', 'e.number', 'e.sid', 'e.attendanceEnabled AS attendance_enabled')
             ->from(Employee::class, 'e')
             ->where('e.id = :id', 'e.sessionVersion = :version', 'e.archivedOn IS NULL', 'e.starts <= CURRENT_DATE()')
             ->andWhere('e.ends IS NULL OR e.ends >= CURRENT_DATE()')
@@ -37,7 +38,7 @@ final class Accounts
         if ($role !== null && !in_array($role, $employee['roles'], true)) {
             throw new Problem('Přístup zamítnut.', 403);
         }
-        return $employee;
+        return $employee + ['org_unit_path' => $this->units->path($employee['org_unit_id']), 'managed' => in_array('manager', $employee['roles'], true)];
     }
 
     public function login(array $i): array

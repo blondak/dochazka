@@ -2,7 +2,7 @@
 
 Centrála eviduje pracovní dobu z událostí stanic Windows. Zaměstnanci vidí své výkazy a podávají žádosti, vedoucí schvalují záznamy svého týmu a mzdová účtárna uzavírá období a stahuje číslované verze CSV.
 
-Žádost o návštěvu lékaře lze zadat předem i zpětně. Po schválení vedoucím a po skončení návštěvy zaměstnanec na kartě **Žádosti** vybere fotografii nebo ji pořídí fotoaparátem telefonu. Náhled nabízí detekci okrajů a narovnání v prohlížeči před uložením. Před schválením měsíčního výkazu musí být propustka doložená. Vlastní žádosti a výkaz vedoucího schvaluje jiný vedoucí stejného týmu. Pokud vedoucí eviduje také vlastní docházku, přidělte druhého vedoucího při nastavení týmu.
+Žádost o návštěvu lékaře lze zadat předem i zpětně. Po schválení vedoucím a po skončení návštěvy zaměstnanec na kartě **Žádosti** vybere fotografii nebo ji pořídí fotoaparátem telefonu. Náhled nabízí detekci okrajů a narovnání v prohlížeči před uložením. Před schválením měsíčního výkazu musí být propustka doložená. Vlastní žádosti a výkaz vedoucího schvaluje jiný vedoucí ve stejné nebo nadřazené organizační jednotce.
 
 Mzdová účtárna uzavře měsíc po schválení všech zahrnutých osob. Pokud stanice později doručí záznam při práci offline, vedoucí znovu schválí změněný výkaz a účtárna může vydat další verzi CSV. Dříve vydané verze zůstávají dostupné v historii uzávěrky.
 
@@ -13,8 +13,8 @@ Rozbalte archiv **central-deploy.tar.gz** z vydání centrály a ve stejném adr
 ~~~dotenv
 TRAEFIK_NETWORK=traefik
 DB_PASSWORD=sem-vlozte-vygenerovane-heslo
-APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.4
-WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.4
+APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.5
+WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.5
 SETUP_TOKEN=sem-vlozte-vygenerovany-kod
 PASSKEY_ORIGIN=https://dochazka.example.cz
 ~~~
@@ -28,7 +28,7 @@ Traefik směruje na **http://dochazka-web:80**. Toto jméno funguje na sdílené
 
 Pro nasazení nejnovějšího stabilního vydání použijte jako dvojici `ghcr.io/blondak/dochazka:php-latest` a `ghcr.io/blondak/dochazka:web-latest`. Po vydání se oba tagy posunou na nové obrazy. Nasazení konkrétní verze použije číslované tagy z ukázky výše.
 
-Při prvním otevření webu průvodce požádá o instalační kód a údaje správce. Po založení účtu se kód už nedá použít. Správce po přihlášení uvidí kartu **První kroky**.
+Při prvním otevření webu průvodce požádá o instalační kód a údaje správce. Po založení účtu se kód už nedá použít. **První kroky** zůstávají v bočním menu, dokud chybí organizační jednotka, nearchivovaný zaměstnanec se zpracováním docházky nebo neodvolané zařízení.
 
 Konzolové příkazy spravuje Contributte Console. Správce lze založit i příkazem **docker compose exec app php bin/console account:admin spravce**. Heslo zadáte ze standardního vstupu. Další příkazy jsou **db:migrate** a **api:openapi**.
 
@@ -36,9 +36,15 @@ Konzolové příkazy spravuje Contributte Console. Správce lze založit i pří
 
 Z kořene repozitáře spusťte **bash bin/test-environment.sh up** a otevřete **http://localhost:8080**. Skript vytvoří soukromý soubor **.env.test** s instalačním kódem **SETUP_TOKEN** a samostatnou databázi. Stejný příkaz použijte i při sestavení nové verze. Příkaz **bash bin/test-environment.sh stop** služby zastaví a ponechá testovací data.
 
+Pro vývoj Vue spusťte z kořene repozitáře `npm ci --prefix web` a `npm run dev --prefix web` (alias `npm run watch --prefix web`). Otevřete **http://localhost:5173**. Vite načítá změny přímo z pracovního adresáře a předává požadavky na API lokální centrále na portu 8080. Jiný backend nastavíte proměnnou `DOCHAZKA_DEV_BACKEND`. Pro test passkeys z vývojové adresy spusťte centrálu pomocí `PASSKEY_ORIGIN=http://localhost:5173 bash bin/test-environment.sh up`.
+
 ## Webové účty a API
 
-Správce v adresáři založí zaměstnance a nastaví uživatelské jméno, tým, jednu či více rolí a Windows SID. Kombinace rolí **Vedoucí** a **Mzdová účetní** zpřístupní uzávěrku i schvalování vlastního týmu. Vedoucí může zobrazit propustky pouze ve svém týmu a vlastní propustky.
+Boční **Menu** zpřístupňuje výkaz, žádosti a další sekce podle role. **Nastavení** sdružuje správu zaměstnanců, organizační struktury, zařízení a pravidel docházky.
+
+V sekci **Organizační struktura** správce vytvoří jednotky a určí jejich rodiče. Původní týmy migrace převede na samostatné jednotky nejvyšší úrovně. Přesun celé větve nebo zaměstnance okamžitě změní, kteří vedoucí mohou otevřít také jeho historické výkazy, žádosti a propustky. Dosavadní rozhodnutí si ponechají původního schvalovatele. Ikona zaměstnanců u jednotky otevře adresář filtrovaný na celou její větev. Smazat lze pouze prázdnou jednotku.
+
+Správce v adresáři založí zaměstnance a nastaví uživatelské jméno, organizační jednotku, jednu či více rolí a Windows SID. Kombinace rolí **Vedoucí** a **Mzdová účetní** zpřístupní uzávěrku i schvalování vlastního týmu. Vedoucí může zobrazit propustky členů své organizační větve i své vlastní.
 
 Volba **Zpracovávat docházku** určuje, zda centrála pro účet přijímá nové docházkové události a zahrnuje jeho výkaz do uzávěrek. Při zapnutí je povinné osobní číslo pro mzdový export. Technický účet s vypnutou volbou se může přihlašovat a používat přidělené role i bez osobního čísla. Archivace ihned ukončí přístup k účtu a uzavře období evidence nejpozději k datu archivace. Žádosti, výkazy a vydané exporty zůstávají uložené. Správce může účet zobrazit volbou **Zobrazit archivované** a zrušit archivaci.
 
@@ -54,7 +60,27 @@ Nette DI konfiguruje **nettrine/dbal** a **nettrine/orm**. Entity jsou v jednotl
 
 ### Denní přehled a spojování úseků
 
-Vedoucí v **Denním přehledu** vidí stav členů svého týmu podle dnešních událostí Windows a součet uzavřených pracovních relací. Servisní přihlášení do součtu ani do stavu přítomnosti nevstupuje.
+**Výkaz** zobrazuje pracovní dny v době evidence zaměstnance a víkendy s evidovanými záznamy. Podrobnosti dne obsahují plán směny, pracovní úseky, žádosti se stavem a dostupné relace počítače. Ikony v měsíčním přehledu označují čekající a zamítnuté žádosti. Vedoucí žádost vyřídí v dialogu přímo z detailu dne.
+
+V **Nastavení → Pracovní modely** správce vytvoří týdenní rozvrh a přiřadí ho zaměstnanci od zvoleného dne. Každý den může mít vlastní směnu a neplacenou přestávku. Novou verzi společného modelu založte s datem, od kterého se má používat. Čerpání dovolené se zobrazuje v hodinách podle rozvrhu. Dříve uložená dovolená za dobu před přiřazením modelu se dál vykazuje v kalendářních dnech. Před novou žádostí o dovolenou musí mít zaměstnanec přiřazený model.
+
+V **Nastavení → Konta docházky** lze například založit školení jako pracovní konto s vlastním mzdovým kódem. Schválené školení se započte jednou do celkové přítomnosti a v souhrnu se ukáže také samostatně. Nové mzdové CSV používá účinné kódy kont a přidává sloupec `sekundy`. Již vydaná CSV si ponechají původní podobu.
+
+Pracovní modely mají rozbalovací verze rozvrhu. Konkrétní model s účinností nastavíte v dialogu zaměstnance na záložce **Docházka**. Zpětná oprava zobrazí dopady a vyžádá důvod. Ve výkazu může vedoucí upravit uznanou délku úseku s ponechanými časy příchodu a odchodu. Při mzdovém importu použijte sloupec `sekundy`. Interní zaokrouhlení konta se ukazuje ve výkazu vedle přesné uznané doby.
+
+U pracovního konta lze zapnout návrh pauzy podle skutečného příchodu. Vedoucí ji posoudí při schválení výkazu. Po schválení odhadu časového volna zaměstnanec doplní skutečné časy a doloží případnou přílohu. Částečná dovolená se vykazuje jako datum a schválená délka. Vedoucí může kontrolu svátků spustit v detailu dne pro jednotlivce nebo v Denním přehledu pro svou organizační větev.
+
+V **Nastavení → Svátky a dny volna** správce zvolí konto pro české svátky s datem účinnosti. Každý svátek má platnost od–do a pevné datum nebo posun ve dnech od velikonoční neděle. Každé pravidlo může převzít výchozí konto nebo určit své vlastní. Odebrání platného pravidla ukončí jeho platnost dneškem včetně. Pravidlo s budoucím začátkem se odstraní celé. Pro konkrétní firemní den volna lze zadat vlastní název a vybrat libovolné aktivní konto. Při celozávodní dovolené zvolte **Dovolená**, aby hodiny směny vstoupily přímo do souhrnu dovolené a mzdového exportu. Konto s povinným dokladem vyžaduje přílohu také u automatického zápisu. Kontrolní běh zapíše do prázdného svátku nebo firemního volna celou plánovanou směnu po odečtení neplacené přestávky. Pozdější pracovní záznam za stejný den vyřadí celý automatický zápis z výkazu i další uzávěrky, i když se odpracovala jen část směny. Servisní přihlášení doplnění svátku neblokuje. Po zpětném označení jediné relace za servisní může další běh svátek doplnit. Za volný den bez plánované směny se hodiny nepřipisují.
+
+V místním testovacím prostředí spusťte `bash bin/test-environment.sh fill-holidays --dry-run`. V nasazené centrále pro náhled použijte `docker compose exec -T app php bin/console attendance:fill-holidays --dry-run`. Bez `--dry-run` se zapíší změny. Standardně se zpracuje posledních 31 dokončených dnů podle pražského času. Jiné období lze určit pomocí `--from=2026-10-01 --to=2026-10-31` (oba dny včetně). Běh lze bezpečně opakovat. Pro každodenní doplnění lze na hostiteli centrály naplánovat například tento řádek cronu se skutečnou cestou k projektu.
+
+```cron
+15 3 * * * cd /cesta/k/centrale && docker compose exec -T app php bin/console attendance:fill-holidays
+```
+
+Při otevření aktuálního měsíce výkaz vybere dnešek, pokud spadá do období evidence. **Přidat konto** v liště nad dny a detailem umožní vedoucímu zapsat například přítomnost, lékaře či celou směnu dovolené. Před zápisem dovolené ukáže výkaz čerpání podle pracovního modelu. Zápis vedoucího se rovnou započítá. U pracovního úseku může vedoucí později upravit začátek a konec. Uvede důvod a úprava se objeví v **Žádostech**. Audit ukládá autora, důvod a původní i nový čas. Windows relace zůstávají dostupné podle oprávnění. Uznaná doba vstupuje do výkazu a exportu a upravený výkaz vyžaduje nové schválení.
+
+Vedoucí v **Denním přehledu** vidí stav členů vlastní jednotky a všech podřízených jednotek podle dnešních událostí Windows a součet uzavřených pracovních relací. Servisní přihlášení do součtu ani do stavu přítomnosti nevstupuje.
 
 Správce v **Nastavení docházky** určí nejdelší mezeru pro automatické spojení uzavřených relací na stejném počítači a v jednom místním dni. Výchozí hodnota je 0 a změna platí ode dne nastavení. Spojování respektuje schválené přestávky, nepřítomnosti a servisní relace.
 
@@ -64,9 +90,9 @@ Vedoucí může ve výkazu člena týmu zaškrtnout pracovní úseky jednoho dne
 
 Pro hromadné nasazení předá GPO instalačnímu skriptu adresu centrály a registrační brány. Stanice se ověří vlastním účtem počítače. Registraci mohou provést členové vybrané skupiny v AD. Přípravu brány, GPO, aktualizaci a odvolání přístupu popisuje [návod pro Samba AD](deploy/gpo.md).
 
-Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.4-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.4-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
+Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.5-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.5-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
 
-Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.4-single-file'` a pro balíček s DLL použijte `-Release '0.0.4'`.
+Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.5-single-file'` a pro balíček s DLL použijte `-Release '0.0.5'`.
 
 ### Připojení přes proxy
 
@@ -84,21 +110,21 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 
 ### Ruční registrace stanice
 
-1. Rozbalte balíček **agent-v0.0.4-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
+1. Rozbalte balíček **agent-v0.0.5-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
 2. V centrále na kartě **Zařízení** zaregistrujte stanici. Kód uložte jako **JMENO-POCITACE.txt** do adresáře s registracemi. Na sdílení dejte každému počítačovému účtu právo číst jen jeho vlastní kód. Registraci proveďte během hodinové platnosti.
 3. Při pilotu spusťte příkaz níže jako správce. Pro nasazení přes Samba AD nastavte stejný příkaz jako spouštěcí PowerShell skript v konfiguraci počítače v doménové GPO. Při aktualizaci změňte **PackagePath** a **Release**. Služba si ponechá lokální frontu i registraci.
 4. V GPO povolte úspěšný audit přihlášení a odhlášení. Na pilotní stanici ověřte párování událostí 4624 a 4634 v protokolu Security a postup při práci bez připojení. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.4\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.4' -Release '0.0.4' -EnrollmentDirectory '\\server\dochazka-registrace'
+& '\\server\dochazka\agent-v0.0.5\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.5' -Release '0.0.5' -EnrollmentDirectory '\\server\dochazka-registrace'
 ~~~
 
 ## Vydání
 
 | Tag v repozitáři | Výstup |
 | --- | --- |
-| [agent-v0.0.4](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.4) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
-| [docker-v0.0.4](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.4) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.4`, `web-0.0.4` a `enroll-0.0.4` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
+| [agent-v0.0.5](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.5) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
+| [docker-v0.0.5](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.5) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.5`, `web-0.0.5` a `enroll-0.0.5` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
 
 Integrační test **tests/workflow.py** potřebuje PHP 8.4 a přístup k testovací PostgreSQL přes proměnné **PGHOST**, **PGPORT**, **PGDATABASE**, **PGUSER** a **PGPASSWORD**. Vytvoří vlastní dočasné schéma. Samostatný test výpočtu výkazu spustíte jako **php tests/timesheet.php**.
 

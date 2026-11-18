@@ -6,6 +6,7 @@ import Button from 'primevue/button'
 import Card from 'primevue/card'
 import Column from 'primevue/column'
 import InputText from 'primevue/inputtext'
+import Menu from 'primevue/menu'
 import Message from 'primevue/message'
 import Select from 'primevue/select'
 import Tag from 'primevue/tag'
@@ -78,8 +79,10 @@ app.component('PvColumn', Column)
 app.component('PvDataTable', defineAsyncComponent(() => import('primevue/datatable')))
 app.component('PvDatePicker', defineAsyncComponent(() => import('primevue/datepicker')))
 app.component('PvDialog', defineAsyncComponent(() => import('primevue/dialog')))
+app.component('PvDrawer', defineAsyncComponent(() => import('primevue/drawer')))
 app.component('PvFileUpload', defineAsyncComponent(() => import('primevue/fileupload')))
 app.component('PvInputText', InputText)
+app.component('PvMenu', Menu)
 app.component('PvMessage', Message)
 app.component('PvPassword', defineComponent({
     inheritAttrs: false,
@@ -101,8 +104,15 @@ app.component('PvPassword', defineComponent({
         }
     },
 }))
+app.component('PvTreeTable', defineAsyncComponent(() => import('primevue/treetable')))
+app.component('PvTreeSelect', defineAsyncComponent(() => import('primevue/treeselect')))
 app.component('PvSelect', Select)
 app.component('PvTag', Tag)
+app.component('PvTabs', defineAsyncComponent(() => import('primevue/tabs')))
+app.component('PvTabList', defineAsyncComponent(() => import('primevue/tablist')))
+app.component('PvTab', defineAsyncComponent(() => import('primevue/tab')))
+app.component('PvTabPanels', defineAsyncComponent(() => import('primevue/tabpanels')))
+app.component('PvTabPanel', defineAsyncComponent(() => import('primevue/tabpanel')))
 app.component('PvToolbar', defineAsyncComponent(() => import('primevue/toolbar')))
 app.directive('tooltip', Tooltip)
 app.mount('#app')

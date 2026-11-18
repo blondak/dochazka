@@ -68,6 +68,9 @@ try {
     if (!(Test-Path -LiteralPath $queue) -or $service.State -ne 'Running' -or $service.StartName -ne 'LocalSystem') {
         throw 'The installed LocalSystem service did not start collecting with its local SQLite queue.'
     }
+    if (!(Get-Service $name).CanShutdown) {
+        throw 'The installed service does not accept system shutdown notifications.'
+    }
     Write-Output 'Windows executable, SQLite, and LocalSystem service OK.'
 } finally {
     Remove-ItemProperty -Path $runKey -Name $name -ErrorAction SilentlyContinue

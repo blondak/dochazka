@@ -40,6 +40,72 @@
                 }
             }
         },
+        "/api/v1/adjust-recognized-work": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Upravit uznanou délku úseku",
+                "operationId": "adjustDuration",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "employee",
+                                    "month",
+                                    "fingerprint",
+                                    "reason"
+                                ],
+                                "properties": {
+                                    "employee": {
+                                        "type": "integer"
+                                    },
+                                    "month": {
+                                        "type": "string"
+                                    },
+                                    "fingerprint": {
+                                        "type": "string"
+                                    },
+                                    "reason": {
+                                        "type": "string"
+                                    },
+                                    "row": {
+                                        "type": "integer"
+                                    },
+                                    "seconds": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "stale": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    }
+                }
+            }
+        },
         "/api/v1/approve": {
             "post": {
                 "tags": [
@@ -75,6 +141,157 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/attendance-account": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Uložit konto a případně novou verzi mzdového kódu",
+                "operationId": "saveAttendanceAccount",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/SaveAttendanceAccount"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/attendance-accounts": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Seznam kont docházky",
+                "operationId": "attendanceAccounts",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/AttendanceAccounts"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/attendance-break": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Opravit nebo doložit přestávku",
+                "operationId": "adjustBreak",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "employee",
+                                    "month",
+                                    "fingerprint",
+                                    "reason"
+                                ],
+                                "properties": {
+                                    "employee": {
+                                        "type": "integer"
+                                    },
+                                    "month": {
+                                        "type": "string"
+                                    },
+                                    "fingerprint": {
+                                        "type": "string"
+                                    },
+                                    "reason": {
+                                        "type": "string"
+                                    },
+                                    "day": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "record",
+                                            "none",
+                                            "ack",
+                                            "auto"
+                                        ]
+                                    },
+                                    "id": {
+                                        "type": "integer"
+                                    },
+                                    "from": {
+                                        "type": "string"
+                                    },
+                                    "to": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
                     }
                 }
             }
@@ -148,6 +365,226 @@
                     },
                     "403": {
                         "$ref": "#/components/responses/Error403"
+                    }
+                }
+            }
+        },
+        "/api/v1/calendar-day": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Uložit nebo odebrat firemní den pracovního klidu",
+                "operationId": "calendarDay",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/SaveCalendarDay"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/Error404"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/calendar-holiday": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Přidat nebo upravit datované pravidlo svátku a jeho volitelné konto",
+                "operationId": "saveHolidayRule",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/HolidayRule"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Employee"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/Error404"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/calendar-holiday-account": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Nastavit výchozí konto pro svátky bez vlastního konta od zvoleného data",
+                "operationId": "calendarHolidayAccount",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/HolidayAccount"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/Error404"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/calendar-holiday-remove": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Odebrat budoucí pravidlo svátku nebo ukončit jeho platnost dneškem včetně",
+                "operationId": "removeHolidayRule",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "id"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/Error404"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/calendar-settings": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Nastavení českých svátků a jednotlivých firemních dnů pracovního klidu",
+                "operationId": "calendarSettings",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/CalendarSettings"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/Error404"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
                     }
                 }
             }
@@ -532,6 +969,84 @@
                 }
             }
         },
+        "/api/v1/employee-model-choices": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Pracovní modely a historie přiřazení pro dialog zaměstnance",
+                "operationId": "employeeModelChoices",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "employee": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Modely a přiřazení vybraného zaměstnance"
+                    }
+                }
+            }
+        },
+        "/api/v1/employee-work-model": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Přiřadit pracovní model zaměstnanci",
+                "operationId": "assignWorkModel",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/AssignWorkModel"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
         "/api/v1/enroll": {
             "post": {
                 "tags": [
@@ -628,6 +1143,60 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/holiday-control": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Náhled nebo potvrzení kontrolního běhu svátků a firemního volna",
+                "operationId": "holidayControl",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "from",
+                                    "to"
+                                ],
+                                "properties": {
+                                    "employee": {
+                                        "type": "integer"
+                                    },
+                                    "from": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "to": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "token": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Počet přidaných"
                     }
                 }
             }
@@ -849,6 +1418,217 @@
                 "responses": {
                     "200": {
                         "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/org-unit": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Vytvořit, přejmenovat nebo přesunout jednotku",
+                "operationId": "orgUnitSave",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name",
+                                    "parent_id"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "integer"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "parent_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Úspěch",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/org-unit-delete": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Smazat prázdnou jednotku",
+                "operationId": "orgUnitDelete",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "id"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Úspěch",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ok": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/org-units": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Organizační jednotky",
+                "operationId": "orgUnitUnits",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Úspěch",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "required": [
+                                            "id",
+                                            "name",
+                                            "parent_id",
+                                            "path"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "integer"
+                                            },
+                                            "name": {
+                                                "type": "string"
+                                            },
+                                            "parent_id": {
+                                                "type": [
+                                                    "integer",
+                                                    "null"
+                                                ]
+                                            },
+                                            "path": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/Error401"
@@ -1393,7 +2173,7 @@
                 "tags": [
                     "Evidence"
                 ],
-                "summary": "Podat žádost nebo opravu. Dovolená používá první a poslední kalendářní den, ostatní druhy místní čas v Europe/Prague.",
+                "summary": "Podat žádost. Celosměnová konta používají první a poslední kalendářní den, časová konta místní čas v Europe/Prague.",
                 "operationId": "request",
                 "parameters": [
                     {
@@ -1411,6 +2191,102 @@
                 "responses": {
                     "200": {
                         "$ref": "#/components/responses/Employee"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/request-actual": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Doplnit skutečný interval nebo vrátit podklady k opravě",
+                "operationId": "requestActual",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "id"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "integer"
+                                    },
+                                    "from": {
+                                        "type": "string"
+                                    },
+                                    "to": {
+                                        "type": "string"
+                                    },
+                                    "reason": {
+                                        "type": "string"
+                                    },
+                                    "return": {
+                                        "type": "boolean"
+                                    },
+                                    "photo": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    }
+                }
+            }
+        },
+        "/api/v1/request-preview": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Spočítat čerpání žádosti před podáním",
+                "operationId": "requestPreview",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Request"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/RequestPreview"
                     },
                     "401": {
                         "$ref": "#/components/responses/Error401"
@@ -1471,7 +2347,7 @@
                 "tags": [
                     "Evidence"
                 ],
-                "summary": "Přiložit fotografii po skončení schválené návštěvy lékaře",
+                "summary": "Přiložit povinný doklad po skončení schválené žádosti",
                 "operationId": "requestProofUpload",
                 "parameters": [
                     {
@@ -1508,6 +2384,33 @@
                 }
             }
         },
+        "/api/v1/request-vacation-consent": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Souhlas zaměstnance s částečným čerpáním dovolené",
+                "operationId": "requestVacationConsent",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Invite"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    }
+                }
+            }
+        },
         "/api/v1/revoke": {
             "post": {
                 "tags": [
@@ -1522,6 +2425,98 @@
                 ],
                 "requestBody": {
                     "$ref": "#/components/requestBodies/Invite"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/save-work-row": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Vedoucí zapíše konto do výkazu nebo upraví pracovní úsek. Zápis se ihned schválí a uloží se důvod.",
+                "operationId": "saveWorkRow",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "employee",
+                                    "month",
+                                    "fingerprint",
+                                    "day",
+                                    "reason"
+                                ],
+                                "properties": {
+                                    "employee": {
+                                        "type": "integer"
+                                    },
+                                    "month": {
+                                        "type": "string"
+                                    },
+                                    "fingerprint": {
+                                        "type": "string"
+                                    },
+                                    "day": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "row": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": "Index upravovaného úseku. Při vložení se vynechá."
+                                    },
+                                    "kind": {
+                                        "type": "string",
+                                        "default": "PRACE",
+                                        "description": "Aktivní konto. Úprava existujícího úseku používá PRACE."
+                                    },
+                                    "from": {
+                                        "type": "string",
+                                        "description": "Povinné pro časové konto.",
+                                        "example": "08:05"
+                                    },
+                                    "to": {
+                                        "type": "string",
+                                        "description": "Povinné pro časové konto. Pro konec dne použijte 24:00.",
+                                        "example": "16:00"
+                                    },
+                                    "reason": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
                 },
                 "security": [
                     {
@@ -1920,10 +2915,266 @@
                     }
                 }
             }
+        },
+        "/api/v1/work-model": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Uložit novou verzi pracovního modelu",
+                "operationId": "saveWorkModel",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/SaveWorkModel"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Employee"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/work-model-change-preview": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Náhled dopadů změny rozvrhu nebo přiřazení",
+                "operationId": "workModelChangePreview",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dotčené osoby a měsíce"
+                    }
+                }
+            }
+        },
+        "/api/v1/work-models": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Seznam pracovních modelů a jejich verzí",
+                "operationId": "workModels",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/WorkModels"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
         }
     },
     "components": {
         "schemas": {
+            "AttendanceAccount": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "position": {
+                        "type": "integer"
+                    },
+                    "behavior": {
+                        "type": "string",
+                        "enum": [
+                            "work",
+                            "timed_absence",
+                            "shift_absence",
+                            "break",
+                            "calendar"
+                        ]
+                    },
+                    "requires_proof": {
+                        "type": "boolean"
+                    },
+                    "active": {
+                        "type": "boolean"
+                    },
+                    "system": {
+                        "type": "boolean"
+                    },
+                    "payroll_versions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "payroll_code": {
+                                    "type": "string"
+                                },
+                                "effective_on": {
+                                    "type": "string",
+                                    "format": "date"
+                                }
+                            }
+                        }
+                    },
+                    "rounding_rules": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AttendanceRoundingRule"
+                        }
+                    },
+                    "break_rules": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AttendanceBreakRule"
+                        }
+                    }
+                }
+            },
+            "WorkShift": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "properties": {
+                    "start": {
+                        "type": "string"
+                    },
+                    "end": {
+                        "type": "string"
+                    },
+                    "break_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "break_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "WorkModelVersion": {
+                "type": "object",
+                "properties": {
+                    "week": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/WorkShift"
+                        },
+                        "minItems": 7,
+                        "maxItems": 7
+                    },
+                    "effective_on": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": [
+                    "week",
+                    "effective_on"
+                ]
+            },
+            "WorkAssignment": {
+                "type": "object",
+                "properties": {
+                    "employee": {
+                        "type": "integer"
+                    },
+                    "model": {
+                        "type": "integer"
+                    },
+                    "effective_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "original_effective_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                    "preview_token": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "employee",
+                    "model",
+                    "effective_on"
+                ]
+            },
+            "WorkModel": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "versions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/WorkModelVersion"
+                        }
+                    }
+                }
+            },
             "EmployeeRoles": {
                 "type": "array",
                 "minItems": 1,
@@ -1969,7 +3220,13 @@
                         ],
                         "format": "date"
                     },
-                    "team": {
+                    "org_unit_id": {
+                        "type": "integer"
+                    },
+                    "managed": {
+                        "type": "boolean"
+                    },
+                    "org_unit_path": {
                         "type": "string"
                     },
                     "sid": {
@@ -2030,41 +3287,66 @@
             "Row": {
                 "type": "object",
                 "properties": {
+                    "payroll_code": {
+                        "type": "string"
+                    },
+                    "seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
                     "day": {
                         "type": "string",
                         "format": "date"
                     },
                     "kind": {
                         "type": "string",
-                        "enum": [
-                            "PRACE",
-                            "LEKAR",
-                            "DOVOLENA",
-                            "PRESTAVKA"
-                        ]
+                        "description": "Stabilní kód konta docházky."
                     },
                     "from": {
                         "type": "string"
                     },
                     "to": {
                         "type": "string"
+                    },
+                    "generated_holiday": {
+                        "type": "boolean",
+                        "description": "Automatický zápis doplněný podle kalendáře za prázdný den."
+                    },
+                    "calculated_seconds": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "partial_vacation": {
+                        "type": "boolean"
                     }
                 }
             },
             "Request": {
                 "type": "object",
                 "properties": {
+                    "account_name": {
+                        "type": "string"
+                    },
+                    "behavior": {
+                        "type": "string"
+                    },
+                    "requires_proof": {
+                        "type": "boolean"
+                    },
+                    "scheduled_seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
                     "id": {
                         "type": "integer"
                     },
                     "kind": {
                         "type": "string",
-                        "enum": [
-                            "PRACE",
-                            "LEKAR",
-                            "DOVOLENA",
-                            "PRESTAVKA"
-                        ]
+                        "description": "Stabilní kód konta docházky."
                     },
                     "begins": {
                         "type": "string",
@@ -2097,6 +3379,64 @@
                     "merged_work": {
                         "type": "boolean",
                         "description": "Žádost představuje potvrzené ruční spojení pracovních úseků."
+                    },
+                    "replaces_from": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "replaces_to": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "generated_holiday": {
+                        "type": "boolean",
+                        "description": "Automatický zápis doplněný podle kalendáře za prázdný den."
+                    },
+                    "vacation_side": {
+                        "type": "string",
+                        "enum": [
+                            "start",
+                            "end"
+                        ]
+                    },
+                    "vacation_seconds": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "vacation_consent": {
+                        "type": "boolean"
+                    },
+                    "needs_actual": {
+                        "type": "boolean"
+                    },
+                    "actual_returned": {
+                        "type": "boolean"
+                    },
+                    "actual_from": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "actual_to": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "vacation_estimate": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "from": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "to": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -2219,6 +3559,61 @@
             "Sheet": {
                 "type": "object",
                 "properties": {
+                    "planned_shifts": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "from": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "to": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "account_totals": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "seconds": {
+                                    "type": "integer"
+                                },
+                                "legacy_days": {
+                                    "type": "integer"
+                                },
+                                "internal_seconds": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                }
+                            }
+                        }
+                    },
+                    "attendance_start": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "attendance_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "Poslední den evidence včetně případného data archivace."
+                    },
                     "rows": {
                         "type": "array",
                         "items": {
@@ -2239,7 +3634,7 @@
                     },
                     "missing_proofs": {
                         "type": "integer",
-                        "description": "Počet schválených návštěv lékaře, ke kterým ještě chybí propustka."
+                        "description": "Počet schválených žádostí, ke kterým ještě chybí povinný doklad."
                     },
                     "vacation_conflict": {
                         "type": "boolean",
@@ -2273,6 +3668,116 @@
                                 "type": "object"
                             }
                         ]
+                    },
+                    "calendar_days": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "account": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "name",
+                                "account"
+                            ]
+                        }
+                    },
+                    "presence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "day": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "from": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "to": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "source": {
+                                    "type": "string",
+                                    "enum": [
+                                        "presence",
+                                        "recorded",
+                                        "proposed"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "breaks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "day": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "from": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "to": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "source": {
+                                    "type": "string",
+                                    "enum": [
+                                        "presence",
+                                        "recorded",
+                                        "proposed"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "missing_actual": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "unresolved_breaks": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "unresolved_adjustments": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Row"
+                        }
+                    },
+                    "internal_by_day": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                    "seconds": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "recognized_seconds": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "absence_conflict": {
+                        "type": "boolean"
                     }
                 }
             },
@@ -2358,9 +3863,298 @@
                 "required": [
                     "error"
                 ]
+            },
+            "HolidayAccount": {
+                "type": "object",
+                "properties": {
+                    "effective_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "account": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "effective_on",
+                    "account"
+                ]
+            },
+            "CalendarDay": {
+                "type": "object",
+                "properties": {
+                    "day": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "account": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "day",
+                    "name",
+                    "account"
+                ]
+            },
+            "CalendarSettings": {
+                "type": "object",
+                "properties": {
+                    "holiday_accounts": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/HolidayAccount"
+                        }
+                    },
+                    "days": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CalendarDay"
+                        }
+                    },
+                    "holidays": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/HolidayRule"
+                        }
+                    }
+                },
+                "required": [
+                    "holiday_accounts",
+                    "days",
+                    "holidays"
+                ]
+            },
+            "HolidayRule": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,39}$"
+                    },
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                    },
+                    "valid_from": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "valid_to": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "Poslední den platnosti včetně."
+                    },
+                    "month": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 12
+                    },
+                    "day": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 31
+                    },
+                    "easter_offset": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": -366,
+                        "maximum": 366,
+                        "description": "Posun ve dnech od velikonoční neděle."
+                    },
+                    "account": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Konto konkrétního svátku. Prázdná hodnota použije výchozí konto platné pro daný den."
+                    }
+                },
+                "required": [
+                    "code",
+                    "name",
+                    "valid_from"
+                ],
+                "oneOf": [
+                    {
+                        "required": [
+                            "month",
+                            "day"
+                        ],
+                        "properties": {
+                            "month": {
+                                "type": "integer"
+                            },
+                            "day": {
+                                "type": "integer"
+                            },
+                            "easter_offset": {
+                                "type": "null"
+                            }
+                        }
+                    },
+                    {
+                        "required": [
+                            "easter_offset"
+                        ],
+                        "properties": {
+                            "month": {
+                                "type": "null"
+                            },
+                            "day": {
+                                "type": "null"
+                            },
+                            "easter_offset": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                ]
+            },
+            "AttendanceRoundingRule": {
+                "type": "object",
+                "properties": {
+                    "effective_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "off",
+                            "down",
+                            "up",
+                            "nearest"
+                        ]
+                    },
+                    "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1440
+                    }
+                },
+                "required": [
+                    "effective_on",
+                    "mode",
+                    "minutes"
+                ]
+            },
+            "AttendanceBreakRule": {
+                "type": "object",
+                "properties": {
+                    "effective_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "minutes": {
+                        "type": "integer",
+                        "minimum": 30,
+                        "maximum": 180
+                    },
+                    "preferred": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360
+                    },
+                    "deadline": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360
+                    }
+                },
+                "required": [
+                    "effective_on",
+                    "enabled"
+                ]
             }
         },
         "responses": {
+            "AttendanceAccounts": {
+                "description": "Úspěšný požadavek.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/AttendanceAccount"
+                            }
+                        }
+                    }
+                }
+            },
+            "WorkModels": {
+                "description": "Úspěšný požadavek.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/WorkModel"
+                            }
+                        }
+                    }
+                }
+            },
+            "RequestPreview": {
+                "description": "Úspěšný požadavek.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "seconds": {
+                                    "type": "integer"
+                                },
+                                "days": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "format": "date"
+                                    }
+                                },
+                                "intervals": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "from": {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            "to": {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             "AttendanceMergeLimit": {
                 "description": "Aktuální limit v minutách.",
                 "content": {
@@ -2633,6 +4427,16 @@
                         }
                     }
                 }
+            },
+            "CalendarSettings": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/CalendarSettings"
+                        }
+                    }
+                }
             }
         },
         "parameters": {
@@ -2649,6 +4453,123 @@
             }
         },
         "requestBodies": {
+            "SaveAttendanceAccount": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "description": {
+                                    "type": "string"
+                                },
+                                "position": {
+                                    "type": "integer"
+                                },
+                                "behavior": {
+                                    "type": "string",
+                                    "enum": [
+                                        "work",
+                                        "timed_absence",
+                                        "shift_absence",
+                                        "break",
+                                        "calendar"
+                                    ]
+                                },
+                                "requires_proof": {
+                                    "type": "boolean"
+                                },
+                                "active": {
+                                    "type": "boolean"
+                                },
+                                "payroll_code": {
+                                    "type": "string"
+                                },
+                                "effective_on": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "rounding": {
+                                    "$ref": "#/components/schemas/AttendanceRoundingRule"
+                                },
+                                "break_rule": {
+                                    "$ref": "#/components/schemas/AttendanceBreakRule"
+                                }
+                            },
+                            "required": [
+                                "code",
+                                "name",
+                                "description",
+                                "position",
+                                "behavior",
+                                "requires_proof",
+                                "active"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "SaveWorkModel": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "effective_on": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "week": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/WorkShift"
+                                    },
+                                    "minItems": 7,
+                                    "maxItems": 7
+                                },
+                                "original_effective_on": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "reason": {
+                                    "type": "string"
+                                },
+                                "preview_token": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "name",
+                                "effective_on",
+                                "week"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "AssignWorkModel": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/WorkAssignment"
+                        }
+                    }
+                },
+                "required": true
+            },
             "ServiceSessionCode": {
                 "content": {
                     "application/json": {
@@ -2887,8 +4808,8 @@
                                 "attendance_enabled": {
                                     "type": "boolean"
                                 },
-                                "team": {
-                                    "type": "string"
+                                "org_unit_id": {
+                                    "type": "integer"
                                 },
                                 "sid": {
                                     "type": [
@@ -2906,11 +4827,37 @@
                                         "null"
                                     ],
                                     "format": "date"
+                                },
+                                "work_model": {
+                                    "type": "object",
+                                    "properties": {
+                                        "model": {
+                                            "type": "integer"
+                                        },
+                                        "effective_on": {
+                                            "type": "string",
+                                            "format": "date"
+                                        },
+                                        "original_effective_on": {
+                                            "type": "string",
+                                            "format": "date"
+                                        },
+                                        "reason": {
+                                            "type": "string"
+                                        },
+                                        "preview_token": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "model",
+                                        "effective_on"
+                                    ]
                                 }
                             },
                             "required": [
                                 "name",
-                                "team",
+                                "org_unit_id",
                                 "login",
                                 "roles",
                                 "attendance_enabled",
@@ -3072,12 +5019,7 @@
                             "properties": {
                                 "kind": {
                                     "type": "string",
-                                    "enum": [
-                                        "PRACE",
-                                        "LEKAR",
-                                        "DOVOLENA",
-                                        "PRESTAVKA"
-                                    ]
+                                    "description": "Stabilní kód konta docházky."
                                 },
                                 "from": {
                                     "type": "string"
@@ -3090,6 +5032,20 @@
                                 },
                                 "note": {
                                     "type": "string"
+                                },
+                                "vacation_side": {
+                                    "type": "string",
+                                    "enum": [
+                                        "start",
+                                        "end"
+                                    ]
+                                },
+                                "vacation_seconds": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                },
+                                "consent": {
+                                    "type": "boolean"
                                 }
                             },
                             "required": [
@@ -3147,6 +5103,57 @@
                                     "example": "2026-11"
                                 }
                             }
+                        }
+                    }
+                },
+                "required": true
+            },
+            "HolidayAccount": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/HolidayAccount"
+                        }
+                    }
+                },
+                "required": true
+            },
+            "SaveCalendarDay": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "oneOf": [
+                                {
+                                    "$ref": "#/components/schemas/CalendarDay"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "day": {
+                                            "type": "string",
+                                            "format": "date"
+                                        },
+                                        "remove": {
+                                            "type": "boolean",
+                                            "const": true
+                                        }
+                                    },
+                                    "required": [
+                                        "day",
+                                        "remove"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "HolidayRule": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/HolidayRule"
                         }
                     }
                 },

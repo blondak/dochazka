@@ -43,12 +43,12 @@ final class Timesheet
     }
 
     public static function build(string $month, array $signals, array $requests, ?Date $from = null, ?Date $until = null,
-        array $mergeLimits = [], array $serviceRanges = []): array
+        array $mergeLimits = [], array $serviceRanges = [], array $accounts = [], array $schedule = [], array $calendarEntries = [], array $policies = []): array
     {
         $first = self::month($month);
         $limit = ($until ?? $first->modify('+1 month'))->getTimestamp();
         $start = ($from ?? $first)->getTimestamp();
-        $open = $sleeping = $work = $doctor = $breaks = $vacations = $issues = [];
+        $open = $sleeping = $work = $breaks = $absences = $allDay = $legacy = $customWork = $issues = [];
         $freshLogins = $completeLogins = [];
         $autoMerge = array_any($mergeLimits, static fn(int $minutes) => $minutes > 0);
         $flag = static function(int $ts, string $why) use (&$issues,$first,$start,$limit) {
@@ -108,46 +108,238 @@ final class Timesheet
         foreach ($open as $ts) $flag($ts,'Chybí odhlášení.');
         foreach ($sleeping as $ts) $flag($ts, 'Chybí probuzení po uspání.');
         $pending = 0;
+        $adjustments = $partialVacation = [];
+        $missingActual = 0;
         foreach ($requests as $r) {
+            if ($r['generated_holiday'] ?? false) continue;
             if ($r['status'] === 'pending') $pending++;
             if ($r['status'] !== 'approved') continue;
             $range = [strtotime($r['begins']),strtotime($r['ends'])];
-            switch ($r['kind']) {
-                case 'LEKAR': $doctor[] = $range; break;
-                case 'DOVOLENA': $vacations[] = $range; break;
-                case 'PRESTAVKA': $breaks[] = $range; break;
-                case 'PRACE':
-                    array_push($work, ...(($r['merged_work'] ?? false) ? self::subtract([$range], $serviceRanges) : [$range]));
+            $kind = $r['kind'];
+            if ($r['needs_actual'] ?? false) {
+                if (empty($r['actual_from']) || !empty($r['actual_returned']) || (($r['requires_proof'] ?? false) && empty($r['has_proof']))) {
+                    $missingActual++;
+                    continue;
+                }
+                $actual = [strtotime($r['actual_from']), strtotime($r['actual_to'])];
+                foreach (self::days($actual, $first, $start, $limit) as [$date, [$a, $b]]) {
+                    $key = $date->format('Y-m-d');
+                    if (!isset($schedule[$key])) {
+                        $missingActual++;
+                        continue;
+                    }
+                    foreach ($schedule[$key] as [$x, $y]) {
+                        if (max($a, $x) < min($b, $y)) $absences[$kind][] = [max($a, $x), min($b, $y)];
+                    }
+                }
+                continue;
+            }
+            if (isset($r['vacation_seconds'])) {
+                $date = $first->setTimestamp($range[0]);
+                $day = $date->format('Y-m-d');
+                if ($range[0] >= $start && $range[0] < $limit) $partialVacation[$day] = (int) $r['vacation_seconds'];
+                continue;
+            }
+            switch (Catalog::behavior($kind, $accounts)) {
+                case 'timed_absence': $absences[$kind][] = $range; break;
+                case 'shift_absence':
+                    foreach (self::days($range, $first, $start, $limit) as [$date, $part]) {
+                        $key = $date->format('Y-m-d');
+                        if (isset($schedule[$key])) {
+                            $allDay[$kind] = array_merge($allDay[$kind] ?? [], $schedule[$key]);
+                        } elseif ($kind === 'DOVOLENA') {
+                            $legacy[$kind][] = $part;
+                        }
+                    }
+                    break;
+                case 'break': $breaks[] = $range; break;
+                case 'work':
+                    if ($kind !== 'PRACE') {
+                        $customWork[$kind][] = $range;
+                    } elseif (($r['merged_work'] ?? false) || isset($r['replaces_from'])) {
+                        $adjustments[$r['id']] = [$range, $r['replaces_from'] ?? null, $r['replaces_to'] ?? null];
+                    } else {
+                        $work[] = $range;
+                    }
                     break;
             }
         }
+        $absenceConflict = false;
+        $claimed = [];
+        foreach ($absences as $ranges) {
+            foreach (self::union($ranges) as [$a, $b]) {
+                if (array_any($claimed, static fn(array $part): bool => $part[0] < $b && $part[1] > $a)) {
+                    $absenceConflict = true;
+                    $flag(max($a, $start), 'Skutečné časové nepřítomnosti se překrývají.');
+                }
+            }
+            array_push($claimed, ...$ranges);
+        }
+        $timedCuts = array_merge($breaks, ...array_values($absences));
+        $shiftCuts = array_merge([], ...array_values($allDay), ...array_values($legacy));
         $rows = [];
         $seconds = 0;
         $vacationConflict = false;
-        $gaps = self::shortGaps($completeLogins, $mergeLimits, $first, array_merge($doctor, $breaks, $vacations, $serviceRanges));
-        $work = self::subtract(self::union(array_merge($work, $gaps)),array_merge($doctor,$breaks));
-        foreach (['PRACE'=>$work,'LEKAR'=>self::union($doctor),'DOVOLENA'=>self::union($vacations)] as $kind=>$ranges) {
-            foreach ($ranges as [$a,$b]) {
-                $a = max($a,$start); $b = min($b,$limit);
-                while ($a < $b) {
-                    $date = $first->setTimestamp($a);
-                    $end = min($b,$date->modify('tomorrow midnight')->getTimestamp());
-                    $allDay = $kind === 'DOVOLENA';
-                    $rows[] = ['day'=>$date->format('Y-m-d'),'kind'=>$kind,'from'=>$allDay?'':$date->format(DATE_ATOM),
-                        'to'=>$allDay?'':$first->setTimestamp($end)->format(DATE_ATOM)];
-                    if ($kind === 'PRACE') $seconds += $end-$a;
-                    if ($allDay) {
-                        foreach (array_merge($work,$doctor) as [$x,$y]) {
-                            if ($x < $end && $y > $a) {
-                                $flag($a, 'Dovolená se překrývá s prací nebo lékařem.');
-                                $vacationConflict = true;
-                                break;
-                            }
+        $gaps = self::shortGaps($completeLogins, $mergeLimits, $first, array_merge($timedCuts, $shiftCuts, $serviceRanges));
+        $work = self::union(array_merge($work, $gaps));
+        ksort($adjustments, SORT_NUMERIC);
+        foreach ($adjustments as [$range, $replacesFrom, $replacesTo]) {
+            if ($replacesFrom !== null) {
+                $work = self::subtract($work, [[strtotime($replacesFrom), strtotime($replacesTo)]]);
+            }
+            $work = self::union(array_merge($work, self::subtract([$range], $serviceRanges)));
+        }
+        $presence = $breakRows = [];
+        $unresolvedBreaks = 0;
+        if (!empty($policies['break_rules']) || $breaks || !empty($policies['break_exceptions'])) {
+            $available = [];
+            $rulesByDay = [];
+            foreach (['PRACE' => $work] + $customWork as $kind => $ranges) {
+                foreach (self::union($ranges) as $range) {
+                    foreach (self::days($range, $first, $start, $limit) as [$date, $part]) {
+                        $day = $date->format('Y-m-d');
+                        $available[$day][] = $part;
+                        $rule = DurationRules::forDay($policies['break_rules'][$kind] ?? [], $day);
+                        if (($rule['enabled'] ?? false) && (!isset($rulesByDay[$day])
+                            || $rule['deadline'] < $rulesByDay[$day]['deadline']
+                            || ($rule['deadline'] === $rulesByDay[$day]['deadline'] && $rule['minutes'] > $rulesByDay[$day]['minutes']))) {
+                            $rulesByDay[$day] = $rule;
                         }
                     }
-                    $a = $end;
                 }
             }
+            $breakMeta = static fn(string $day, int $a, int $b, string $source): array => [
+                'day' => $day, 'from' => $first->setTimestamp($a)->format(DATE_ATOM),
+                'to' => $first->setTimestamp($b)->format(DATE_ATOM), 'source' => $source,
+            ];
+            foreach (self::union($breaks) as $range) {
+                foreach (self::days($range, $first, $start, $limit) as [$date, [$a, $b]]) {
+                    $breakRows[] = $breakMeta($date->format('Y-m-d'), $a, $b, 'recorded');
+                }
+            }
+            ksort($available);
+            $groups = [];
+            foreach ($available as $day => $ranges) {
+                $rule = $rulesByDay[$day] ?? null;
+                $ranges = self::union($ranges);
+                if (!$rule && !$breaks) continue;
+                foreach ($ranges as [$a, $b]) $presence[] = $breakMeta($day, $a, $b, 'presence');
+                if (!$rule) continue;
+                $exception = $policies['break_exceptions'][$day] ?? null;
+                if ($exception !== null) {
+                    $flag($ranges[0][0], $exception === 'ack' ? 'Přestávka je doložená s nesrovnalostí.'
+                        : 'Přestávka se nečerpala. Skutečná práce zůstala započtená.');
+                    continue;
+                }
+                $last = array_key_last($groups);
+                if ($last !== null && $groups[$last]['rule'] === $rule
+                    && $groups[$last]['ranges'][array_key_last($groups[$last]['ranges'])][1] === $ranges[0][0]) {
+                    $groups[$last]['ranges'] = self::union(array_merge($groups[$last]['ranges'], $ranges));
+                } else {
+                    $groups[] = ['rule' => $rule, 'ranges' => $ranges];
+                }
+            }
+            foreach ($groups as ['rule' => $rule, 'ranges' => $ranges]) {
+                $taken = array_values(array_filter(self::union($breaks), static fn(array $part) =>
+                    $part[0] > $ranges[0][0] && $part[1] < $ranges[array_key_last($ranges)][1]));
+                $net = self::subtract($ranges, array_merge($timedCuts, $shiftCuts, $serviceRanges));
+                $length = $rule['minutes'] * 60;
+                $limitSeconds = $rule['deadline'] * 60;
+                $proposed = DurationRules::proposeBreaks($net, $taken, $length, $rule['preferred'] * 60, $limitSeconds);
+                foreach ($proposed as $part) {
+                    $timedCuts[] = $part;
+                    foreach (self::days($part, $first, $start, $limit) as [$date, [$a, $b]]) {
+                        $breakRows[] = $breakMeta($date->format('Y-m-d'), $a, $b, 'proposed');
+                    }
+                }
+                if (DurationRules::hasOverlongWork(self::subtract($net, $proposed), array_merge($taken, $proposed), 1800, $limitSeconds)) {
+                    $unresolvedBreaks++;
+                    $flag($ranges[0][0], 'Prověřte přestávku a nepřetržitou práci.');
+                }
+            }
+        }
+        $work = self::subtract($work, $timedCuts);
+        $allocated = [];
+        ksort($customWork);
+        foreach ($customWork as &$ranges) {
+            $ranges = self::subtract(self::union($ranges), array_merge($timedCuts, $allocated));
+            array_push($allocated, ...$ranges);
+        }
+        unset($ranges);
+        $work = self::subtract($work, $allocated);
+        $conflictRanges = array_merge($work, $allocated, ...array_values($absences));
+        foreach ($allDay as $ranges) {
+            foreach ($ranges as [$from, $to]) {
+                if (array_any($conflictRanges, static fn(array $range) => $range[0] < $to && $range[1] > $from)) {
+                    $flag($from, 'Celosměnová nepřítomnost se překrývá s prací nebo jinou nepřítomností.');
+                    $vacationConflict = true;
+                }
+            }
+            array_push($conflictRanges, ...$ranges);
+        }
+
+        foreach ($legacy['DOVOLENA'] ?? [] as [$from, $to]) {
+            if (array_any($conflictRanges, static fn(array $range) => $range[0] < $to && $range[1] > $from)) {
+                $flag($from, 'Dovolená se překrývá s prací nebo lékařem.');
+                $vacationConflict = true;
+            }
+        }
+
+        // A shift absence and a legacy vacation can share a code across different dates.
+        $accountsWithIntervals = ['PRACE' => $work] + $customWork + $absences + $allDay;
+        foreach ($accountsWithIntervals as $kind => $ranges) {
+            foreach (self::union($ranges) as $range) {
+                foreach (self::days($range, $first, $start, $limit) as [$date, [$from, $to]]) {
+                    $rows[] = ['day' => $date->format('Y-m-d'), 'kind' => $kind, 'from' => $first->setTimestamp($from)->format(DATE_ATOM),
+                        'to' => $first->setTimestamp($to)->format(DATE_ATOM)];
+                    if (Catalog::behavior($kind, $accounts) === 'work') $seconds += $to - $from;
+                }
+            }
+        }
+        foreach ($calendarEntries as $day => $entry) {
+            foreach ($entry['ranges'] as [$from, $to]) {
+                $rows[] = ['day' => $day, 'kind' => $entry['account'], 'from' => $first->setTimestamp($from)->format(DATE_ATOM),
+                    'to' => $first->setTimestamp($to)->format(DATE_ATOM), 'generated_holiday' => true];
+                if (Catalog::behavior($entry['account'], $accounts) === 'work') $seconds += $to - $from;
+            }
+        }
+        foreach (self::union($legacy['DOVOLENA'] ?? []) as $range) {
+            foreach (self::days($range, $first, $start, $limit) as [$date]) {
+                $rows[] = ['day' => $date->format('Y-m-d'), 'kind' => 'DOVOLENA', 'from' => '', 'to' => ''];
+            }
+        }
+        $unresolvedAdjustments = $policies['adjustments'] ?? [];
+        if ($unresolvedAdjustments) {
+            foreach ($rows as &$row) {
+                if ($row['from'] === '' || ($row['generated_holiday'] ?? false) || Catalog::behavior($row['kind'], $accounts) !== 'work') continue;
+                $key = DurationRules::rowKey($row);
+                if (!isset($unresolvedAdjustments[$key])) continue;
+                $calculated = strtotime($row['to']) - strtotime($row['from']);
+                $recognized = $unresolvedAdjustments[$key]['seconds'];
+                $row['calculated_seconds'] = $calculated;
+                $row['seconds'] = $recognized;
+                $seconds -= $calculated - $recognized;
+                unset($unresolvedAdjustments[$key]);
+            }
+            unset($row);
+        }
+        foreach ($partialVacation as $day => $duration) {
+            $shift = $schedule[$day] ?? [];
+            $fund = array_sum(array_map(static fn(array $r): int => $r[1] - $r[0], $shift));
+            $used = $duration;
+            foreach ($rows as $row) {
+                if ($row['day'] !== $day || $row['from'] === '' || ($row['generated_holiday'] ?? false)) continue;
+                $from = strtotime($row['from']);
+                $to = strtotime($row['to']);
+                $overlap = 0;
+                foreach ($shift as [$a, $b]) $overlap += max(0, min($to, $b) - max($from, $a));
+                $used += min($overlap, $row['seconds'] ?? ($to - $from));
+            }
+            if ($fund === 0 || $used > $fund || $duration < intdiv($fund + 1, 2)) {
+                $vacationConflict = true;
+                $flag($first->modify($day)->getTimestamp(), 'Zkontrolujte fond směny a rozsah částečné dovolené.');
+            }
+            $rows[] = ['day' => $day, 'kind' => 'DOVOLENA', 'from' => '', 'to' => '', 'seconds' => $duration, 'partial_vacation' => true];
         }
         usort($rows, static function (array $a, array $b): int {
             $day = $a['day'] <=> $b['day'];
@@ -157,7 +349,26 @@ final class Timesheet
             return strtotime($a['from']) <=> strtotime($b['from']);
         });
         $issues = array_values(array_unique($issues));
-        return compact('rows','seconds','issues','pending') + ['vacation_conflict' => $vacationConflict];
+        $result = compact('rows','seconds','issues','pending') + ['vacation_conflict' => $vacationConflict];
+        if ($absenceConflict) $result['absence_conflict'] = true;
+        if ($presence) $result['presence'] = $presence;
+        if ($breakRows) $result['breaks'] = $breakRows;
+        if ($missingActual) $result['missing_actual'] = $missingActual;
+        if ($unresolvedBreaks) $result['unresolved_breaks'] = $unresolvedBreaks;
+        if ($unresolvedAdjustments) $result['unresolved_adjustments'] = array_values($unresolvedAdjustments);
+        return $result;
+    }
+
+    private static function days(array $range, Date $zone, int $start, int $limit): iterable
+    {
+        $from = max($start, $range[0]);
+        $until = min($limit, $range[1]);
+        while ($from < $until) {
+            $date = $zone->setTimestamp($from);
+            $end = min($until, $date->modify('tomorrow midnight')->getTimestamp());
+            yield [$date, [$from, $end]];
+            $from = $end;
+        }
     }
 
     private static function shortGaps(array $byDevice, array $limits, Date $date, array $excluded): array

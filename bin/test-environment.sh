@@ -27,8 +27,12 @@ case "$command" in
         address=$(compose port web 80)
         printf 'Docházka: http://localhost:%s\nInstalační kód: SETUP_TOKEN v .env.test\n' "${address##*:}"
         ;;
+    fill-holidays)
+        shift
+        compose exec -T app php bin/console attendance:fill-holidays "$@"
+        ;;
     status) compose ps ;;
     stop) compose stop ;;
     logs) compose logs --tail 70 ;;
-    *) printf 'Použití: bash bin/test-environment.sh [up|status|stop|logs]\n' >&2; exit 2 ;;
+    *) printf 'Použití: bash bin/test-environment.sh [up|status|stop|logs|fill-holidays [volby]]\n' >&2; exit 2 ;;
 esac
