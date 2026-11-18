@@ -88,11 +88,11 @@ Pro vlastní sestavení ze zdrojového kódu použijte ve stejném projektu `doc
 
 ## Nasaďte GPO na pilotní stanici
 
-1. Rozbalte Windows release na sdílení čitelné účty počítačů. Zápis vyhraďte správcům distribuce. V adresáři centrály přiřaďte Windows SID zaměstnance, který bude pilotní stanici používat. Svůj SID zjistí pomocí `whoami /user`.
+1. Rozbalte vybranou [variantu Windows balíčku](../README.md#windows-agent-v-doméně-samba-ad) na sdílení čitelné účty počítačů. Zápis vyhraďte správcům distribuce. V adresáři centrály přiřaďte Windows SID zaměstnance, který bude pilotní stanici používat. Svůj SID zjistí pomocí `whoami /user`.
 2. V GPO v **Computer Configuration → Windows Settings → Scripts → Startup** nastavte spouštěcí PowerShell skript níže. Pro počítače, jež dostávají doménovou síť až po startu, nastavte ve stejné politice čekání na síť při startu a přihlášení. Při opakovaném běhu po dokončené registraci se použije existující token.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.2\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -EnrollmentServer 'https://enroll.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.2' -Release '0.0.2'
+& '\\server\dochazka\agent-v0.0.3\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -EnrollmentServer 'https://enroll.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.3' -Release '0.0.3'
 ~~~
 
 3. Povolte úspěšné audity **Logon** i **Logoff** v Advanced Audit Policy. Restartujte pilotní stanici, ověřte službu `DochazkaAgent` a položku `PILOT01$@EXAMPLE.CZ` na kartě **Zařízení**. Proveďte místní interaktivní přihlášení a odhlášení již evidovaného zaměstnance. Po odeslání další dávky musí výkaz ukázat interval mezi těmito událostmi. Služba sleduje interaktivní a cached-interactive události 4624/4634, spánek a probuzení 42/107 v protokolu Kernel-Power. Zámek obrazovky sám směnu neukončuje. Při odpojení sítě se data ukládají do místní SQLite fronty. Po návratu spojení je agent znovu odešle.

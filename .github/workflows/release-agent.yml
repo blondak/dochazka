@@ -17,12 +17,16 @@ jobs:
         run: |
           [[ "$TAG" =~ ^agent-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
           dotnet restore agent/Dochazka.Agent.csproj --locked-mode
-          dotnet publish agent/Dochazka.Agent.csproj -c Release --no-restore -p:Version="${TAG#agent-v}" -o dist/windows-x64
-          cp agent/Install-Agent.ps1 dist/windows-x64/
-          cd dist/windows-x64
-          zip -qr "../$TAG-win-x64.zip" .
-          cd ..
-          sha256sum "$TAG-win-x64.zip" > SHA256SUMS
+          for variant in win-x64 win-x64-single-file; do
+            single_file=false
+            if [[ "$variant" == win-x64-single-file ]]; then single_file=true; fi
+            output="dist/$variant"
+            dotnet publish agent/Dochazka.Agent.csproj -c Release --no-restore \
+              -p:Version="${TAG#agent-v}" -p:PublishSingleFile="$single_file" -o "$output"
+            cp agent/Install-Agent.ps1 "$output/"
+            (cd "$output" && zip -qr "../$TAG-$variant.zip" .)
+          done
+          (cd dist && sha256sum "$TAG-win-x64.zip" "$TAG-win-x64-single-file.zip" > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: windows-release
@@ -32,17 +36,25 @@ jobs:
   windows:
     needs: package
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {variant: win-x64, single_file: 'false'}
+          - {variant: win-x64-single-file, single_file: 'true'}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: {name: windows-release}
       - shell: powershell
+        env:
+          TAG: ${{ github.ref_name }}
+          VARIANT: ${{ matrix.variant }}
+          SINGLE_FILE: ${{ matrix.single_file }}
         run: |
-          Expand-Archive (Get-ChildItem *.zip).FullName extracted
-          $errors = $null
-          [Management.Automation.Language.Parser]::ParseFile((Resolve-Path extracted/Install-Agent.ps1),[ref]$null,[ref]$errors) | Out-Null
-          if ($errors.Count) { throw ($errors | Out-String) }
-          & ./extracted/Dochazka.Agent.exe --self-test
-          exit $LASTEXITCODE
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -LiteralPath "${env:TAG}-${env:VARIANT}.zip" -DestinationPath extracted
+          ./tests/agent-package.ps1 -PackagePath extracted -SingleFile:($env:SINGLE_FILE -eq 'true')
   release:
     needs: windows
     permissions: {contents: write}
@@ -51,4 +63,12 @@ jobs:
       - uses: actions/download-artifact@v4
         with: {name: windows-release}
       - env: {GH_TOKEN: '${{ github.token }}', TAG: '${{ github.ref_name }}'}
-        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes *.zip SHA256SUMS
+        run: |
+          cat > release-notes.txt <<EOF
+          Oba balíčky jsou self-contained pro Windows x64 a obsahují \`Install-Agent.ps1\` pro nasazení přes GPO.
+
+          - \`$TAG-win-x64-single-file.zip\` obsahuje agenta v jediném EXE.
+          - \`$TAG-win-x64.zip\` obsahuje EXE a knihovny v samostatných souborech.
+          EOF
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --notes-file release-notes.txt "$TAG-win-x64.zip" "$TAG-win-x64-single-file.zip" SHA256SUMS

@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <DebugType>embedded</DebugType>
+    <!-- Keep SDK patch-specific analyzers out of the locked application dependencies. -->
+    <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>

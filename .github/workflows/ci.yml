@@ -62,14 +62,21 @@ jobs:
       - run: bash tests/gpo.sh
   windows:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        single_file: ['false', 'true']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with: {dotnet-version: '10.0.x'}
       - run: dotnet restore agent/Dochazka.Agent.csproj --locked-mode
-      - run: dotnet run --project agent/Dochazka.Agent.csproj -c Release --no-restore -- --self-test
       - shell: powershell
+        env:
+          SINGLE_FILE: ${{ matrix.single_file }}
         run: |
-          $errors = $null
-          [Management.Automation.Language.Parser]::ParseFile((Resolve-Path agent/Install-Agent.ps1),[ref]$null,[ref]$errors) | Out-Null
-          if ($errors.Count) { throw ($errors | Out-String) }
+          $ErrorActionPreference = 'Stop'
+          dotnet publish agent/Dochazka.Agent.csproj -c Release --no-restore "-p:PublishSingleFile=$env:SINGLE_FILE" -o dist/windows-x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item agent/Install-Agent.ps1 dist/windows-x64/
+          ./tests/agent-package.ps1 -PackagePath dist/windows-x64 -SingleFile:($env:SINGLE_FILE -eq 'true')
