@@ -11,11 +11,16 @@ use Nepada\SecurityAnnotations\Annotations\Role;
 use Nepada\SecurityAnnotations\Annotations\LoggedIn;
 use Dochazka\Http\PublicEndpoint;
 use Dochazka\Http\ApiAccessMiddleware;
+use Dochazka\Http\Problem;
 
 #[Path('/api/v1')]
 final class DeviceController implements IController
 {
-    public function __construct(private JsonEndpoint $json, private Devices $service) {}
+    public function __construct(
+        private JsonEndpoint $json,
+        private Devices $service,
+        private GatewayEnrollment $gatewayEnrollment,
+    ) {}
 
     #[Path('/register'), Method('POST')]
     #[OpenApi(<<<'NEON'
@@ -122,10 +127,40 @@ NEON)]
     {
         return $this->json->respond($request, $response, function (array $input) use ($request): array {
             if ($input !== []) {
-                throw new \Dochazka\Http\Problem('Registrace očekává prázdný objekt.');
+                throw new Problem('Registrace očekává prázdný objekt.');
             }
             return $this->service->enrollDomain($request->getAttribute(DomainMachine::PRINCIPAL));
         });
+    }
+
+    #[Path('/gateway-enroll'), Method('POST')]
+    #[OpenApi(<<<'NEON'
+operationId: gatewayEnroll
+summary: "Podepsaný požadavek interní brány vydá token zařízení"
+description: "Brána ověří stanici v AD a zavolá centrálu přes HTTPS. Každý podpis lze úspěšně použít jednou."
+tags: [Zařízení]
+security: [{gateway: []}]
+requestBody:
+    required: true
+    content:
+        application/json:
+            schema: {type: object, additionalProperties: false}
+responses:
+    '200': {$ref: '#/components/responses/Enroll'}
+    '403': {$ref: '#/components/responses/Error403'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    #[GatewaySignature]
+    public function gatewayEnroll(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, function (array $input) use ($request): array {
+            if ($input !== []) {
+                throw new Problem('Registrace očekává prázdný objekt.');
+            }
+            $claim = $request->getAttribute(GatewaySignature::CLAIM);
+            $this->gatewayEnrollment->consume($claim);
+            return $this->service->enrollDomain($claim['principal']);
+        }, maxBytes: 1024);
     }
 
     #[Path('/events'), Method('POST')]

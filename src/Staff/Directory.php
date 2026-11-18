@@ -85,6 +85,14 @@ final class Directory
         if (!is_bool($attendanceEnabled)) {
             throw new Problem('Určete, zda se má zpracovávat docházka.');
         }
+        $number = $attendanceEnabled || array_key_exists('number', $i) ? trim($i['number'] ?? '') : ($e->number ?? '');
+        if ($number === '' && $attendanceEnabled) {
+            throw new Problem('Při zpracování docházky vyplňte osobní číslo.');
+        }
+        if (strlen($number) > 200) {
+            throw new Problem('Osobní číslo smí mít nejvýše 200 bajtů.');
+        }
+        EmployeeNumber::validate($number);
         $starts = self::date(self::field($i, 'starts'));
         $ends = empty($i['ends']) ? null : self::date($i['ends']);
         if ($ends !== null && $ends < $starts) {
@@ -105,8 +113,7 @@ final class Directory
         $e->login = $login;
         $e->team = $team;
         $e->name = self::field($i, 'name');
-        $e->number = self::field($i, 'number');
-        EmployeeNumber::validate($e->number);
+        $e->number = $number === '' ? null : $number;
         $e->starts = $starts;
         $e->ends = $ends;
         if (!$e->id) $e->passwordHash=password_hash(bin2hex(random_bytes(32)),PASSWORD_DEFAULT);

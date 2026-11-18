@@ -492,6 +492,43 @@
                 }
             }
         },
+        "/api/v1/gateway-enroll": {
+            "post": {
+                "tags": [
+                    "Zařízení"
+                ],
+                "summary": "Podepsaný požadavek interní brány vydá token zařízení",
+                "description": "Brána ověří stanici v AD a zavolá centrálu přes HTTPS. Každý podpis lze úspěšně použít jednou.",
+                "operationId": "gatewayEnroll",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "additionalProperties": false
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "gateway": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Enroll"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
         "/api/v1/invite": {
             "post": {
                 "tags": [
@@ -1492,7 +1529,10 @@
                         "type": "integer"
                     },
                     "number": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "login": {
                         "type": "string"
@@ -2171,7 +2211,11 @@
                                     "type": "integer"
                                 },
                                 "number": {
-                                    "type": "string"
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "description": "Osobní číslo je povinné při zpracování docházky. Pro ostatní účty lze pole vynechat nebo použít null."
                                 },
                                 "login": {
                                     "type": "string"
@@ -2208,13 +2252,33 @@
                             },
                             "required": [
                                 "name",
-                                "number",
                                 "team",
                                 "login",
                                 "roles",
                                 "attendance_enabled",
                                 "starts"
-                            ]
+                            ],
+                            "if": {
+                                "required": [
+                                    "attendance_enabled"
+                                ],
+                                "properties": {
+                                    "attendance_enabled": {
+                                        "const": true
+                                    }
+                                }
+                            },
+                            "then": {
+                                "required": [
+                                    "number"
+                                ],
+                                "properties": {
+                                    "number": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                }
+                            }
                         }
                     }
                 },
@@ -2432,6 +2496,12 @@
             }
         },
         "securitySchemes": {
+            "gateway": {
+                "type": "apiKey",
+                "name": "Authorization",
+                "description": "Dochazka-Gateway PRINCIPAL:TIMESTAMP:NONCE:SIGNATURE. Podpis HMAC-SHA256 vytváří interní registrační brána.",
+                "in": "header"
+            },
             "kerberos": {
                 "type": "http",
                 "description": "Kerberos účtu počítače na doménové registrační bráně.",

@@ -2,7 +2,41 @@
 
 Spouštěcí GPO v kontextu počítače spustí instalátor jako LocalSystem. Windows předá interní registrační bráně přes Kerberos identitu stanice. Brána ověří přes LDAPS, že jde o počítač ve zvolené doméně a přímého člena povolené skupiny. Centrála vydá token jen této stanici. Při dalších startech instalátor použije uloženou konfiguraci. [Účty počítačů a LocalSystem](https://learn.microsoft.com/en-us/entra/architecture/service-accounts-computer)
 
-## Připravte bránu
+## Brána na řadiči Debianu a centrála na internetu
+
+Na řadiči Samba AD spustí instalační skript samostatnou službu `dochazka-gateway` pod vyhrazeným uživatelem. Apache poskytuje HTTPS přímo na zadané interní adrese a obsluhuje registrace pouze ze zadaných sítí. Brána využívá lokální LDAPS a odchozí HTTPS na TCP 443 k centrále. Centrála ověřuje podpis, příslušnost k nastavenému realmu, stáří požadavku a jednorázový identifikátor. Windows stanice při instalaci navazují spojení s bránou a při běžném provozu odesílají docházku přímo centrále.
+
+### Připravte centrálu
+
+1. Připravte soubor se sdíleným klíčem v chráněném adresáři mimo Git. Vygenerujte jej jednou příkazem `umask 077; openssl rand -hex 32 > gateway-enroll.key` a bezpečně přeneste stejný soubor na řadič. Další instalace a aktualizace používají tentýž klíč.
+2. Aktualizujte obrazy `app` a `web` alespoň na verzi `0.0.2`, která přidává endpoint `/api/v1/gateway-enroll`.
+3. Přidejte [Compose konfiguraci centrály pro bránu](compose.gateway-access.yaml) za stávající Compose soubory. Nastavte `GATEWAY_ENROLL_REALM` na hodnotu z `sudo testparm -s --parameter-name realm` na řadiči. Do `GATEWAY_ENROLL_KEY_SOURCE` zadejte absolutní cestu ke klíči na hostiteli centrály. PHP-FPM musí soubor číst. Při běžném Dockeru na Linuxu použijte pro soubor UID 33 a režim `0400`.
+4. Pomocí stejné sady Compose souborů spusťte `docker compose … up -d app web`. Centrála při startu `app` provede migraci. Stávající Traefik a veřejná adresa obslouží nový endpoint stejně jako ostatní API požadavky.
+
+### Spusťte instalaci na řadiči
+
+Připravte interní DNS jméno, pevnou IPv4 adresu řadiče, síť stanic a PEM certifikát s privátním klíčem pro toto DNS jméno. Certifikační autoritě musí důvěřovat účty počítačů Windows, například přes politiku důvěryhodných kořenových certifikátů. Pro LDAPS použije skript CA z nastavení Samba. Pokud certifikát řadiče vyžaduje jiné DNS jméno nebo CA, použijte `--ldap-host` nebo `--ldap-ca`.
+
+Adresy a cesty v ukázce nahraďte svými hodnotami.
+
+~~~sh
+sudo /usr/bin/python3 deploy/gpo/debian/install.py \
+    --host dochazka-gw.example.cz \
+    --listen 192.168.10.10 \
+    --allow 192.168.10.0/24 \
+    --central https://dochazka.example.cz \
+    --key-file /root/dochazka/gateway-enroll.key \
+    --tls-cert /root/dochazka/gateway-fullchain.pem \
+    --tls-key /root/dochazka/gateway.key \
+    --manage-dns \
+    --pilot PILOT01
+~~~
+
+Skript nainstaluje balíčky Debianu, zjistí realm, založí účty `dochazka-http` a `dochazka-ldap`, zaregistruje `HTTP/<jméno-brány>` a uloží keytab pro tento SPN. Vytvoří nebo použije bezpečnostní skupinu `Dochazka-PC`. `--pilot` je volitelný a přidává existující účty počítačů do této skupiny. S `--manage-dns` skript v AD zóně doplní chybějící A záznam. Pro vlastní správu DNS tuto volbu vynechte a připravte záznam ručně. Služba používá TCP 443. Pokud je obsazený, použijte jiný port přes `--port` a předejte stejný port i v `-EnrollmentServer`. [Příručka samba-tool](https://www.samba.org/samba/docs/current/man-html/samba-tool.8.html) · [mod_auth_gssapi pro Apache](https://github.com/gssapi/mod_auth_gssapi)
+
+Při obnově certifikátu spusťte znovu tentýž příkaz s novými soubory. Skript použije existující služební účty. Stav služby ověřte přes `systemctl status dochazka-gateway`, chyby Apache jsou v `/var/log/dochazka-gateway/error.log`. Úspěšná instalace vypíše adresu pro `-EnrollmentServer`. Nejprve nasaďte GPO na pilotní stanici podle postupu níže a ověřte její registraci v centrále. Windows balíček `0.0.1` používá stejný registrační protokol.
+
+## Brána ve stejném projektu Docker Compose jako centrála
 
 1. Zvolte vnitřní DNS jméno brány, například `enroll.example.cz`. V existujícím Traefiku pro něj směrujte HTTPS na `http://dochazka-enroll:80` pouze z firemní sítě nebo VPN. Zachovejte hlavičku `Authorization` a odpověď `WWW-Authenticate`. Pro běžný provoz agenta zůstává adresa centrály `https://dochazka.example.cz`. FastCGI port 9000 je dostupný pouze uvnitř projektu.
 2. Na řadiči založte služební účet pro SPN brány, samostatný účet pro čtení LDAP a skupinu počítačů. Přihlašovací údaje k LDAP ani keytab se nedistribuují stanicím. Následující příklad používá existující doménu a existující počítač `PILOT01`. Jména a DN přizpůsobte vlastním organizačním jednotkám. [Příručka samba-tool](https://www.samba.org/samba/docs/current/man-html/samba-tool.8.html)
@@ -33,7 +67,7 @@ samba-tool group addmembers Dochazka-PC 'PILOT01$'
 5. Doplňte k proměnným centrály do `.env` následující hodnoty a spusťte bránu. Adresy jsou příklady. [Ověření Kerberos v Apache](https://github.com/gssapi/mod_auth_gssapi) · [Autorizace skupin v LDAP](https://httpd.apache.org/docs/2.4/mod/mod_authnz_ldap.html)
 
 ~~~dotenv
-GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.1
+GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.2
 GPO_REALM=EXAMPLE.CZ
 GPO_LDAP_HOST=dc.example.cz
 GPO_BASE_DN=DC=example,DC=cz
@@ -58,7 +92,7 @@ Pro vlastní sestavení ze zdrojového kódu použijte ve stejném projektu `doc
 2. V GPO v **Computer Configuration → Windows Settings → Scripts → Startup** nastavte spouštěcí PowerShell skript níže. Pro počítače, jež dostávají doménovou síť až po startu, nastavte ve stejné politice čekání na síť při startu a přihlášení. Při opakovaném běhu po dokončené registraci se použije existující token.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.1\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -EnrollmentServer 'https://enroll.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.1' -Release '0.0.1'
+& '\\server\dochazka\agent-v0.0.2\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -EnrollmentServer 'https://enroll.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.2' -Release '0.0.2'
 ~~~
 
 3. Povolte úspěšné audity **Logon** i **Logoff** v Advanced Audit Policy. Restartujte pilotní stanici, ověřte službu `DochazkaAgent` a položku `PILOT01$@EXAMPLE.CZ` na kartě **Zařízení**. Proveďte místní interaktivní přihlášení a odhlášení již evidovaného zaměstnance. Po odeslání další dávky musí výkaz ukázat interval mezi těmito událostmi. Služba sleduje interaktivní a cached-interactive události 4624/4634, spánek a probuzení 42/107 v protokolu Kernel-Power. Zámek obrazovky sám směnu neukončuje. Při odpojení sítě se data ukládají do místní SQLite fronty. Po návratu spojení je agent znovu odešle.
@@ -72,4 +106,4 @@ Při nové instalaci na stejný doménový účet počítače vydá brána nový
 
 ## Integrační test brány
 
-Po sestavení obrazů centrály spusťte `APP_IMAGE=dochazka:php-local WEB_IMAGE=dochazka:web-local bash tests/gpo.sh`. Test vytvoří samostatný Compose projekt s dočasným řadičem Samba AD, povoleným a nepovoleným účtem počítače a bránou používající vlastní keytab a LDAPS. Prověří vydání i výměnu tokenu, zakázané registrace a revokaci. Na konci odstraní dočasnou doménu a databázi.
+Po sestavení obrazů centrály spusťte `APP_IMAGE=dochazka:php-local WEB_IMAGE=dochazka:web-local bash tests/gpo.sh`. Test vytvoří samostatný Compose projekt s dočasným řadičem Samba AD, povoleným a nepovoleným účtem počítače a oběma režimy brány. Ověří opakovanou instalaci na Debianu, Kerberos, LDAPS, HTTPS k centrále, dočasný podpis a odmítnutí opakovaného použití, vydání a výměnu tokenu i odvolání přístupu. Na konci odstraní dočasnou doménu a databázi.

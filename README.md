@@ -13,8 +13,8 @@ Rozbalte archiv **central-deploy.tar.gz** z vydání centrály a ve stejném adr
 ~~~dotenv
 TRAEFIK_NETWORK=traefik
 DB_PASSWORD=sem-vlozte-vygenerovane-heslo
-APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.1
-WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.1
+APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.2
+WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.2
 SETUP_TOKEN=sem-vlozte-vygenerovany-kod
 PASSKEY_ORIGIN=https://dochazka.example.cz
 ~~~
@@ -38,7 +38,7 @@ Z kořene repozitáře spusťte **bash bin/test-environment.sh up** a otevřete 
 
 Správce v adresáři založí zaměstnance a nastaví uživatelské jméno, tým, jednu či více rolí a Windows SID. Kombinace rolí **Vedoucí** a **Mzdová účetní** zpřístupní uzávěrku i schvalování vlastního týmu. Vedoucí může zobrazit propustky pouze ve svém týmu a vlastní propustky.
 
-Volba **Zpracovávat docházku** určuje, zda centrála pro účet přijímá nové docházkové události a zahrnuje jeho výkaz do uzávěrek. Technický účet s vypnutou volbou se dál přihlašuje a používá přidělené role. Archivace ihned ukončí přístup k účtu a uzavře období evidence nejpozději k datu archivace. Žádosti, výkazy a vydané exporty zůstávají uložené. Správce může účet zobrazit volbou **Zobrazit archivované** a zrušit archivaci.
+Volba **Zpracovávat docházku** určuje, zda centrála pro účet přijímá nové docházkové události a zahrnuje jeho výkaz do uzávěrek. Při zapnutí je povinné osobní číslo pro mzdový export. Technický účet s vypnutou volbou se může přihlašovat a používat přidělené role i bez osobního čísla. Archivace ihned ukončí přístup k účtu a uzavře období evidence nejpozději k datu archivace. Žádosti, výkazy a vydané exporty zůstávají uložené. Správce může účet zobrazit volbou **Zobrazit archivované** a zrušit archivaci.
 
 Tlačítko **Pozvánka** vytvoří jednorázový kód s platností 48 hodin. Zaměstnanec zvolí **Mám pozvánku**, nastaví heslo a přihlásí se. Při zapomenutí hesla může správce vydat novou pozvánku.
 
@@ -68,21 +68,21 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 
 ### Ruční registrace stanice
 
-1. Rozbalte balíček **agent-v0.0.1-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
+1. Rozbalte balíček **agent-v0.0.2-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
 2. V centrále na kartě **Zařízení** zaregistrujte stanici. Kód uložte jako **JMENO-POCITACE.txt** do adresáře s registracemi. Na sdílení dejte každému počítačovému účtu právo číst jen jeho vlastní kód. Registraci proveďte během hodinové platnosti.
 3. Při pilotu spusťte příkaz níže jako správce. Pro nasazení přes Samba AD nastavte stejný příkaz jako spouštěcí PowerShell skript v konfiguraci počítače v doménové GPO. Při aktualizaci změňte **PackagePath** a **Release**. Služba si ponechá lokální frontu i registraci.
 4. V GPO povolte úspěšný audit přihlášení a odhlášení. Na pilotní stanici ověřte párování událostí 4624 a 4634 v protokolu Security a postup při práci bez připojení. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.1\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.1' -Release '0.0.1' -EnrollmentDirectory '\\server\dochazka-registrace'
+& '\\server\dochazka\agent-v0.0.2\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.2' -Release '0.0.2' -EnrollmentDirectory '\\server\dochazka-registrace'
 ~~~
 
 ## Vydání
 
 | Tag v repozitáři | Výstup |
 | --- | --- |
-| [agent-v0.0.1](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.1) | Samostatný balíček Windows x64 a kontrolní součet SHA256. CI ověřuje PowerShell instalátor a spouští self-test na Windows. |
-| [docker-v0.0.1](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.1) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.1`, `web-0.0.1` a `enroll-0.0.1` v GitHub Container Registry. |
+| [agent-v0.0.2](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.2) | Samostatný balíček Windows x64 a kontrolní součet SHA256. CI ověřuje PowerShell instalátor a spouští self-test na Windows. |
+| [docker-v0.0.2](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.2) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.2`, `web-0.0.2` a `enroll-0.0.2` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
 
 Integrační test **tests/workflow.py** potřebuje PHP 8.4 a přístup k testovací PostgreSQL přes proměnné **PGHOST**, **PGPORT**, **PGDATABASE**, **PGUSER** a **PGPASSWORD**. Vytvoří vlastní dočasné schéma. Samostatný test výpočtu výkazu spustíte jako **php tests/timesheet.php**.
 

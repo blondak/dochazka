@@ -13,7 +13,7 @@ Tento soubor shrnuje požadavky a rozhodnutí pro práci v celém repozitáři. 
 ## Účty a oprávnění
 
 - Účet má jednu nebo více rolí `employee`, `manager`, `payroll`, `admin`. Oprávnění se sčítají. Schvalování a přístup k cizím propustkám vyžadují roli vedoucího a stejný tým. Náhled cizího výkazu pro správce a účtárnu vynechává volné poznámky a důvody rozhodnutí. Cizí propustky jsou v tomto náhledu nepřístupné.
-- Volba **Zpracovávat docházku** je nezávislá na roli. Technický účet si ponechá své pracovní oprávnění. Jeho vlastní docházka se nesbírá, výkaz se nenabízí a účet se nezahrnuje do uzávěrky.
+- Volba **Zpracovávat docházku** je nezávislá na roli. Při zapnutí vyžaduje osobní číslo pro mzdové exporty. Technický účet si ponechá své pracovní oprávnění. Jeho vlastní docházka se nesbírá, výkaz se nenabízí a účet se nezahrnuje do uzávěrky.
 - Archivace zablokuje přihlášení a existující relace, zneplatní pozvánku a omezí období evidence datem archivace. Historie zůstává dostupná oprávněným osobám. Správce může archivaci zrušit. Poslední aktivní správce s nastaveným přihlášením musí mít před odebráním přístupu aktivovaného nástupce.
 - Web používá serverovou relaci přes zabezpečenou cookie, změnu hesla a volitelné WebAuthn passkeys. Správce vydává jednorázové pozvánky pro aktivaci a obnovu. Použití obnovovací pozvánky odvolá staré relace a passkeys. Při změně rolí ověřujte i zneplatnění dosavadních relací.
 
@@ -27,7 +27,7 @@ Tento soubor shrnuje požadavky a rozhodnutí pro práci v celém repozitáři. 
 
 ## Nasazení a ověření
 
-- Centrála běží v Docker Compose s Nginxem, PHP-FPM a PostgreSQL. HTTPS ukončuje existující Traefik. Volitelná interní registrační brána ověřuje Kerberos a členství počítače v povolené skupině Samba AD. Ruční registrace používá jednorázový kód. [Nasazení GPO](deploy/gpo.md)
+- Centrála běží v Docker Compose s Nginxem, PHP-FPM a PostgreSQL. HTTPS ukončuje existující Traefik. Volitelná interní registrační brána ověřuje Kerberos a členství počítače v povolené skupině Samba AD. Brána na Debianu s externí centrálou posílá krátkodobé jednorázové podpisy HMAC přes HTTPS. Ruční registrace používá jednorázový kód. [Nasazení GPO](deploy/gpo.md)
 - Windows služba .NET běží pod LocalSystem. Agent uchovává neodeslané události v SQLite, opakuje doručení a svazuje registrovanou stanici s jedinečným tokenem. Nasazení má režim systémové proxy, explicitní proxy a přímé připojení. Pro integrované ověření proxy používá agent volitelně identitu účtu počítače. [Parametry proxy](README.md#připojení-přes-proxy)
 - GitHub Actions vydávají Windows balíček z tagů `agent-v*` a obrazy centrály i brány z tagů `docker-v*`. Po změně API regenerujte OpenAPI. Pro ověření použijte `php tests/timesheet.php`, `python3 tests/workflow.py` s dočasným databázovým schématem a `npm run test:e2e --prefix web`. Pro změny agenta sestavte Windows balíček a použijte `--self-test`. Pro registraci a nasazení slouží `tests/gpo.sh` a `tests/deploy.sh`.
 - Lokální centrála běží na `http://localhost:8080/` přes `bash bin/test-environment.sh up`. Existující testovací data zachovávejte. Hesla, tokeny, skutečné propustky a databázové zálohy ukládejte mimo Git. Testovací přihlašovací údaje jsou v ignorovaném `var/test-environment/demo-ucty.json`, pokud už byly v lokálním prostředí vytvořené.

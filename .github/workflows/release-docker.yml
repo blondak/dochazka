@@ -41,6 +41,13 @@ jobs:
           docker push "$APP_IMAGE"
           docker push "$WEB_IMAGE"
           docker push "$GPO_IMAGE"
-          tar czf central-deploy.tar.gz compose.yaml deploy/compose.traefik.yaml deploy/compose.gpo.yaml deploy/gpo deploy/gpo.md deploy/backup.md docs/audit.md README.md
-          printf 'PHP-FPM: %s\nNginx: %s\nGPO: %s\n' "$APP_IMAGE" "$WEB_IMAGE" "$GPO_IMAGE" > release-notes.txt
+          tar czf central-deploy.tar.gz compose.yaml deploy/compose.traefik.yaml deploy/compose.gpo.yaml deploy/compose.gateway-access.yaml deploy/gpo deploy/gpo.md deploy/backup.md docs/audit.md README.md
+          cat > release-notes.txt <<EOF
+          ## Nasazení
+
+          - PHP-FPM \`$APP_IMAGE\`
+          - Nginx \`$WEB_IMAGE\`
+          - Brána ve stejném Compose projektu \`$GPO_IMAGE\`
+          - Archiv \`central-deploy.tar.gz\` obsahuje instalační skript pro bránu na Debianu se Samba AD a Compose konfiguraci pro ověření brány externí centrálou.
+          EOF
           gh release create "$TAG" --verify-tag --notes-file release-notes.txt central-deploy.tar.gz

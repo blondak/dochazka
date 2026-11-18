@@ -8,11 +8,29 @@ services:
     volumes:
       - enroll-test:/run/enroll-test
       - ./tests/gpo/krb5.conf:/etc/krb5.conf:ro
+      - ./deploy/gpo/debian:/opt/debian:ro
     healthcheck:
       test: ["CMD", "test", "-f", "/run/enroll-test/ready"]
       interval: 2s
       timeout: 2s
       retries: 60
+  app:
+    environment:
+      GATEWAY_ENROLL_REALM: ATTEND.TEST
+      GATEWAY_ENROLL_KEY_FILE: /run/gateway-test/central-key
+    volumes:
+      - enroll-test:/run/gateway-test:ro
+  central-https:
+    image: caddy:2
+    depends_on:
+      dc: {condition: service_healthy}
+      web: {condition: service_started}
+    networks:
+      default:
+        aliases: [central.test]
+    volumes:
+      - enroll-test:/run/gateway-test:ro
+      - ./tests/gpo/Caddyfile:/etc/caddy/Caddyfile:ro
   enroll:
     image: ${GPO_IMAGE:?Supply the test gateway image}
     build: ./deploy/gpo

@@ -1,7 +1,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import type { FileUploadUploaderEvent } from 'primevue/fileupload'
 
-interface Person {id:number;name:string;number:string;team:string;roles:string[];attendance_enabled:boolean;archived_on?:string|null;sid?:string|null;login?:string;starts?:string;ends?:string|null}
+interface Person {id:number;name:string;number:string|null;team:string;roles:string[];attendance_enabled:boolean;archived_on?:string|null;sid?:string|null;login?:string;starts?:string;ends?:string|null}
 interface Row {day:string;kind:string;from:string;to:string}
 interface RequestRow {id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean}
 interface Sheet {rows:Row[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];vacation_conflict?:boolean;requests:RequestRow[];fingerprint:string}

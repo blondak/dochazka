@@ -64,6 +64,7 @@ services:
     - Dochazka\Payroll\Exports
     - Dochazka\Payroll\PayrollController
     - Dochazka\Device\Devices
+    - Dochazka\Device\GatewayEnrollment(realm: %gatewayRealm%, keyFile: %gatewayKeyFile%)
     - Dochazka\Device\DeviceController
 http:
     cookieSecure: true

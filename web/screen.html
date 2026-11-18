@@ -394,7 +394,10 @@
     <form class="stack" @submit.prevent="submit('employee', edit, 'Zaměstnanec byl uložen.')">
         <div class="employee-fields">
             <label class="field" for="employee-name">Jméno<PvInputText id="employee-name" v-model="edit.name" autofocus required fluid /></label>
-            <label class="field">Osobní číslo<PvInputText v-model="edit.number" required fluid /></label>
+            <label class="field" for="employee-number">
+                {{ edit.attendance_enabled ? 'Osobní číslo' : 'Osobní číslo (nepovinné)' }}
+                <PvInputText id="employee-number" v-model.trim="edit.number" :required="edit.attendance_enabled" fluid />
+            </label>
             <label class="field">Uživatelské jméno<PvInputText v-model="edit.login" required fluid /></label>
             <label class="field">Tým<PvInputText v-model="edit.team" required fluid /></label>
             <fieldset class="role-options">

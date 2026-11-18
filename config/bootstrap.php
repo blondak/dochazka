@@ -10,6 +10,8 @@ $config->addStaticParameters(['projectRoot'=>$root,'apiRevision'=>implode('',arr
 $config->addDynamicParameters([
     'setupToken' => (string) getenv('SETUP_TOKEN'),
     'passkeyOrigin' => (string) getenv('PASSKEY_ORIGIN'),
+    'gatewayRealm' => (string) getenv('GATEWAY_ENROLL_REALM'),
+    'gatewayKeyFile' => (string) getenv('GATEWAY_ENROLL_KEY_FILE'),
     'database' => [
         'host' => getenv('PGHOST') ?: 'db',
         'port' => (int) (getenv('PGPORT') ?: 5432),

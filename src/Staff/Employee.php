@@ -15,7 +15,7 @@ class Employee
 
     #[ORM\Id, ORM\GeneratedValue(strategy: 'IDENTITY'), ORM\Column]
     public ?int $id = null;
-    #[ORM\Column(type: 'text', unique: true)] public string $number;
+    #[ORM\Column(type: 'text', unique: true, nullable: true)] public ?string $number = null;
     #[ORM\Column(type: 'text')] public string $name;
     #[ORM\Column(type: 'text', unique: true)] public string $login;
     #[ORM\Column(name: 'password_hash', type: 'text')] public string $passwordHash;
@@ -36,9 +36,8 @@ class Employee
 
     public static function administrator(string $login, string $name, #[\SensitiveParameter] string $password): self
     {
-        EmployeeNumber::validate($login);
         $employee = new self;
-        $employee->number = $employee->login = $login;
+        $employee->login = $login;
         $employee->name = $name;
         $employee->roles = ['admin'];
         $employee->attendanceEnabled = false;

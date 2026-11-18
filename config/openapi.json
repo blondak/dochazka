@@ -23,7 +23,7 @@
             "type": "integer"
           },
           "number": {
-            "type": "string"
+            "type": ["string", "null"]
           },
           "login": {
             "type": "string"
@@ -307,6 +307,12 @@
       }
     },
     "securitySchemes": {
+      "gateway": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Dochazka-Gateway PRINCIPAL:TIMESTAMP:NONCE:SIGNATURE. Podpis HMAC-SHA256 vytváří interní registrační brána."
+      },
       "kerberos": {
         "type": "http",
         "scheme": "negotiate",
@@ -717,7 +723,8 @@
                   "type": "integer"
                 },
                 "number": {
-                  "type": "string"
+                  "type": ["string", "null"],
+                  "description": "Osobní číslo je povinné při zpracování docházky. Pro ostatní účty lze pole vynechat nebo použít null."
                 },
                 "login": {
                   "type": "string"
@@ -754,13 +761,20 @@
               },
               "required": [
                 "name",
-                "number",
                 "team",
                 "login",
                 "roles",
                 "attendance_enabled",
                 "starts"
-              ]
+              ],
+              "if": {
+                "required": ["attendance_enabled"],
+                "properties": { "attendance_enabled": { "const": true } }
+              },
+              "then": {
+                "required": ["number"],
+                "properties": { "number": { "type": "string", "minLength": 1 } }
+              }
             }
           }
         }

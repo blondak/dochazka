@@ -27,6 +27,12 @@ for attempt in $(seq 1 90); do
     if test -s /var/lib/samba/private/tls/ca.pem && kinit -k -t /tmp/PILOT.keytab 'PILOT$'; then
         cp /var/lib/samba/private/tls/ca.pem "$dir/gpo_ldap_ca"
         chmod 644 "$dir/gpo_ldap_ca"
+        openssl rand -hex 32 > "$dir/central-key"
+        chown www-data "$dir/central-key"
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=central.test \
+            -addext subjectAltName=DNS:central.test -keyout "$dir/central.key" -out "$dir/central.pem" 2>/dev/null
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=gateway.attend.test \
+            -addext subjectAltName=DNS:gateway.attend.test -keyout /tmp/gateway.key -out /tmp/gateway.pem 2>/dev/null
         touch "$dir/ready"
         break
     fi

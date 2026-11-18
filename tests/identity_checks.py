@@ -12,7 +12,7 @@ def check_accounts(connect, client_class, admin, password):
     today = datetime.now(ZoneInfo("Europe/Prague")).date()
     login = "session-test"
     profile = {
-        "name": "Test relací", "login": login, "number": "SESSIONS", "team": "T",
+        "name": "Test relací", "login": login, "team": "T",
         "roles": ["employee"], "attendance_enabled": False, "starts": today.isoformat(),
     }
     admin.call("employee", dict(profile, starts="2024-02-30"), 422)
@@ -22,6 +22,14 @@ def check_accounts(connect, client_class, admin, password):
     admin.call("employee", dict(profile, roles=["manager", "manager"]), 422)
     account = admin.call("employee", profile)
     profile.update(account)
+    assert next(p for p in admin.call("people") if p["id"] == account["id"])["number"] is None
+    admin.call("employee", dict(profile, attendance_enabled=True), 422)
+    admin.call("employee", dict(profile, number="  ", attendance_enabled=True), 422)
+    admin.call("employee", dict(profile, number="SESSIONS", attendance_enabled=True))
+    admin.call("employee", profile)
+    assert next(p for p in admin.call("people") if p["id"] == account["id"])["number"] == "SESSIONS"
+    admin.call("employee", dict(profile, number=None))
+    assert next(p for p in admin.call("people") if p["id"] == account["id"])["number"] is None
     last_admin = next(p for p in admin.call("people") if p["login"] == "root")
     admin.call("employee", dict(last_admin, roles=["employee"]), 409)
     backup = dict(profile, login="backup-admin", number="BACKUP", roles=["admin"])

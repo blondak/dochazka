@@ -1,0 +1,68 @@
+ServerRoot /etc/dochazka-gateway
+DefaultRuntimeDir /run/dochazka-gateway
+PidFile /run/dochazka-gateway/httpd.pid
+Listen $listen https
+ServerName $hostname
+ServerTokens Prod
+ServerSignature Off
+ErrorLog /var/log/dochazka-gateway/error.log
+Timeout 20
+
+LoadModule mpm_event_module /usr/lib/apache2/modules/mod_mpm_event.so
+LoadModule authn_core_module /usr/lib/apache2/modules/mod_authn_core.so
+LoadModule authz_core_module /usr/lib/apache2/modules/mod_authz_core.so
+LoadModule authz_host_module /usr/lib/apache2/modules/mod_authz_host.so
+LoadModule authz_user_module /usr/lib/apache2/modules/mod_authz_user.so
+LoadModule ldap_module /usr/lib/apache2/modules/mod_ldap.so
+LoadModule authnz_ldap_module /usr/lib/apache2/modules/mod_authnz_ldap.so
+LoadModule auth_gssapi_module /usr/lib/apache2/modules/mod_auth_gssapi.so
+LoadModule alias_module /usr/lib/apache2/modules/mod_alias.so
+LoadModule cgid_module /usr/lib/apache2/modules/mod_cgid.so
+LoadModule env_module /usr/lib/apache2/modules/mod_env.so
+LoadModule ssl_module /usr/lib/apache2/modules/mod_ssl.so
+
+User dochazka-gateway
+Group dochazka-gateway
+LDAPVerifyServerCert On
+LDAPTrustedGlobalCert CA_BASE64 /etc/dochazka-gateway/ldap-ca.pem
+LDAPCacheEntries 0
+LDAPOpCacheEntries 0
+
+<Directory />
+    AllowOverride None
+    Require all denied
+</Directory>
+
+<VirtualHost $listen>
+    SSLEngine On
+    SSLProtocol -all +TLSv1.2 +TLSv1.3
+    SSLCertificateFile /etc/dochazka-gateway/tls.pem
+    SSLCertificateKeyFile /etc/dochazka-gateway/tls.key
+
+    ScriptAliasMatch "^/api/v1/domain-enroll$$" /usr/local/lib/dochazka-gateway/enroll.py
+    <LocationMatch "^/api/v1/domain-enroll$$">
+        LimitRequestBody 1024
+        SetEnv GATEWAY_CENTRAL "$central"
+        AuthType GSSAPI
+        AuthName "Dochazka GPO"
+        AuthzSendForbiddenOnFailure On
+        GssapiCredStore keytab:/etc/dochazka-gateway/http.keytab
+        GssapiAllowedMech krb5
+        GssapiSSLonly On
+        GssapiLocalName On
+        GssapiBasicAuth Off
+        AuthLDAPURL "$ldap_url"
+        AuthLDAPBindDN "$bind_dn"
+        AuthLDAPBindPassword "exec:/bin/cat /etc/dochazka-gateway/ldap-password"
+        AuthLDAPGroupAttribute member
+        AuthLDAPGroupAttributeIsDN On
+        AuthLDAPMaxSubGroupDepth 0
+        <RequireAll>
+            Require ip $allowed
+            Require method POST
+            Require valid-user
+            Require expr "%{reqenv:GSS_NAME} == '%{REMOTE_USER}@$realm'"
+            Require ldap-group $group_dn
+        </RequireAll>
+    </LocationMatch>
+</VirtualHost>

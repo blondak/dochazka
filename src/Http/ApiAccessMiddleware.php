@@ -9,6 +9,8 @@ use Contributte\Middlewares\IMiddleware;
 use Dochazka\Device\Devices;
 use Dochazka\Device\DeviceToken;
 use Dochazka\Device\DomainMachine;
+use Dochazka\Device\GatewayEnrollment;
+use Dochazka\Device\GatewaySignature;
 use LogicException;
 use Nepada\SecurityAnnotations\Annotations\LoggedIn;
 use Nepada\SecurityAnnotations\Annotations\Role;
@@ -21,7 +23,11 @@ final class ApiAccessMiddleware implements IMiddleware
 {
     public const DEVICE_ID = 'dochazka.deviceId';
 
-    public function __construct(private RequirementsChecker $requirements, private Devices $devices) {}
+    public function __construct(
+        private RequirementsChecker $requirements,
+        private Devices $devices,
+        private GatewayEnrollment $gatewayEnrollment,
+    ) {}
 
     public function __invoke(ServerRequestInterface $request, ResponseInterface $response, callable $next): ResponseInterface
     {
@@ -30,8 +36,9 @@ final class ApiAccessMiddleware implements IMiddleware
         $public = $method->getAttributes(PublicEndpoint::class);
         $device = $method->getAttributes(DeviceToken::class) !== [];
         $machine = $method->getAttributes(DomainMachine::class) !== [];
+        $gateway = $method->getAttributes(GatewaySignature::class) !== [];
         $session = $method->getAttributes(LoggedIn::class) !== [] || $method->getAttributes(Role::class) !== [];
-        if ((int) ($public !== []) + (int) $device + (int) $machine + (int) $session !== 1) {
+        if ((int) ($public !== []) + (int) $device + (int) $machine + (int) $gateway + (int) $session !== 1) {
             throw new LogicException('API endpoint must declare exactly one authentication mode.');
         }
 
@@ -41,6 +48,9 @@ final class ApiAccessMiddleware implements IMiddleware
                 $request = $request->withAttribute(self::DEVICE_ID, $deviceId);
             } elseif ($machine) {
                 $request = $request->withAttribute(DomainMachine::PRINCIPAL, DomainMachine::principal($request->getServerParams()));
+            } elseif ($gateway) {
+                $claim = $this->gatewayEnrollment->verify($request->getHeaderLine('Authorization'));
+                $request = $request->withAttribute(GatewaySignature::CLAIM, $claim);
             } elseif ($session || $public[0]->newInstance()->web) {
                 if ($request->getHeaderLine('X-Dochazka') !== 'web') {
                     throw new Problem('Neplatný požadavek.', 403);

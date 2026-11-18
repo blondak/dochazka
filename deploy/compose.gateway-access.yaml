@@ -1,0 +1,10 @@
+services:
+  app:
+    environment:
+      GATEWAY_ENROLL_REALM: ${GATEWAY_ENROLL_REALM:?Set the Samba AD Kerberos realm}
+      GATEWAY_ENROLL_KEY_FILE: /run/secrets/gateway_enroll_key
+    secrets:
+      - gateway_enroll_key
+secrets:
+  gateway_enroll_key:
+    file: ${GATEWAY_ENROLL_KEY_SOURCE:?Set the path to the gateway signing key}
