@@ -1,0 +1,2452 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Docházka API",
+        "description": "Evidence pracovní doby, žádosti, zařízení a uzávěrky. Webové požadavky používají JSON a hlavičku X-Dochazka.",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/api/v1/activate": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Nastavit heslo jednorázovou pozvánkou",
+                "operationId": "activate",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Activate"
+                },
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/approve": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Vedoucí potvrdí zkontrolovanou verzi výkazu",
+                "operationId": "approve",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Approve"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/change-password": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Změnit heslo přihlášeného uživatele",
+                "operationId": "changePassword",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "current_password",
+                                    "new_password"
+                                ],
+                                "properties": {
+                                    "current_password": {
+                                        "type": "string",
+                                        "writeOnly": true
+                                    },
+                                    "new_password": {
+                                        "type": "string",
+                                        "writeOnly": true
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/close": {
+            "post": {
+                "tags": [
+                    "Mzdy"
+                ],
+                "summary": "Účetní uloží neměnnou verzi schváleného období",
+                "operationId": "close",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Close"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Close"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/decide": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Vedoucí rozhodne o žádosti ve svém týmu. Zamítnutí a odvolání schválení vyžadují důvod.",
+                "operationId": "decide",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Decide"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/devices": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Správce zobrazí spojení stanic a výpadky sběru",
+                "operationId": "devices",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Devices"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Devices"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/domain-enroll": {
+            "post": {
+                "tags": [
+                    "Zařízení"
+                ],
+                "summary": "Doménově ověřená stanice získá vlastní token. Opakovaná registrace nahradí předchozí token.",
+                "description": "Dostupné přes interní bránu GPO s ověřením Kerberos a členství účtu počítače v povolené skupině AD.",
+                "operationId": "domainEnroll",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "additionalProperties": false
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "kerberos": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Enroll"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/download": {
+            "post": {
+                "tags": [
+                    "Mzdy"
+                ],
+                "summary": "Účetní stáhne zvolenou verzi jako text CSV v poli csv",
+                "operationId": "download",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Download"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Download"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/employee": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Správce vytvoří nebo upraví zaměstnance",
+                "operationId": "employee",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Employee"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Employee"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/employee-archive": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Správce archivuje zaměstnance nebo zruší archivaci",
+                "operationId": "employeeArchive",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "id",
+                                    "archived"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "integer"
+                                    },
+                                    "archived": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/enroll": {
+            "post": {
+                "tags": [
+                    "Zařízení"
+                ],
+                "summary": "Vyměnit jednorázový kód za přístup stanice",
+                "operationId": "enroll",
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Enroll"
+                },
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Enroll"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/events": {
+            "post": {
+                "tags": [
+                    "Zařízení"
+                ],
+                "summary": "Odeslat dávku nebo potvrdit spojení. Stejné ID a obsah lze doručit opakovaně. Neznámý SID vrátí unmapped.",
+                "operationId": "events",
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Events"
+                },
+                "security": [
+                    {
+                        "device": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Events"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/invite": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Správce vydá pozvánku s platností 48 hodin",
+                "operationId": "invite",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Invite"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Invite"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/login": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Přihlásit se a získat cookie relace",
+                "operationId": "login",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Login"
+                },
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Login"
+                    },
+                    "429": {
+                        "description": "Limit pokusů o přihlášení na 15 minut.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/logout": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Ukončit vlastní relaci",
+                "operationId": "logout",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Devices"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/me": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Zobrazit vlastní účet",
+                "operationId": "me",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Devices"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Login"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/passkey-create": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Uložit ověřenou passkey",
+                "operationId": "passkeyCreate",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "clientDataJSON",
+                                    "attestationObject"
+                                ],
+                                "properties": {
+                                    "clientDataJSON": {
+                                        "type": "string"
+                                    },
+                                    "attestationObject": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/passkey-create-options": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Získat výzvu k založení passkey",
+                "operationId": "passkeyCreateOptions",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "password",
+                                    "label"
+                                ],
+                                "properties": {
+                                    "password": {
+                                        "type": "string",
+                                        "writeOnly": true
+                                    },
+                                    "label": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Úspěšná odpověď",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "publicKey": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/passkey-login": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Ověřit passkey a zahájit relaci",
+                "operationId": "passkeyLogin",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "id",
+                                    "clientDataJSON",
+                                    "authenticatorData",
+                                    "signature",
+                                    "userHandle"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "clientDataJSON": {
+                                        "type": "string"
+                                    },
+                                    "authenticatorData": {
+                                        "type": "string"
+                                    },
+                                    "signature": {
+                                        "type": "string"
+                                    },
+                                    "userHandle": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Login"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/passkey-login-options": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Získat výzvu k přihlášení passkey",
+                "operationId": "passkeyLoginOptions",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Devices"
+                },
+                "responses": {
+                    "200": {
+                        "description": "Úspěšná odpověď",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "publicKey": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/passkey-remove": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Odebrat vlastní passkey",
+                "operationId": "passkeyRemove",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "id"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/passkey-status": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Zjistit dostupnost passkeys",
+                "operationId": "passkeyStatus",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Devices"
+                },
+                "responses": {
+                    "200": {
+                        "description": "Úspěšná odpověď",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "available": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/passkeys": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Zobrazit passkeys vlastního účtu",
+                "operationId": "passkeys",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Devices"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Úspěšná odpověď",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "keys": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "label": {
+                                                        "type": "string"
+                                                    },
+                                                    "created": {
+                                                        "type": "string",
+                                                        "format": "date-time"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/payroll": {
+            "post": {
+                "tags": [
+                    "Mzdy"
+                ],
+                "summary": "Účetní zkontroluje připravenost měsíce",
+                "operationId": "payroll",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Close"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Close"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/people": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Zobrazit osoby v rozsahu oprávnění",
+                "operationId": "people",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Devices"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/People"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/register": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Správce vydá hodinový registrační kód stanice",
+                "operationId": "register",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Register"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Invite"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/request": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Podat žádost nebo opravu. Dovolená používá první a poslední kalendářní den, ostatní druhy místní čas v Europe/Prague.",
+                "operationId": "request",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Request"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Employee"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/request-proof": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Zobrazit fotografii propustky. Přístup má zaměstnanec nebo vedoucí jeho týmu.",
+                "operationId": "requestProof",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Invite"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/MedicalProof"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "404": {
+                        "description": "Příloha není dostupná."
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/request-proof-upload": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Přiložit fotografii po skončení schválené návštěvy lékaře",
+                "operationId": "requestProofUpload",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/MedicalProofUpload"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "404": {
+                        "description": "Žádost není dostupná."
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/revoke": {
+            "post": {
+                "tags": [
+                    "Správa"
+                ],
+                "summary": "Správce odebere stanici přístup",
+                "operationId": "revoke",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Invite"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/setup": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Založit prvního správce pomocí instalačního kódu",
+                "operationId": "setupCreate",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "token",
+                                    "name",
+                                    "login",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "token": {
+                                        "type": "string",
+                                        "writeOnly": true
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "login": {
+                                        "type": "string"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "writeOnly": true
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Activate"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/setup-status": {
+            "post": {
+                "tags": [
+                    "Přístup"
+                ],
+                "summary": "Zjistit dostupnost prvního nastavení",
+                "operationId": "setupStatus",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Devices"
+                },
+                "responses": {
+                    "200": {
+                        "description": "Dostupnost průvodce",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "available": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sheet": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Zobrazit vlastní výkaz, výkaz člena týmu nebo výkaz pro účtárnu",
+                "operationId": "sheet",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "$ref": "#/components/requestBodies/Sheet"
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/Sheet"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Error401"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "EmployeeRoles": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "employee",
+                        "manager",
+                        "payroll",
+                        "admin"
+                    ]
+                }
+            },
+            "Person": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "number": {
+                        "type": "string"
+                    },
+                    "login": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "roles": {
+                        "$ref": "#/components/schemas/EmployeeRoles"
+                    },
+                    "attendance_enabled": {
+                        "type": "boolean"
+                    },
+                    "archived_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "team": {
+                        "type": "string"
+                    },
+                    "sid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "starts": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "ends": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    }
+                }
+            },
+            "Signal": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "maxLength": 160
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "login",
+                            "logout",
+                            "sleep",
+                            "resume",
+                            "gap"
+                        ]
+                    },
+                    "at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "sid": {
+                        "type": "string"
+                    },
+                    "session": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "kind",
+                    "at",
+                    "sid",
+                    "session"
+                ]
+            },
+            "Row": {
+                "type": "object",
+                "properties": {
+                    "day": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "PRACE",
+                            "LEKAR",
+                            "DOVOLENA",
+                            "PRESTAVKA"
+                        ]
+                    },
+                    "from": {
+                        "type": "string"
+                    },
+                    "to": {
+                        "type": "string"
+                    }
+                }
+            },
+            "Request": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "PRACE",
+                            "LEKAR",
+                            "DOVOLENA",
+                            "PRESTAVKA"
+                        ]
+                    },
+                    "begins": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "ends": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "note": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "approved",
+                            "rejected"
+                        ]
+                    },
+                    "reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "has_proof": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "Sheet": {
+                "type": "object",
+                "properties": {
+                    "rows": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Row"
+                        }
+                    },
+                    "seconds": {
+                        "type": "integer"
+                    },
+                    "pending": {
+                        "type": "integer"
+                    },
+                    "missing_proofs": {
+                        "type": "integer",
+                        "description": "Počet schválených návštěv lékaře, ke kterým ještě chybí propustka."
+                    },
+                    "vacation_conflict": {
+                        "type": "boolean",
+                        "description": "Dovolená se překrývá s prací nebo lékařem a výkaz nelze schválit."
+                    },
+                    "issues": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "requests": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Request"
+                        }
+                    },
+                    "fingerprint": {
+                        "type": "string"
+                    },
+                    "approved": {
+                        "type": "boolean"
+                    },
+                    "approval": {
+                        "oneOf": [
+                            {
+                                "type": "boolean",
+                                "const": false
+                            },
+                            {
+                                "type": "object"
+                            }
+                        ]
+                    }
+                }
+            },
+            "Payroll": {
+                "type": "object",
+                "properties": {
+                    "changed": {
+                        "type": "boolean"
+                    },
+                    "people": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "approved": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    },
+                    "versions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "version": {
+                                    "type": "integer"
+                                },
+                                "created": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "fingerprint": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Device": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "seen": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "revoked": {
+                        "type": "boolean"
+                    },
+                    "registered": {
+                        "type": "boolean"
+                    },
+                    "warnings": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "Error": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "error"
+                ]
+            }
+        },
+        "responses": {
+            "Activate": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "ok": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Error401": {
+                "description": "Je potřeba ověření.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "Error403": {
+                "description": "Chybí oprávnění.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "Error409": {
+                "description": "Konflikt se stavem evidence.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "Error422": {
+                "description": "Neplatné údaje.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "Close": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Payroll"
+                        }
+                    }
+                }
+            },
+            "Devices": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/Device"
+                            }
+                        }
+                    }
+                }
+            },
+            "Download": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "csv": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Employee": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Enroll": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "token": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Events": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "results": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            },
+                                            "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "accepted",
+                                                    "duplicate",
+                                                    "unmapped",
+                                                    "ignored",
+                                                    "invalid",
+                                                    "conflict"
+                                                ]
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "example": {
+                            "results": [
+                                {
+                                    "id": "pc1.103",
+                                    "status": "accepted"
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "Invite": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Login": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Person"
+                        }
+                    }
+                }
+            },
+            "People": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/components/schemas/Person"
+                            }
+                        }
+                    }
+                }
+            },
+            "Sheet": {
+                "description": "Úspěch",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Sheet"
+                        }
+                    }
+                }
+            },
+            "MedicalProof": {
+                "description": "Fotografie propustky",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "jpeg": {
+                                    "type": "string",
+                                    "contentEncoding": "base64",
+                                    "contentMediaType": "image/jpeg"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "parameters": {
+            "WebHeader": {
+                "name": "X-Dochazka",
+                "in": "header",
+                "required": true,
+                "schema": {
+                    "type": "string",
+                    "enum": [
+                        "web"
+                    ]
+                }
+            }
+        },
+        "requestBodies": {
+            "Activate": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string"
+                                },
+                                "password": {
+                                    "type": "string",
+                                    "minLength": 12
+                                }
+                            },
+                            "required": [
+                                "code",
+                                "password"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Approve": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "employee": {
+                                    "type": "integer"
+                                },
+                                "month": {
+                                    "type": "string",
+                                    "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+                                    "example": "2026-11"
+                                },
+                                "fingerprint": {
+                                    "type": "string"
+                                },
+                                "note": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "employee",
+                                "month",
+                                "fingerprint"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Close": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "month": {
+                                    "type": "string",
+                                    "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+                                    "example": "2026-11"
+                                }
+                            }
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Decide": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "approved",
+                                        "rejected"
+                                    ]
+                                },
+                                "reason": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "status"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Devices": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Download": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "month": {
+                                    "type": "string",
+                                    "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+                                    "example": "2026-11"
+                                },
+                                "version": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": [
+                                "month",
+                                "version"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Employee": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "number": {
+                                    "type": "string"
+                                },
+                                "login": {
+                                    "type": "string"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "roles": {
+                                    "$ref": "#/components/schemas/EmployeeRoles"
+                                },
+                                "attendance_enabled": {
+                                    "type": "boolean"
+                                },
+                                "team": {
+                                    "type": "string"
+                                },
+                                "sid": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "starts": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "ends": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date"
+                                }
+                            },
+                            "required": [
+                                "name",
+                                "number",
+                                "team",
+                                "login",
+                                "roles",
+                                "attendance_enabled",
+                                "starts"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Enroll": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "code"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Events": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "events": {
+                                    "maxItems": 250,
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Signal"
+                                    }
+                                },
+                                "resolved_warning": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "description": "Označí dřívější hlášení této stanice za vyřešené."
+                                },
+                                "warning": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "events"
+                            ]
+                        },
+                        "example": {
+                            "events": [
+                                {
+                                    "id": "pc1.103",
+                                    "kind": "login",
+                                    "at": "2026-11-02T08:00:00+01:00",
+                                    "sid": "S-1-5-21-1-2-3-1001",
+                                    "session": "boot3.41"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Invite": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": [
+                                "id"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Login": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "login": {
+                                    "type": "string"
+                                },
+                                "password": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "login",
+                                "password"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Register": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "name"
+                            ]
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Request": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                        "PRACE",
+                                        "LEKAR",
+                                        "DOVOLENA",
+                                        "PRESTAVKA"
+                                    ]
+                                },
+                                "from": {
+                                    "type": "string"
+                                },
+                                "to": {
+                                    "type": "string"
+                                },
+                                "employee": {
+                                    "type": "integer"
+                                },
+                                "note": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "kind",
+                                "from",
+                                "to"
+                            ]
+                        },
+                        "example": {
+                            "kind": "LEKAR",
+                            "from": "2026-11-02T10:00",
+                            "to": "2026-11-02T11:00"
+                        }
+                    }
+                },
+                "required": true
+            },
+            "MedicalProofUpload": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "required": [
+                                "id",
+                                "photo"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "integer",
+                                    "description": "ID vlastní schválené žádosti o návštěvu lékaře."
+                                },
+                                "photo": {
+                                    "type": "string",
+                                    "contentEncoding": "base64",
+                                    "description": "Fotografie JPEG nebo PNG do 5 MiB a 16 megapixelů."
+                                }
+                            }
+                        }
+                    }
+                },
+                "required": true
+            },
+            "Sheet": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "employee": {
+                                    "type": "integer"
+                                },
+                                "month": {
+                                    "type": "string",
+                                    "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+                                    "example": "2026-11"
+                                }
+                            }
+                        }
+                    }
+                },
+                "required": true
+            }
+        },
+        "securitySchemes": {
+            "kerberos": {
+                "type": "http",
+                "description": "Kerberos účtu počítače na doménové registrační bráně.",
+                "scheme": "negotiate"
+            },
+            "device": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "opaque"
+            },
+            "session": {
+                "type": "apiKey",
+                "name": "PHPSESSID",
+                "in": "cookie"
+            }
+        }
+    }
+}

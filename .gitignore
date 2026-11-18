@@ -1,0 +1,14 @@
+/vendor/
+/var/
+/.env
+/.env.test
+/web/node_modules/
+/public/assets/
+/agent/bin/
+/agent/obj/
+/dist/
+/memory.db*
+/node_modules/
+/tests/__pycache__/
+/public/docs/elements/
+/public/index.html

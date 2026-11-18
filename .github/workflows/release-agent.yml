@@ -1,0 +1,54 @@
+name: Release Windows agent
+on:
+  push:
+    tags: ['agent-v*']
+permissions:
+  contents: read
+concurrency: release-${{ github.ref }}
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - name: Verify version and publish from Linux
+        env: {TAG: '${{ github.ref_name }}'}
+        run: |
+          [[ "$TAG" =~ ^agent-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
+          dotnet restore agent/Dochazka.Agent.csproj --locked-mode
+          dotnet publish agent/Dochazka.Agent.csproj -c Release --no-restore -p:Version="${TAG#agent-v}" -o dist/windows-x64
+          cp agent/Install-Agent.ps1 dist/windows-x64/
+          cd dist/windows-x64
+          zip -qr "../$TAG-win-x64.zip" .
+          cd ..
+          sha256sum "$TAG-win-x64.zip" > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
+  windows:
+    needs: package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: windows-release}
+      - shell: powershell
+        run: |
+          Expand-Archive (Get-ChildItem *.zip).FullName extracted
+          $errors = $null
+          [Management.Automation.Language.Parser]::ParseFile((Resolve-Path extracted/Install-Agent.ps1),[ref]$null,[ref]$errors) | Out-Null
+          if ($errors.Count) { throw ($errors | Out-String) }
+          & ./extracted/Dochazka.Agent.exe --self-test
+          exit $LASTEXITCODE
+  release:
+    needs: windows
+    permissions: {contents: write}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: windows-release}
+      - env: {GH_TOKEN: '${{ github.token }}', TAG: '${{ github.ref_name }}'}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes *.zip SHA256SUMS

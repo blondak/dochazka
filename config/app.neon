@@ -1,0 +1,80 @@
+extensions:
+    api: Apitte\Core\DI\ApiExtension
+    dbal: Nettrine\DBAL\DI\DbalExtension(false)
+    orm: Nettrine\ORM\DI\OrmExtension(false)
+    securityAnnotations: Nepada\Bridges\SecurityAnnotationsDI\SecurityAnnotationsExtension
+    console: Contributte\Console\DI\ConsoleExtension(%consoleMode%)
+
+console:
+    name: Docházka
+
+securityAnnotations:
+    enableDefaultValidators: false
+    validators:
+        - Dochazka\Identity\SessionRequiredValidator
+        - Dochazka\Identity\SessionRoleValidator
+
+dbal:
+    connections:
+        default:
+            driver: pdo_pgsql
+            host: %database.host%
+            port: %database.port%
+            dbname: %database.name%
+            user: %database.user%
+            password: %database.password%
+
+orm:
+    managers:
+        default:
+            connection: default
+            lazyNativeObjects: true
+            mapping:
+                application:
+                    type: attributes
+                    namespace: Dochazka
+                    directories: [%projectRoot%/src]
+
+decorator:
+    Doctrine\DBAL\Connection:
+        setup:
+            - executeStatement("SET TIME ZONE 'Europe/Prague'")
+
+services:
+    api.core.handler:
+        create: Dochazka\Http\MiddlewareHandler
+    - Dochazka\Http\ApiAccessMiddleware
+    - Dochazka\Http\JsonEndpoint
+    - Dochazka\Http\OpenApiCommand(destination: %projectRoot%/public/openapi.json)
+    - Dochazka\Audit\AuditTrail
+    - Dochazka\Identity\Accounts
+    - Dochazka\Identity\Passkeys(origin: %passkeyOrigin%)
+    - Dochazka\Identity\PasskeyController
+    - Dochazka\Identity\IdentityController
+    - Dochazka\Identity\InitialSetup(token: %setupToken%)
+    - Dochazka\Identity\SetupController
+    - Dochazka\Identity\CreateAdminCommand
+    - Dochazka\Infrastructure\MigrateCommand(directory: %projectRoot%/migrations)
+    - Dochazka\Staff\Directory
+    - Dochazka\Staff\StaffController
+    - Dochazka\Attendance\Timesheets
+    - Dochazka\Attendance\AttendanceController
+    - Dochazka\Absence\Requests
+    - Dochazka\Absence\AbsenceController
+    - Dochazka\Payroll\Exports
+    - Dochazka\Payroll\PayrollController
+    - Dochazka\Device\Devices
+    - Dochazka\Device\DeviceController
+http:
+    cookieSecure: true
+session:
+    expiration: 8 hours
+    cookieSamesite: Strict
+    cookieSecure: true
+
+api:
+    plugins:
+        Apitte\Core\DI\Plugin\CoreServicesPlugin: []
+        Apitte\Core\DI\Plugin\CoreSchemaPlugin: []
+        Apitte\OpenApi\DI\OpenApiPlugin:
+            files: [%projectRoot%/config/openapi.json]

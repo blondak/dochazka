@@ -1,0 +1,340 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    color: var(--p-text-color, #172422);
+    background: var(--p-surface-50, #f8faf9);
+    font: 15px/1.5 'Inter', system-ui, sans-serif;
+}
+
+h1, h2, p {
+    margin: 0;
+}
+
+h1 {
+    font-size: clamp(1.55rem, 3vw, 2.25rem);
+    line-height: 1.18;
+    letter-spacing: -.04em;
+}
+
+h2 {
+    font-size: 1.1rem;
+    font-weight: 650;
+}
+
+p, small {
+    color: var(--p-text-muted-color, #526360);
+}
+
+.app-header {
+    background: var(--p-surface-0, #fff);
+    border-bottom: 1px solid var(--p-content-border-color, #dfe7e3);
+}
+
+.header-content, .app-content {
+    width: min(100%, 1160px);
+    margin-inline: auto;
+    padding-inline: clamp(1rem, 3vw, 2rem);
+}
+
+.header-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 4.25rem;
+    gap: 1rem;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    font-weight: 750;
+    font-size: 1.15rem;
+    letter-spacing: -.025em;
+}
+
+.brand i {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    background: var(--p-primary-100, #d1fae5);
+    color: var(--p-primary-800, #065f46);
+    border-radius: .6rem;
+}
+
+.identity {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+}
+
+.identity-actions, .month-controls {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+}
+
+.identity small {
+    display: block;
+}
+
+.identity > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.app-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    padding-block: 1.5rem 3rem;
+}
+
+.app-navigation, .fields, .record-actions, .record-title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem;
+}
+
+.page-heading, .record {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.page-heading {
+    margin-block: .5rem;
+}
+
+.month-controls .p-datepicker {
+    width: 7.5rem;
+}
+
+.month-controls .p-datepicker-input {
+    width: 100%;
+}
+
+.reload-button {
+    justify-self: start;
+}
+
+.record {
+    padding-block: .85rem;
+}
+
+.record + .record {
+    border-top: 1px solid var(--p-content-border-color, #dfe7e3);
+}
+
+.record-info {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.record-title {
+    align-items: center;
+    margin-bottom: .3rem;
+}
+
+.fields {
+    align-items: flex-end;
+}
+
+.fields + p, form p + .p-button {
+    margin-top: .85rem;
+}
+
+.field, .stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: .35rem;
+}
+
+.table-region {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.table-toolbar {
+    margin-bottom: .75rem;
+}
+
+.check-field {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+}
+
+.editor-dialog {
+    width: min(640px, 94vw);
+}
+
+.editor-dialog .employee-fields {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+.role-options {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem 1.25rem;
+    min-width: 0;
+    border: 1px solid var(--p-content-border-color, #cbd5e1);
+    border-radius: .5rem;
+    padding: .65rem .8rem;
+}
+
+.attendance-option {
+    grid-column: 1 / -1;
+}
+
+.table-region:focus-visible {
+    outline: 2px solid var(--p-primary-600, #047857);
+    outline-offset: 3px;
+}
+
+label, .field-label {
+    font-weight: 550;
+}
+
+.auth-card {
+    width: min(100%, 420px);
+    margin: min(6vh, 3rem) auto 0;
+}
+
+.auth-card p {
+    margin-bottom: .85rem;
+}
+
+.stack .p-inputtext {
+    margin-bottom: .4rem;
+}
+
+.stack > button:first-of-type {
+    margin-top: .5rem;
+}
+
+.password-field {
+    position: relative;
+}
+
+.password-field input {
+    padding-inline-end: 3rem;
+}
+
+.password-field .password-toggle {
+    position: absolute;
+    inset-inline-end: .15rem;
+    top: 0;
+    height: calc(100% - .4rem);
+}
+
+.metrics, .employee-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+    gap: .85rem;
+}
+
+.metrics strong {
+    display: block;
+    margin-top: .15rem;
+    font-size: 1.35rem;
+}
+
+.employee-fields {
+    margin-bottom: 1rem;
+}
+
+.proof-upload {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-top: .65rem;
+    align-items: center;
+}
+
+.proof-dialog {
+    width: min(740px, 94vw);
+}
+
+.proof-dialog img {
+    display: block;
+    max-width: 100%;
+    max-height: 70vh;
+    margin-inline: auto;
+}
+
+.account-dialog {
+    width: min(480px, 94vw);
+}
+
+.account-dialog .p-message, .proof-dialog .p-message {
+    margin-bottom: .75rem;
+}
+
+.proof-dialog .p-dialog-footer {
+    flex-wrap: wrap;
+}
+
+.confirmation-form .record-actions {
+    margin-top: .75rem;
+    justify-content: flex-end;
+}
+
+.settings-passkeys {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--p-content-border-color, #dfe7e3);
+}
+
+.settings-passkeys h2 {
+    margin-bottom: .65rem;
+}
+
+.muted-block {
+    display: block;
+}
+
+code {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+    .page-heading, .record {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .header-content {
+        flex-wrap: wrap;
+        padding-block: .65rem;
+    }
+
+    .identity {
+        width: 100%;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: .35rem;
+    }
+
+    .identity-actions {
+        flex-wrap: wrap;
+    }
+
+    .page-heading .fields {
+        width: 100%;
+    }
+
+    .fields .field {
+        max-width: 100%;
+    }
+
+    .metrics {
+        grid-template-columns: 1fr;
+    }
+}

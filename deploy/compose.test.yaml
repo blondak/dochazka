@@ -1,0 +1,7 @@
+services:
+  app:
+    environment:
+      PASSKEY_ORIGIN: http://localhost:${TEST_PORT:-8080}
+  web:
+    ports:
+      - "127.0.0.1:${TEST_PORT:-8080}:80"

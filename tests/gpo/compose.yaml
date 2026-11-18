@@ -1,0 +1,35 @@
+services:
+  dc:
+    build: ./tests/gpo
+    hostname: dc
+    networks:
+      default:
+        aliases: [dc.attend.test]
+    volumes:
+      - enroll-test:/run/enroll-test
+      - ./tests/gpo/krb5.conf:/etc/krb5.conf:ro
+    healthcheck:
+      test: ["CMD", "test", "-f", "/run/enroll-test/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  enroll:
+    image: ${GPO_IMAGE:?Supply the test gateway image}
+    build: ./deploy/gpo
+    networks:
+      default:
+        aliases: [enroll.attend.test]
+    depends_on:
+      dc: {condition: service_healthy}
+      app: {condition: service_started}
+    volumes:
+      - enroll-test:/run/secrets:ro
+      - ./tests/gpo/krb5.conf:/etc/krb5.conf:ro
+    environment:
+      GPO_REALM: ATTEND.TEST
+      GPO_LDAP_HOST: dc.attend.test
+      GPO_BASE_DN: DC=attend,DC=test
+      GPO_BIND_DN: CN=lookup,CN=Users,DC=attend,DC=test
+      GPO_GROUP_DN: CN=Enrollable,CN=Users,DC=attend,DC=test
+volumes:
+  enroll-test:

@@ -1,0 +1,75 @@
+name: Verify
+on: [push, pull_request, workflow_call]
+permissions:
+  contents: read
+jobs:
+  central:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGHOST: localhost
+      PGDATABASE: postgres
+      PGUSER: postgres
+      PGPASSWORD: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, mbstring, gd
+          coverage: pcov
+      - run: composer install --no-interaction
+      - run: composer audit --locked
+      - run: php bin/console api:openapi && git diff --exit-code -- public/openapi.json
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: npm ci --prefix web && npm run build --prefix web
+      - run: npm audit --prefix web --omit=dev
+      - run: npm exec --prefix web -- playwright install --with-deps chromium
+      - name: Verify the attendance cycle and measure PHP line coverage
+        env:
+          WEBAUTHN_BROWSER: '1'
+        run: |
+          set -o pipefail
+          bash tests/coverage.sh | tee coverage.txt
+          sed -n '/^| PHP src/,$p' coverage.txt >> "$GITHUB_STEP_SUMMARY"
+      - run: npm run test:e2e --prefix web
+      - run: sh bin/docs-assets.sh
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - run: dotnet restore agent/Dochazka.Agent.csproj --locked-mode
+      - run: dotnet package list --project agent/Dochazka.Agent.csproj --vulnerable --include-transitive --format json > nuget-audit.json && jq -e '[.projects[].frameworks[]? | (.transitivePackages // [])[], (.topLevelPackages // [])[]] | length == 0' nuget-audit.json
+      - run: dotnet publish agent/Dochazka.Agent.csproj -c Release --no-restore -o dist/windows-x64
+  deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: npm ci --prefix web && npm exec --prefix web -- playwright install --with-deps chromium
+      - run: docker build --target app -t dochazka:php-local . && docker build --target web -t dochazka:web-local .
+      - run: DEPLOYMENT_UI=1 bash tests/deploy.sh dochazka:php-local dochazka:web-local
+      - run: bash tests/gpo.sh
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - run: dotnet restore agent/Dochazka.Agent.csproj --locked-mode
+      - run: dotnet run --project agent/Dochazka.Agent.csproj -c Release --no-restore -- --self-test
+      - shell: powershell
+        run: |
+          $errors = $null
+          [Management.Automation.Language.Parser]::ParseFile((Resolve-Path agent/Install-Agent.ps1),[ref]$null,[ref]$errors) | Out-Null
+          if ($errors.Count) { throw ($errors | Out-String) }

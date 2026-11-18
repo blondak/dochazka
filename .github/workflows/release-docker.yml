@@ -1,0 +1,46 @@
+name: Release central Docker image
+on:
+  push:
+    tags: ['docker-v*']
+permissions:
+  contents: read
+concurrency: release-${{ github.ref }}
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions: {contents: write, packages: write}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and smoke test the final image
+        env: {TAG: '${{ github.ref_name }}'}
+        run: |
+          [[ "$TAG" =~ ^docker-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version="${TAG#docker-v}"
+          app="$repository:php-$version"
+          web="$repository:web-$version"
+          enroll="$repository:enroll-$version"
+          source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          docker build --target app --label "org.opencontainers.image.source=$source" -t "$app" .
+          docker build --target web --label "org.opencontainers.image.source=$source" -t "$web" .
+          docker build --label "org.opencontainers.image.source=$source" -t "$enroll" deploy/gpo
+          bash tests/deploy.sh "$app" "$web"
+          APP_IMAGE="$app" WEB_IMAGE="$web" GPO_IMAGE="$enroll" bash tests/gpo.sh
+          printf 'APP_IMAGE=%s\nWEB_IMAGE=%s\nGPO_IMAGE=%s\n' "$app" "$web" "$enroll" >> "$GITHUB_ENV"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish image and deployment files
+        env: {GH_TOKEN: '${{ github.token }}', TAG: '${{ github.ref_name }}'}
+        run: |
+          docker push "$APP_IMAGE"
+          docker push "$WEB_IMAGE"
+          docker push "$GPO_IMAGE"
+          tar czf central-deploy.tar.gz compose.yaml deploy/compose.traefik.yaml deploy/compose.gpo.yaml deploy/gpo deploy/gpo.md deploy/backup.md docs/audit.md README.md
+          printf 'PHP-FPM: %s\nNginx: %s\nGPO: %s\n' "$APP_IMAGE" "$WEB_IMAGE" "$GPO_IMAGE" > release-notes.txt
+          gh release create "$TAG" --verify-tag --notes-file release-notes.txt central-deploy.tar.gz

@@ -1,0 +1,34 @@
+# Docházka
+
+Tento soubor shrnuje požadavky a rozhodnutí pro práci v celém repozitáři. Uživatelské rozhraní a provozní dokumentaci pište česky. Nasazení a vývoj popisuje [README](README.md).
+
+## Funkční požadavky
+
+- Centrála přijímá události Windows a sestavuje měsíční výkaz. Události přihlášení, odhlášení, uspání a probuzení jsou podklad pro evidenci pracovní doby. Zámek obrazovky sám směnu neukončuje. Chybějící události a ruční opravy se zpracovávají ve výkazu.
+- Zaměstnanec může podat žádost o práci, přestávku, dovolenou nebo návštěvu lékaře. Vedoucí žádost schválí nebo zamítne. Propustku zaměstnanec přikládá ke schválené návštěvě až po jejím skončení, včetně zpětně zadaných žádostí. Chybějící povinná příloha blokuje schválení měsíčního výkazu.
+- Na mobilu lze vyfotit propustku fotoaparátem. Náhled a volitelné narovnání probíhají v prohlížeči. Fotografie odchází až po potvrzení uložení.
+- Vedoucí schvaluje měsíční výkazy ostatních zaměstnanců svého týmu. Vlastní žádost ani vlastní výkaz vedoucí neschvaluje. Mzdová účtárna po schválení všech zahrnutých výkazů uzavře měsíc a stáhne CSV. Pozdě doručené záznamy nebo opravy mohou vyžádat nové schválení a novou verzi exportu. Vydané verze se uchovávají.
+- Výpočet a export používají časové intervaly v sekundách. Příjem událostí zachovává zlomky sekund a souhrn v rozhraní zobrazuje hodiny a celé minuty. Zachovejte skutečné intervaly a nezavádějte automatické zaokrouhlování pro výpočet odpracované doby. [Zákoník práce § 96 a § 141 odst. 2](https://ppropo.mpsv.cz/zakon_262_2006)
+
+## Účty a oprávnění
+
+- Účet má jednu nebo více rolí `employee`, `manager`, `payroll`, `admin`. Oprávnění se sčítají. Schvalování a přístup k cizím propustkám vyžadují roli vedoucího a stejný tým. Náhled cizího výkazu pro správce a účtárnu vynechává volné poznámky a důvody rozhodnutí. Cizí propustky jsou v tomto náhledu nepřístupné.
+- Volba **Zpracovávat docházku** je nezávislá na roli. Technický účet si ponechá své pracovní oprávnění. Jeho vlastní docházka se nesbírá, výkaz se nenabízí a účet se nezahrnuje do uzávěrky.
+- Archivace zablokuje přihlášení a existující relace, zneplatní pozvánku a omezí období evidence datem archivace. Historie zůstává dostupná oprávněným osobám. Správce může archivaci zrušit. Poslední aktivní správce s nastaveným přihlášením musí mít před odebráním přístupu aktivovaného nástupce.
+- Web používá serverovou relaci přes zabezpečenou cookie, změnu hesla a volitelné WebAuthn passkeys. Správce vydává jednorázové pozvánky pro aktivaci a obnovu. Použití obnovovací pozvánky odvolá staré relace a passkeys. Při změně rolí ověřujte i zneplatnění dosavadních relací.
+
+## Architektura a konvence
+
+- Jeden repozitář obsahuje centrálu PHP, frontend a Windows agenta v `agent/`. PHP zdroje držte v `src/` v namespace `Dochazka\`, členěné podle domén, například `Attendance`, `Absence`, `Staff`, `Identity`, `Device` a `Payroll`. Kontrolery obsluhují HTTP a doménová pravidla patří do služeb.
+- PHP 8.4 používá Nette DI, Doctrine ORM a DBAL přes Nettrine a PostgreSQL. Pro dotazy preferujte Doctrine ORM nebo DBAL QueryBuilder před ručně psaným DQL. Změny databáze patří do očíslovaných migrací `migrations/`. Při změnách datového modelu pokryjte i existující záznamy.
+- API obsluhuje Apitte. Autentizaci a deklarace Nepada na metodách zpracovává `ApiAccessMiddleware`. Objektové oprávnění k zaměstnanci a týmu kontrolují služby. Web posílá `X-Dochazka: web`, stanice vlastní token Bearer. OpenAPI se generuje z atributů kontrolerů a sdílených schémat příkazem `php bin/console api:openapi`. Stoplight Elements zobrazuje popis na `/docs/`.
+- Veškeré webové rozhraní stavte na Vue, PrimeVue a tématu Aura. Pro tabulková data používejte PrimeVue DataTable a nástrojovou lištu nad tabulkou. Řádkové akce zobrazujte jako ikony s tooltipem a přístupným názvem. Z adresáře vedou akce přímo do výkazu a žádostí vybrané osoby.
+- Přidání a úprava zaměstnance, přidání zařízení, nová žádost i schválení výkazu patří do dialogů. Poznámka ke schválení je součástí dialogu a u nesrovnalostí je povinná. Zpět a Vpřed obnovují sekci, osobu a měsíc a zavírají nebo obnovují editační dialogy. Sekce a měsíc jsou v URL. Výběr osoby a dialog ukládejte do stavu historie prohlížeče. Hodnoty formulářů, poznámky a přílohy do historie neukládejte.
+
+## Nasazení a ověření
+
+- Centrála běží v Docker Compose s Nginxem, PHP-FPM a PostgreSQL. HTTPS ukončuje existující Traefik. Volitelná interní registrační brána ověřuje Kerberos a členství počítače v povolené skupině Samba AD. Ruční registrace používá jednorázový kód. [Nasazení GPO](deploy/gpo.md)
+- Windows služba .NET běží pod LocalSystem. Agent uchovává neodeslané události v SQLite, opakuje doručení a svazuje registrovanou stanici s jedinečným tokenem. Nasazení má režim systémové proxy, explicitní proxy a přímé připojení. Pro integrované ověření proxy používá agent volitelně identitu účtu počítače. [Parametry proxy](README.md#připojení-přes-proxy)
+- GitHub Actions vydávají Windows balíček z tagů `agent-v*` a obrazy centrály i brány z tagů `docker-v*`. Po změně API regenerujte OpenAPI. Pro ověření použijte `php tests/timesheet.php`, `python3 tests/workflow.py` s dočasným databázovým schématem a `npm run test:e2e --prefix web`. Pro změny agenta sestavte Windows balíček a použijte `--self-test`. Pro registraci a nasazení slouží `tests/gpo.sh` a `tests/deploy.sh`.
+- Lokální centrála běží na `http://localhost:8080/` přes `bash bin/test-environment.sh up`. Existující testovací data zachovávejte. Hesla, tokeny, skutečné propustky a databázové zálohy ukládejte mimo Git. Testovací přihlašovací údaje jsou v ignorovaném `var/test-environment/demo-ucty.json`, pokud už byly v lokálním prostředí vytvořené.
+- Před plošným nasazením ověřte skutečnou stanici Windows s firemní GPO, případnou proxy a přechodem offline. Ověřte také fotoaparát telefonu. Terminály a výběr důvodu odchodu přímo na stanici jsou samostatné budoucí etapy. [Audit a otevřené body](docs/audit.md)

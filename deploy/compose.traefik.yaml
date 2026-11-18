@@ -1,0 +1,10 @@
+services:
+  web:
+    networks:
+      default:
+      traefik:
+        aliases: [dochazka-web]
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:?Set TRAEFIK_NETWORK to your existing proxy network}

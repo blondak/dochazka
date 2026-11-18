@@ -1,0 +1,17 @@
+{
+  "name": "dochazka/centrala",
+  "description": "Firemní evidence docházky",
+  "type": "project",
+  "require": {
+    "php": "^8.4", "ext-gd": "*", "ext-openssl": "*", "ext-pdo_pgsql": "*",
+    "nette/bootstrap": "^3.2", "nette/http": "^3.3",
+    "contributte/apitte": "^0.14", "doctrine/orm": "^3.5", "symfony/cache": "^7.4",
+    "tracy/tracy": "^2.10",
+    "nettrine/dbal": "^0.10.3",
+    "nettrine/orm": "^0.10.1",
+    "nepada/security-annotations": "^5.1",
+    "contributte/console": "^0.11.0",
+    "lbuchs/webauthn": "^2.2"
+  },
+  "autoload": {"psr-4": {"Dochazka\\": "src/"}}
+}

@@ -1,0 +1,505 @@
+<header class="app-header">
+    <div class="header-content">
+        <span class="brand"><i class="pi pi-clock" aria-hidden="true"></i> Docházka</span>
+        <div v-if="user" class="identity">
+            <span><strong>{{ user.name }}</strong><small>{{ roleNames(user.roles) }} · {{ user.team }}</small></span>
+            <div class="identity-actions">
+                <PvButton label="Nastavení účtu" icon="pi pi-cog" severity="secondary" text :disabled="busy" @click="showSettings" />
+                <PvButton label="Odhlásit" icon="pi pi-sign-out" severity="secondary" text :disabled="busy" @click="signOut" />
+            </div>
+        </div>
+    </div>
+</header>
+<main class="app-content">
+    <PvMessage v-if="error && !inActionDialog" severity="error">{{ error }}</PvMessage>
+    <PvMessage v-if="notice && !inActionDialog" severity="success" :pt="{root: {role:'status', 'aria-live':'polite'}}">{{ notice }}</PvMessage>
+    <p v-if="starting" role="status">Načítám docházku…</p>
+
+    <PvCard v-else-if="setupAvailable" class="auth-card">
+        <template #title><h1>První spuštění</h1></template>
+        <template #content>
+            <p>Instalační kód najdete v položce <code>SETUP_TOKEN</code> v konfiguraci nasazení.</p>
+            <form class="stack" @submit.prevent="createAdmin">
+                <label for="setup-token">Instalační kód</label>
+                <PvPassword v-model="initial.token" input-id="setup-token" :input-props="{autocomplete:'off'}" toggle-mask required fluid />
+                <label for="setup-name">Jméno správce</label>
+                <PvInputText id="setup-name" v-model.trim="initial.name" autocomplete="name" required maxlength="200" fluid />
+                <label for="setup-login">Uživatelské jméno</label>
+                <PvInputText id="setup-login" v-model.trim="initial.login" autocomplete="username" required maxlength="200" fluid />
+                <label for="setup-password">Heslo</label>
+                <PvPassword v-model="initial.password" input-id="setup-password" :input-props="{autocomplete:'new-password', minlength:12, maxlength:72}"
+                    required toggle-mask fluid />
+                <label for="setup-repeat">Heslo znovu</label>
+                <PvPassword v-model="initial.repeat" input-id="setup-repeat" :input-props="{autocomplete:'new-password'}" required fluid />
+                <PvButton type="submit" label="Založit správce" :loading="busy" />
+            </form>
+        </template>
+    </PvCard>
+
+    <PvCard v-else-if="!user" class="auth-card">
+        <template #title><h1>{{ activation ? 'Aktivace účtu' : 'Přihlášení' }}</h1></template>
+        <template #content>
+            <form class="stack" @submit.prevent="signIn">
+                <template v-if="activation">
+                    <label for="invite-code">Kód pozvánky</label>
+                    <PvInputText id="invite-code" v-model.trim="code" required fluid />
+                </template>
+                <template v-else>
+                    <label for="login">Uživatelské jméno</label>
+                    <PvInputText id="login" v-model="login" autocomplete="username" required fluid />
+                </template>
+                <label for="password">{{ activation ? 'Nové heslo' : 'Heslo' }}</label>
+                <PvPassword :key="activation" v-model="password" input-id="password"
+                    :input-props="{autocomplete:activation ? 'new-password' : 'current-password', minlength:activation ? 12 : undefined}"
+                    required toggle-mask fluid />
+                <PvButton type="submit" :label="activation ? 'Nastavit heslo' : 'Přihlásit se'" :loading="busy" />
+                <PvButton v-if="passkeyAvailable && !activation" type="button" label="Přihlásit se pomocí passkey" icon="pi pi-key"
+                    outlined :disabled="busy" @click="signInWithPasskey" />
+                <PvButton type="button" :label="activation ? 'Zpět k přihlášení' : 'Mám pozvánku'" text :disabled="busy"
+                    @click="activation=!activation; password=''; code=''; error=''; notice=''" />
+            </form>
+        </template>
+    </PvCard>
+
+    <template v-else>
+        <nav class="app-navigation" aria-label="Sekce docházky">
+            <PvButton v-for="name in tabs" :key="name" :label="name" :icon="tabIcons[name]"
+                :severity="tab === name ? 'primary' : 'secondary'" :text="tab !== name"
+                :aria-current="tab === name ? 'page' : undefined" :disabled="busy" @click="changeTab(name)" />
+        </nav>
+
+        <div class="page-heading">
+            <h1 id="page-title" tabindex="-1">{{ tab }}</h1>
+            <div v-if="['Výkaz', 'Žádosti', 'Uzávěrka'].includes(tab)" class="fields">
+                <div v-if="scopePeople.length > 1 && tab !== 'Uzávěrka'" class="field">
+                    <span id="scope-person-label" class="field-label">Osoba</span>
+                    <PvSelect :model-value="person" input-id="scope-person" :options="scopePeople" option-label="name" option-value="id"
+                        :disabled="busy" aria-labelledby="scope-person-label" filter filter-placeholder="Vyhledat osobu"
+                        :pt="{pcFilter:{root:{'aria-label':'Vyhledat osobu'}}}" @update:model-value="selectPerson" />
+                </div>
+                <div class="field">
+                    <label for="scope-month">Období</label>
+                    <div class="month-controls">
+                        <PvButton aria-label="Předchozí měsíc" icon="pi pi-chevron-left" outlined :disabled="busy" @click="moveMonth(-1)" />
+                        <PvDatePicker :model-value="month" input-id="scope-month" view="month" date-format="yy-mm" update-model-type="string"
+                            :manual-input="false" :disabled="busy" @update:model-value="selectMonth" />
+                        <PvButton aria-label="Následující měsíc" icon="pi pi-chevron-right" outlined :disabled="busy" @click="moveMonth(1)" />
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p v-if="busy && (['Výkaz', 'Žádosti'].includes(tab) && !sheet || tab === 'Uzávěrka' && !payroll)" role="status">Načítám údaje…</p>
+        <PvButton v-if="error && !inActionDialog && !busy && (['Výkaz', 'Žádosti'].includes(tab) && !sheet || tab === 'Uzávěrka' && !payroll)"
+            class="reload-button" label="Načíst znovu" icon="pi pi-refresh" outlined @click="run(refresh)" />
+
+        <PvCard v-if="tab === 'První kroky'">
+            <template #content>
+                <article class="record">
+                    <div><h2>Založte uživatele</h2><p>Vytvořte zaměstnance, vedoucího ve stejném týmu a účet pro mzdovou účtárnu. Pokud evidujete docházku vedoucího, přidejte druhého vedoucího pro její schválení. Každému předejte pozvánku.</p></div>
+                    <PvButton label="Otevřít zaměstnance" outlined @click="changeTab('Zaměstnanci')" />
+                </article>
+                <article class="record">
+                    <div><h2>Přiřaďte doménový SID</h2><p>Na Windows pod účtem zaměstnance spusťte <code>whoami /user</code> a SID uložte k jeho záznamu.</p></div>
+                </article>
+                <article class="record">
+                    <div>
+                        <h2>Připojte první stanici</h2>
+                        <p>{{ devices.some(d => d.seen && !d.revoked) ? 'Centrála už navázala spojení se stanicí.' : 'Nasaďte agenta pomocí zásad skupiny nebo vygenerujte kód pro ruční registraci. Po instalaci zkontrolujte připojení.' }}</p>
+                    </div>
+                    <PvButton label="Otevřít zařízení" outlined @click="changeTab('Zařízení')" />
+                </article>
+            </template>
+        </PvCard>
+
+        <PvMessage v-if="['Výkaz', 'Žádosti'].includes(tab) && selectedPerson && !selectedPerson.attendance_enabled" severity="info">
+            Tomuto účtu se docházka nezpracovává.
+        </PvMessage>
+        <PvMessage v-if="tab === 'Účet'" severity="info">Tomuto účtu se docházka nezpracovává.</PvMessage>
+        <PvMessage v-else-if="['Výkaz', 'Žádosti'].includes(tab) && !scopePeople.length" severity="info">
+            Žádná osoba k zobrazení.
+        </PvMessage>
+        <template v-if="tab === 'Výkaz' && sheet">
+            <div class="metrics">
+                <PvCard><template #content><span>Odpracováno</span><strong>{{ hours(sheet.seconds) }}</strong></template></PvCard>
+                <PvCard><template #content><span>Čekající žádosti</span><strong>{{ sheet.pending }}</strong></template></PvCard>
+                <PvCard><template #content><span>Stav výkazu</span><strong>{{ sheet.approved ? 'Schválen' : 'Čeká na schválení' }}</strong></template></PvCard>
+            </div>
+            <PvMessage v-if="sheet.missing_proofs" severity="warn">
+                Propustky k doložení: {{ sheet.missing_proofs }}.
+                <PvButton v-if="tabs.includes('Žádosti') && canSubmitRequest" label="Otevřít žádosti" size="small" text @click="changeTab('Žádosti')" />
+            </PvMessage>
+            <PvCard>
+                <template #title><h2 id="month-rows">Průběh měsíce</h2></template>
+                <template #content>
+                    <div class="table-region" role="region" aria-labelledby="month-rows" tabindex="0">
+                        <PvDataTable :value="sheet.rows" size="small" striped-rows :table-props="{'aria-labelledby':'month-rows'}">
+                            <PvColumn header="Datum"><template #body="{data}">{{ day(data.day) }}</template></PvColumn>
+                            <PvColumn header="Druh"><template #body="{data}">{{ labels[data.kind] }}</template></PvColumn>
+                            <PvColumn header="Od"><template #body="{data}">{{ data.from ? time(data.from) : 'Celý den' }}</template></PvColumn>
+                            <PvColumn header="Do"><template #body="{data}">{{ time(data.to) }}</template></PvColumn>
+                            <template #empty>V tomto měsíci zatím nejsou evidované úseky.</template>
+                        </PvDataTable>
+                    </div>
+                </template>
+            </PvCard>
+            <PvCard v-if="sheet.issues.length">
+                <template #title><h2>Nesrovnalosti</h2></template>
+                <template #content><ul><li v-for="issue in sheet.issues" :key="issue">{{ issue }}</li></ul></template>
+            </PvCard>
+            <PvMessage v-if="hasRole('manager') && ownSheet && selectedPerson?.attendance_enabled && !sheet.approved" severity="info">
+                Váš výkaz může schválit druhý vedoucí ve vašem týmu.
+            </PvMessage>
+            <PvCard v-if="canReview && !sheet.approved">
+                <template #title><h2>Schválení výkazu</h2></template>
+                <template #content>
+                    <ul v-if="approvalBlockers.length">
+                        <li v-for="blocker in approvalBlockers" :key="blocker">{{ blocker }}</li>
+                    </ul>
+                    <PvButton v-if="sheet.pending" label="Vyřídit žádosti" outlined @click="changeTab('Žádosti')" />
+                    <PvButton v-if="!approvalBlockers.length" label="Schválit výkaz" icon="pi pi-check" :disabled="busy" @click="approveSheet" />
+                </template>
+            </PvCard>
+        </template>
+
+        <template v-if="tab === 'Žádosti' && sheet">
+            <PvToolbar v-if="canSubmitRequest" aria-label="Nástroje žádostí" class="table-toolbar">
+                <template #start>
+                    <PvButton label="Nová žádost nebo oprava" icon="pi pi-plus" :disabled="busy" @click="newRequest" />
+                </template>
+            </PvToolbar>
+            <PvCard>
+                <template #title><h2>Žádosti za období</h2></template>
+                <template #content>
+                    <p v-if="hasRole('manager') && ownSheet && sheet.requests.some(r => r.status === 'pending')">
+                        Vaše žádosti může vyřídit druhý vedoucí ve vašem týmu.
+                    </p>
+                    <article v-for="request in sheet.requests" :key="request.id" class="record" :aria-label="labels[request.kind] + ' · ' + requestPeriod(request)">
+                        <div class="record-info">
+                            <div class="record-title">
+                                <strong>{{ labels[request.kind] }}</strong>
+                                <PvTag :severity="requestSeverities[request.status]" :value="labels[request.status]" />
+                                <PvTag v-if="request.kind === 'LEKAR' && request.status === 'approved'"
+                                    :severity="request.has_proof ? 'success' : 'warn'"
+                                    :value="request.has_proof ? 'Propustka doložena' : 'Čeká na propustku'" />
+                            </div>
+                            <div>{{ requestPeriod(request) }}</div>
+                            <p v-if="request.note">{{ request.note }}</p>
+                            <p v-if="request.reason">Důvod rozhodnutí: {{ request.reason }}</p>
+                            <div v-if="canUploadProof(request)" class="proof-upload">
+                                <PvFileUpload mode="basic" choose-label="Vybrat fotografii" choose-icon="pi pi-image"
+                                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif" custom-upload auto :disabled="busy"
+                                    @uploader="selectProof(request.id, $event)" />
+                                <PvButton v-if="mobileCamera" label="Vyfotit propustku" icon="pi pi-camera" outlined
+                                    :disabled="busy" @click="openCamera(request.id)" />
+                            </div>
+                        </div>
+                        <div class="record-actions">
+                            <PvButton v-if="request.has_proof && (ownSheet || managesPerson)" label="Zobrazit propustku" icon="pi pi-image" size="small" outlined
+                                :disabled="busy" @click="showProof(request.id)" />
+                            <template v-if="canReview">
+                                <PvButton v-if="request.status === 'pending'" label="Schválit" size="small" :disabled="busy"
+                                    @click="decide(request, 'approved')" />
+                                <PvButton v-if="request.status !== 'rejected'" :label="request.status === 'pending' ? 'Zamítnout' : 'Odvolat schválení'"
+                                    severity="danger" size="small" text :disabled="busy" @click="decide(request, 'rejected')" />
+                            </template>
+                        </div>
+                    </article>
+                    <p v-if="!sheet.requests.length">Žádné žádosti za zvolené období.</p>
+                </template>
+            </PvCard>
+        </template>
+
+        <section v-if="tab === 'Zaměstnanci'" aria-labelledby="page-title">
+            <PvToolbar aria-label="Nástroje adresáře" class="table-toolbar">
+                <template #start>
+                    <PvButton label="Nový zaměstnanec" icon="pi pi-plus" :disabled="busy" @click="editPerson()" />
+                </template>
+                <template #end>
+                    <div class="check-field">
+                        <PvCheckbox :model-value="showArchived" input-id="show-archived" binary @update:model-value="setShowArchived" />
+                        <label for="show-archived">Zobrazit archivované</label>
+                    </div>
+                </template>
+            </PvToolbar>
+            <div class="table-region" role="region" aria-label="Seznam zaměstnanců" tabindex="0">
+                <PvDataTable :value="directoryPeople" data-key="id" size="small" striped-rows :table-props="{'aria-label':'Zaměstnanci'}">
+                    <PvColumn field="name" header="Jméno" sortable />
+                    <PvColumn field="number" header="Osobní číslo" />
+                    <PvColumn field="team" header="Tým" sortable />
+                    <PvColumn header="Role"><template #body="{data}">{{ roleNames(data.roles) }}</template></PvColumn>
+                    <PvColumn header="Evidence">
+                        <template #body="{data}">
+                            <PvTag v-if="data.archived_on" severity="secondary" value="Archivován" />
+                            <span v-else>{{ data.attendance_enabled ? 'Zpracovává se' : 'Bez docházky' }}</span>
+                        </template>
+                    </PvColumn>
+                    <PvColumn header="Akce">
+                        <template #body="{data}">
+                            <div class="record-actions">
+                                <PvButton v-if="data.id !== user.id || data.attendance_enabled"
+                                    icon="pi pi-calendar" v-tooltip.top="'Otevřít výkaz'" :aria-label="'Otevřít výkaz · ' + data.name"
+                                    size="small" text :disabled="busy" @click="changeTab('Výkaz', data.id)" />
+                                <PvButton v-if="data.id !== user.id || data.attendance_enabled"
+                                    icon="pi pi-file-edit" v-tooltip.top="'Otevřít žádosti'" :aria-label="'Otevřít žádosti · ' + data.name"
+                                    size="small" text :disabled="busy" @click="changeTab('Žádosti', data.id)" />
+                                <PvButton icon="pi pi-pencil" v-tooltip.top="'Upravit'" :aria-label="'Upravit ' + data.name" size="small" severity="secondary" text @click="editPerson(data)" />
+                                <PvButton v-if="!data.archived_on" icon="pi pi-envelope" v-tooltip.top="'Vydat pozvánku'" size="small" outlined :disabled="busy"
+                                    :aria-label="'Pozvánka pro ' + data.name" @click="invite(data)" />
+                                <PvButton :icon="data.archived_on ? 'pi pi-replay' : 'pi pi-box'"
+                                    v-tooltip.top="data.archived_on ? 'Zrušit archivaci' : 'Archivovat'" size="small" text
+                                    :aria-label="(data.archived_on ? 'Zrušit archivaci · ' : 'Archivovat · ') + data.name"
+                                    :disabled="busy" @click="archivePerson(data)" />
+                            </div>
+                        </template>
+                    </PvColumn>
+                    <template #empty>Žádní zaměstnanci k zobrazení.</template>
+                </PvDataTable>
+            </div>
+        </section>
+
+        <section v-if="tab === 'Zařízení'" aria-labelledby="page-title">
+            <PvToolbar aria-label="Nástroje zařízení" class="table-toolbar">
+                <template #start>
+                    <PvButton label="Přidat zařízení" icon="pi pi-plus" :disabled="busy" @click="addDevice" />
+                </template>
+            </PvToolbar>
+            <div class="table-region" role="region" aria-label="Seznam zařízení" tabindex="0">
+                <PvDataTable :value="devices" data-key="id" size="small" striped-rows :table-props="{'aria-label':'Zařízení'}">
+                    <PvColumn field="name" header="Název stanice" sortable />
+                    <PvColumn header="Stav">
+                        <template #body="{data}">
+                            <PvTag :severity="data.revoked ? 'danger' : data.registered || data.seen ? 'success' : 'warn'"
+                                :value="data.revoked ? 'Přístup odebrán' : data.registered || data.seen ? 'Registrováno' : 'Čeká na registraci'" />
+                        </template>
+                    </PvColumn>
+                    <PvColumn header="Poslední spojení"><template #body="{data}">{{ moment(data.seen) }}</template></PvColumn>
+                    <PvColumn header="Upozornění"><template #body="{data}">{{ data.warnings || '—' }}</template></PvColumn>
+                    <PvColumn header="Akce">
+                        <template #body="{data}">
+                            <PvButton v-if="!data.revoked" severity="danger" size="small" text icon="pi pi-ban" v-tooltip.top="'Odebrat přístup'" aria-label="Odebrat přístup" :disabled="busy"
+                                @click="revoke(data)" />
+                        </template>
+                    </PvColumn>
+                    <template #empty>Zatím nejsou evidované žádné stanice.</template>
+                </PvDataTable>
+            </div>
+        </section>
+
+        <PvMessage v-if="secret" severity="info">
+            <strong>Jednorázový kód</strong><br><code>{{ secret }}</code>
+            <div>
+                <PvButton label="Skrýt kód" size="small" text @click="secret=''" />
+            </div>
+        </PvMessage>
+
+        <template v-if="tab === 'Uzávěrka' && payroll">
+            <PvCard>
+                <template #title><h2>Připravenost výkazů</h2></template>
+                <template #content>
+                    <PvMessage v-if="payroll.changed" severity="warn">Podklady se od posledního exportu změnily.</PvMessage>
+                    <PvToolbar aria-label="Nástroje uzávěrky" class="table-toolbar">
+                        <template #start>
+                            <p v-if="!payroll.people.length && !payroll.versions.length">Za toto období nejsou žádné výkazy k uzavření.</p>
+                            <p v-else-if="payroll.people.some(p => !p.approved)">Měsíc lze uzavřít po schválení všech výkazů.</p>
+                            <p v-else-if="payroll.versions.length && !payroll.changed">Export pro aktuální podklady je připravený.</p>
+                            <PvButton v-else label="Uzavřít měsíc" icon="pi pi-check" :disabled="busy" @click="closeMonth" />
+                        </template>
+                    </PvToolbar>
+                    <div class="table-region" role="region" aria-label="Připravenost výkazů" tabindex="0">
+                        <PvDataTable :value="payroll.people" data-key="id" size="small" striped-rows :table-props="{'aria-label':'Připravenost výkazů'}">
+                            <PvColumn field="name" header="Jméno" sortable />
+                            <PvColumn header="Stav">
+                                <template #body="{data}">
+                                    <PvTag :severity="data.approved ? 'success' : 'warn'" :value="data.approved ? 'Schváleno' : 'Čeká na schválení'" />
+                                </template>
+                            </PvColumn>
+                            <PvColumn header="Akce">
+                                <template #body="{data}">
+                                    <PvButton icon="pi pi-calendar" v-tooltip.top="'Zobrazit výkaz'" :aria-label="'Zobrazit výkaz · ' + data.name" size="small" outlined :disabled="busy"
+                                        @click="changeTab('Výkaz', data.id)" />
+                                </template>
+                            </PvColumn>
+                            <template #empty>Žádné výkazy k zobrazení.</template>
+                        </PvDataTable>
+                    </div>
+                </template>
+            </PvCard>
+            <PvCard>
+                <template #title><h2>Mzdové exporty</h2></template>
+                <template #content>
+                    <div class="table-region" role="region" aria-label="Mzdové exporty" tabindex="0">
+                        <PvDataTable :value="payroll.versions" data-key="version" size="small" striped-rows :table-props="{'aria-label':'Mzdové exporty'}">
+                            <PvColumn field="version" header="Verze" />
+                            <PvColumn header="Vytvořeno"><template #body="{data}">{{ moment(data.created) }}</template></PvColumn>
+                            <PvColumn header="Akce">
+                                <template #body="{data}">
+                                    <PvButton icon="pi pi-download" v-tooltip.top="'Stáhnout CSV'" aria-label="Stáhnout CSV" size="small" outlined :disabled="busy" @click="download(data.version)" />
+                                </template>
+                            </PvColumn>
+                            <template #empty>Za toto období ještě není export.</template>
+                        </PvDataTable>
+                    </div>
+                </template>
+            </PvCard>
+        </template>
+    </template>
+</main>
+
+<input ref="cameraInput" type="file" accept="image/*" capture="environment" hidden @change="captureProof" />
+
+<PvDialog :visible="editor?.kind === 'request'" @update:visible="dismissEditor" modal
+    :header="ownSheet ? 'Nová žádost nebo oprava' : 'Nová žádost nebo oprava za ' + selectedPerson?.name"
+    class="editor-dialog" :closable="!busy" :close-on-escape="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submitRequest">
+        <div class="fields">
+            <div class="field">
+                <span id="request-kind-label" class="field-label">Druh</span>
+                <PvSelect v-model="form.kind" input-id="request-kind" :options="requestKinds"
+                    aria-labelledby="request-kind-label" option-label="label" option-value="value" />
+            </div>
+            <div class="field">
+                <label for="request-from">{{ form.kind === 'DOVOLENA' ? 'První den' : 'Datum začátku' }}</label>
+                <PvDatePicker v-model="form.from" input-id="request-from" date-format="yy-mm-dd" update-model-type="string"
+                    :show-on-focus="false" show-icon required />
+            </div>
+            <div v-if="form.kind !== 'DOVOLENA'" class="field">
+                <label for="request-from-time">Čas začátku (ČR)</label>
+                <PvInputText id="request-from-time" v-model="form.fromTime" type="time" required />
+            </div>
+            <div class="field">
+                <label for="request-to">{{ form.kind === 'DOVOLENA' ? 'Poslední den včetně' : 'Datum konce' }}</label>
+                <PvDatePicker v-model="form.to" input-id="request-to" date-format="yy-mm-dd" update-model-type="string"
+                    :show-on-focus="false" show-icon required />
+            </div>
+            <div v-if="form.kind !== 'DOVOLENA'" class="field">
+                <label for="request-to-time">Čas konce (ČR)</label>
+                <PvInputText id="request-to-time" v-model="form.toTime" type="time" required />
+            </div>
+            <div class="field">
+                <label for="request-note">Poznámka (nepovinná)</label><PvInputText id="request-note" v-model="form.note" />
+            </div>
+        </div>
+        <p v-if="form.kind === 'LEKAR'">{{ ownSheet ? 'Propustku přiložíte' : 'Zaměstnanec přiloží propustku' }} po návratu ze schválené návštěvy.</p>
+        <div class="record-actions">
+            <PvButton type="submit" label="Odeslat žádost" icon="pi pi-send" :loading="busy" />
+            <PvButton type="button" label="Zrušit" severity="secondary" text :disabled="busy" @click="dismissEditor" />
+        </div>
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'employee'" @update:visible="dismissEditor" modal :header="edit.id ? 'Upravit zaměstnance' : 'Nový zaměstnanec'" class="editor-dialog"
+    :closable="!busy" :close-on-escape="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submit('employee', edit, 'Zaměstnanec byl uložen.')">
+        <div class="employee-fields">
+            <label class="field" for="employee-name">Jméno<PvInputText id="employee-name" v-model="edit.name" autofocus required fluid /></label>
+            <label class="field">Osobní číslo<PvInputText v-model="edit.number" required fluid /></label>
+            <label class="field">Uživatelské jméno<PvInputText v-model="edit.login" required fluid /></label>
+            <label class="field">Tým<PvInputText v-model="edit.team" required fluid /></label>
+            <fieldset class="role-options">
+                <legend>Role</legend>
+                <div v-for="role in roles" :key="role.value" class="check-field">
+                    <PvCheckbox v-model="edit.roles" :input-id="'role-' + role.value" :value="role.value" />
+                    <label :for="'role-' + role.value">{{ role.label }}</label>
+                </div>
+            </fieldset>
+            <div class="check-field attendance-option">
+                <PvCheckbox v-model="edit.attendance_enabled" input-id="employee-attendance" binary />
+                <label for="employee-attendance">Zpracovávat docházku</label>
+            </div>
+            <label class="field">Doménový SID<PvInputText v-model="edit.sid" :readonly="!!edit.id && !!people.find(p => p.id === edit.id)?.sid" fluid /></label>
+            <div class="field">
+                <label for="employee-starts">Začátek evidence</label>
+                <PvDatePicker v-model="edit.starts" input-id="employee-starts" date-format="yy-mm-dd" update-model-type="string"
+                    :show-on-focus="false" show-icon required fluid />
+            </div>
+            <div class="field">
+                <label for="employee-ends">Konec evidence</label>
+                <PvDatePicker v-model="edit.ends" input-id="employee-ends" date-format="yy-mm-dd" update-model-type="string"
+                    :show-on-focus="false" show-icon fluid />
+            </div>
+        </div>
+        <div class="record-actions">
+            <PvButton type="submit" label="Uložit zaměstnance" :loading="busy" :disabled="!edit.roles.length" />
+            <PvButton type="button" label="Zrušit" severity="secondary" text :disabled="busy" @click="dismissEditor" />
+        </div>
+    </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'device'" @update:visible="dismissEditor" modal header="Přidat zařízení" class="account-dialog"
+    :closable="!busy" :close-on-escape="!busy">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form class="stack" @submit.prevent="submit('register', {name:deviceName}, 'Registrační kód platí jednu hodinu.')">
+        <label class="field" for="device-name">Název stanice</label>
+        <PvInputText id="device-name" v-model.trim="deviceName" autofocus required maxlength="200" fluid />
+        <div class="record-actions">
+            <PvButton type="submit" label="Vydat kód" :loading="busy" :disabled="!deviceName" />
+            <PvButton type="button" label="Zrušit" severity="secondary" text :disabled="busy" @click="dismissEditor" />
+        </div>
+    </form>
+</PvDialog>
+
+<PvDialog v-model:visible="settingsVisible" modal header="Nastavení účtu" class="account-dialog"
+    :closable="!busy && !confirmationVisible" :close-on-escape="!busy && !confirmationVisible" @hide="clearSettings">
+    <PvMessage v-if="error && !confirmationVisible" severity="error">{{ error }}</PvMessage>
+    <PvMessage v-if="notice" severity="success" :pt="{root: {role:'status', 'aria-live':'polite'}}">{{ notice }}</PvMessage>
+    <form class="stack" @submit.prevent="changePassword">
+        <h2>Změnit heslo</h2>
+        <label for="current-password">Současné heslo</label>
+        <PvPassword v-model="passwords.current" input-id="current-password" :input-props="{autocomplete:'current-password'}" required toggle-mask fluid />
+        <label for="new-password">Nové heslo</label>
+        <PvPassword v-model="passwords.next" input-id="new-password" :input-props="{autocomplete:'new-password', minlength:12, maxlength:72}" required toggle-mask fluid />
+        <label for="repeat-password">Nové heslo znovu</label>
+        <PvPassword v-model="passwords.repeat" input-id="repeat-password" :input-props="{autocomplete:'new-password'}" required fluid />
+        <PvButton type="submit" label="Změnit heslo" :loading="busy" />
+    </form>
+    <section v-if="passkeyAvailable" class="settings-passkeys">
+        <h2>Passkeys</h2>
+        <article v-for="key in passkeyList" :key="key.id" class="record">
+            <div><strong>{{ key.label }}</strong><small class="muted-block">Přidána {{ moment(key.created) }}</small></div>
+            <PvButton label="Odebrat" :aria-label="'Odebrat passkey ' + key.label" severity="danger" text size="small" :disabled="busy" @click="removePasskey(key)" />
+        </article>
+        <form class="stack" @submit.prevent="addPasskey">
+            <label for="passkey-label">Název passkey</label>
+            <PvInputText id="passkey-label" v-model.trim="newPasskey.label" placeholder="Například telefon" maxlength="80" required fluid />
+            <label for="passkey-password">Současné heslo</label>
+            <PvPassword v-model="newPasskey.password" input-id="passkey-password" :input-props="{autocomplete:'current-password'}" required fluid />
+            <PvButton type="submit" label="Přidat passkey" icon="pi pi-key" outlined :loading="busy" />
+        </form>
+    </section>
+</PvDialog>
+
+<PvDialog v-model:visible="confirmationVisible" modal :header="confirmation?.title" class="account-dialog"
+    :closable="!busy" :close-on-escape="!busy" @hide="clearConfirmation">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <form v-if="confirmation" class="stack confirmation-form" @submit.prevent="confirmAction">
+        <p>{{ confirmation.description }}</p>
+        <div v-if="confirmation.reasonRequired || confirmation.reasonLabel" class="field">
+            <label for="decision-reason">{{ confirmation.reasonLabel ?? 'Důvod rozhodnutí' }}</label>
+            <PvInputText id="decision-reason" v-model="decisionReason" :required="confirmation.reasonRequired" fluid />
+        </div>
+        <div class="record-actions">
+            <PvButton type="button" label="Zpět" text severity="secondary" :disabled="busy" @click="confirmationVisible=false" />
+            <PvButton type="submit" :label="confirmation.label" :severity="confirmation.destructive ? 'danger' : 'primary'"
+                :loading="busy" :disabled="confirmation.reasonRequired && !decisionReason.trim()" />
+        </div>
+    </form>
+</PvDialog>
+
+<PvDialog v-model:visible="photoVisible" modal header="Doložit propustku" class="proof-dialog"
+    :closable="!busy" :close-on-escape="!busy" @hide="clearPhoto">
+    <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+    <PvMessage v-if="scanMessage" severity="info" :pt="{root: {role:'status', 'aria-live':'polite'}}">{{ scanMessage }}</PvMessage>
+    <img v-if="photoPreview" :src="photoPreview" alt="Náhled propustky před uložením" />
+    <template #footer>
+        <PvButton label="Zpět" text severity="secondary" :disabled="busy" @click="photoVisible=false" />
+        <PvButton v-if="adjusted" label="Použít celý snímek" outlined :disabled="busy" @click="showOriginal" />
+        <PvButton v-else label="Najít okraje a narovnat" icon="pi pi-expand" outlined :disabled="busy" @click="straightenProof" />
+        <PvButton label="Uložit propustku" icon="pi pi-upload" :loading="busy" @click="submitProof" />
+    </template>
+</PvDialog>
+
+<PvDialog v-model:visible="proofVisible" modal header="Propustka od lékaře" class="proof-dialog" @hide="preview=''">
+    <img v-if="preview" :src="preview" alt="Fotografie propustky" />
+</PvDialog>

@@ -1,0 +1,30 @@
+services:
+  enroll:
+    image: ${GPO_IMAGE:-dochazka:enroll-local}
+    build:
+      context: ./deploy/gpo
+    restart: unless-stopped
+    networks:
+      default:
+      traefik:
+        aliases: [dochazka-enroll]
+    depends_on: [app]
+    environment:
+      GPO_REALM: ${GPO_REALM:?Set Kerberos realm}
+      GPO_LDAP_HOST: ${GPO_LDAP_HOST:?Set LDAP DNS name}
+      GPO_BASE_DN: ${GPO_BASE_DN:?Set LDAP base DN}
+      GPO_BIND_DN: ${GPO_BIND_DN:?Set read-only LDAP account DN}
+      GPO_GROUP_DN: ${GPO_GROUP_DN:?Set allowed computer group DN}
+    secrets:
+      - gpo_keytab
+      - gpo_bind_password
+      - gpo_ldap_ca
+    volumes:
+      - ${GPO_KRB5_CONF:?Set absolute krb5.conf path}:/etc/krb5.conf:ro
+secrets:
+  gpo_keytab:
+    file: ${GPO_KEYTAB:?Set absolute HTTP keytab path}
+  gpo_bind_password:
+    file: ${GPO_BIND_PASSWORD_FILE:?Set absolute LDAP password file path}
+  gpo_ldap_ca:
+    file: ${GPO_LDAP_CA:?Set absolute LDAP CA certificate path}

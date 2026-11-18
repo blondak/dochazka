@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    networks: [database]
+    environment:
+      POSTGRES_DB: dochazka
+      POSTGRES_USER: dochazka
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dochazka"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  app:
+    image: ${APP_IMAGE:-dochazka:php-local}
+    build:
+      context: .
+      target: app
+    restart: unless-stopped
+    networks: [default, database]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      PASSKEY_ORIGIN: ${PASSKEY_ORIGIN:-}
+    command: ["sh","-ec","php bin/console db:migrate && exec php-fpm -F"]
+  web:
+    image: ${WEB_IMAGE:-dochazka:web-local}
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on: [app]
+    expose: ["80"]
+volumes:
+  database:
+networks:
+  database:
+    internal: true
