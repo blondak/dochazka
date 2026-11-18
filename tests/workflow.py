@@ -97,6 +97,72 @@ def exercise(connect):
     for expected in ["accepted","duplicate"]:
         results = anonymous.call("events", {"events": events}, token=token, web=False)["results"]
         assert [r["status"] for r in results] == [expected,expected]
+    service = {"session": "638990000000000000.0x1b", "sid": sid}
+    events_for_service = [
+        dict(service, id="tech-login", kind="login", at=month+"-04T18:00:00+01:00"),
+        dict(service, id="tech-logout", kind="logout", at=month+"-04T19:00:00+01:00"),
+    ]
+    anonymous.call("service-session-link", service, 401, web=False)
+    anonymous.call("service-session-link", service, 409, token=token, web=False)
+    anonymous.call("events", {"events": events_for_service[:1]}, token=token, web=False)
+    old_link = anonymous.call("service-session-link", service, token=token, web=False)
+    link = anonymous.call("service-session-link", service, token=token, web=False)
+    technician = Client(connect)
+    technician.call("service-session-details", old_link, 404)
+    assert technician.call("service-session-details", link)["station"] == "PC1"
+    technician.call("service-session-verify", dict(link, login="root", password="wrong"), 401)
+    technician.call("service-session-verify", dict(link, login="employeeA", password=new_password), 403)
+    technician.call("service-session-verify", dict(link, login="root", password=pw))
+    technician.call("me", status=401)
+    technician.call("service-session-verify", dict(link, login="root", password=pw), 404)
+    if os.getenv("WEBAUTHN_BROWSER") == "1":
+        passkey_link = anonymous.call("service-session-link", service, token=token, web=False)
+        subprocess.run(
+            ["node", "web/tests/authenticator.mjs"], cwd=ROOT, text=True, check=True,
+            input=json.dumps(dict(login="root", password=pw, origin=f"http://localhost:{connect().port}",
+                serviceCode=passkey_link["code"])),
+        )
+        technician.call("service-session-details", passkey_link, 404)
+    anonymous.call("events", {"events": events_for_service[1:]}, token=token, web=False)
+    marked = emp.call("sheet", scope)
+    service_row = next(row for row in marked["sessions"] if row["session"] == service["session"])
+    assert service_row["service"] and service_row["to"] and marked["seconds"] == 8 * 3600
+    change = {"employee":uid, "device":service_row["device"], "session":service["session"], "service":False}
+    emp.call("service-session-change", change, 403)
+    manager.call("service-session-change", change, 403)
+    admin.call("service-session-change", change)
+    assert emp.call("sheet", scope)["seconds"] == 9 * 3600
+    admin.call("service-session-change", dict(change, service=True))
+    assert emp.call("sheet", scope)["seconds"] == 8 * 3600
+    technician.call("service-session-link", service, 409, token=token, web=False)
+
+    now = datetime.now(zone).replace(microsecond=0)
+    day_start = now.replace(hour=0, minute=0, second=0)
+    logout = min(now, day_start + timedelta(minutes=45))
+    today_seconds = int((logout - day_start).total_seconds())
+    anonymous.call("daily-attendance", status=401)
+    emp.call("daily-attendance", status=403)
+    admin.call("daily-attendance", status=403)
+    assert clients["managerB"][0].call("daily-attendance")["people"] == []
+
+    def employee_today(status, seconds=None):
+        daily = manager.call("daily-attendance")
+        assert daily["day"] == day_start.date().isoformat()
+        assert daily["people"] == [{"id": uid, "name": "employeeA", "status": status, "worked_seconds": seconds}]
+
+    employee_today("absent")
+    current_events = [
+        {"id":"day-login", "kind":"login", "session":"day.1", "sid":sid, "at":max(day_start-timedelta(hours=1), day_start.replace(day=1)).isoformat()},
+        {"id":"day-logout", "kind":"logout", "session":"day.1", "sid":sid, "at":logout.isoformat()},
+        {"id":"day-return", "kind":"login", "session":"day.2", "sid":sid, "at":now.isoformat()},
+    ]
+    anonymous.call("events", {"events": current_events[:2]}, token=token, web=False)
+    employee_today("finished", today_seconds)
+    anonymous.call("events", {"events": current_events[2:]}, token=token, web=False)
+    employee_today("present", today_seconds)
+    admin.call("service-session-change", dict(change, session="day.2", service=True))
+    employee_today("finished", today_seconds)
+    anonymous.call("events", {"events": [dict(current_events[2], id="day-return-logout", kind="logout")]}, token=token, web=False)
     visit = {"kind": "LEKAR", "from": month+"-03T10:00", "to": month+"-03T11:00", "note":"Poznámka pro vedoucího"}
     photo = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAADElEQVQImWNgGB4AAADIAAH4XVuUAAAAAElFTkSuQmCC"
     emp.call("request", dict(visit, photo=photo), 422)
@@ -236,6 +302,39 @@ def exercise(connect):
     receipt = anonymous.call("events", {"events":[skipped]}, token=token, web=False)["results"]
     assert receipt == [{"id":"attendance-disabled", "status":"ignored"}]
     admin.call("employee", employee_profile)
+
+    manager.call("login", {"login": "managerA", "password": pw})
+    manager.call("attendance-merge-settings", status=403)
+    assert admin.call("attendance-merge-settings") == {"gap_minutes": 0}
+    admin.call("attendance-merge-limit", {"gap_minutes": -1}, 422)
+    merge_day = day_start.date().isoformat()
+    current_scope = {"employee": uid, "month": merge_day[:7]}
+    extra_day = day_start.date().replace(day=1 if day_start.day != 1 else 2).isoformat()
+    merge_events = [
+        {"id":f"restart-{index}-{kind}", "session":f"restart.{index}", "kind":kind, "sid":sid,
+         "at":datetime.fromisoformat(day+"T"+time).replace(tzinfo=zone).isoformat()}
+        for index, (day, begin, end) in enumerate([(merge_day,"10:00","11:00"), (merge_day,"11:05","12:00"), (extra_day,"10:00","11:00")])
+        for kind, time in [("login", begin), ("logout", end)]
+    ]
+    anonymous.call("events", {"events": merge_events}, token=token, web=False)
+    open_sheet = manager.call("sheet", current_scope)
+    selected = [index for index, row in enumerate(open_sheet["rows"]) if row["from"][11:16] in ["10:00", "11:05"]]
+    same_day = [index for index in selected if open_sheet["rows"][index]["day"] == merge_day]
+    assert len(same_day) == 2 and len(selected) == 3
+    merge = dict(current_scope, fingerprint=open_sheet["fingerprint"], rows=same_day)
+    manager.call("merge-work-rows", dict(merge, rows=selected), 422)
+    manager_b.call("merge-work-rows", merge, 403)
+    manager.call("merge-work-rows", merge)
+    merged = manager.call("sheet", current_scope)
+    correction = next(request for request in merged["requests"] if request.get("merged_work"))
+    assert merged["seconds"] == open_sheet["seconds"] + 300
+    assert len(merged["sessions"]) == len(open_sheet["sessions"])
+    manager.call("merge-work-rows", merge, 409)
+    manager.call("decide", {"id": correction["id"], "status": "rejected", "reason": "Vrácení spojení"})
+    assert manager.call("sheet", current_scope)["seconds"] == open_sheet["seconds"]
+    assert admin.call("attendance-merge-limit", {"gap_minutes": 5}) == {"gap_minutes": 5}
+    assert manager.call("sheet", current_scope)["seconds"] == open_sheet["seconds"] + 300
+
     admin.call("revoke",{"id":admin.call("devices")[0]["id"]})
     emp.call("events",{"events":[]},401,token=token)
 
@@ -335,7 +434,8 @@ def exercise_deployment(port):
                 verify_refs(value)
 
     verify_refs(spec)
-    for endpoint in ("events", "setup", "setup-status", "request-proof-upload"):
+    for endpoint in ("events", "setup", "setup-status", "request-proof-upload", "service-session-link", "service-session-verify",
+                     "service-session-change", "daily-attendance", "merge-work-rows", "attendance-merge-settings", "attendance-merge-limit"):
         assert "post" in spec["paths"]["/api/v1/" + endpoint]
 
     exercise_setup(connect, os.environ["SETUP_TOKEN"])

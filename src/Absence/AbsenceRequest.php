@@ -15,6 +15,9 @@ class AbsenceRequest
     #[ORM\Id, ORM\GeneratedValue(strategy: 'IDENTITY'), ORM\Column(type: 'bigint')]
     public ?int $id = null;
 
+    #[ORM\Column(name: 'merged_work')]
+    public bool $mergedWork = false;
+
     #[ORM\Column(type: 'text')]
     public string $status = 'pending';
 

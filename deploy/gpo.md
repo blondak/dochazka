@@ -34,7 +34,7 @@ sudo /usr/bin/python3 deploy/gpo/debian/install.py \
 
 Skript nainstaluje balíčky Debianu, zjistí realm, založí účty `dochazka-http` a `dochazka-ldap`, zaregistruje `HTTP/<jméno-brány>` a uloží keytab pro tento SPN. Vytvoří nebo použije bezpečnostní skupinu `Dochazka-PC`. `--pilot` je volitelný a přidává existující účty počítačů do této skupiny. S `--manage-dns` skript v AD zóně doplní chybějící A záznam. Pro vlastní správu DNS tuto volbu vynechte a připravte záznam ručně. Služba používá TCP 443. Pokud je obsazený, použijte jiný port přes `--port` a předejte stejný port i v `-EnrollmentServer`. [Příručka samba-tool](https://www.samba.org/samba/docs/current/man-html/samba-tool.8.html) · [mod_auth_gssapi pro Apache](https://github.com/gssapi/mod_auth_gssapi)
 
-Při obnově certifikátu spusťte znovu tentýž příkaz s novými soubory. Skript použije existující služební účty. Stav služby ověřte přes `systemctl status dochazka-gateway`, chyby Apache jsou v `/var/log/dochazka-gateway/error.log`. Úspěšná instalace vypíše adresu pro `-EnrollmentServer`. Nejprve nasaďte GPO na pilotní stanici podle postupu níže a ověřte její registraci v centrále. Windows balíček `0.0.1` používá stejný registrační protokol.
+Při obnově certifikátu spusťte znovu tentýž příkaz s novými soubory. Skript použije existující služební účty. Stav služby ověřte přes `systemctl status dochazka-gateway`, chyby Apache jsou v `/var/log/dochazka-gateway/error.log`. Úspěšná instalace vypíše adresu pro `-EnrollmentServer`. Nejprve nasaďte GPO na pilotní stanici podle postupu níže a ověřte její registraci v centrále.
 
 ## Brána ve stejném projektu Docker Compose jako centrála
 
@@ -67,7 +67,7 @@ samba-tool group addmembers Dochazka-PC 'PILOT01$'
 5. Doplňte k proměnným centrály do `.env` následující hodnoty a spusťte bránu. Adresy jsou příklady. [Ověření Kerberos v Apache](https://github.com/gssapi/mod_auth_gssapi) · [Autorizace skupin v LDAP](https://httpd.apache.org/docs/2.4/mod/mod_authnz_ldap.html)
 
 ~~~dotenv
-GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.2
+GPO_IMAGE=ghcr.io/blondak/dochazka:enroll-0.0.3
 GPO_REALM=EXAMPLE.CZ
 GPO_LDAP_HOST=dc.example.cz
 GPO_BASE_DN=DC=example,DC=cz
@@ -92,15 +92,48 @@ Pro vlastní sestavení ze zdrojového kódu použijte ve stejném projektu `doc
 2. V GPO v **Computer Configuration → Windows Settings → Scripts → Startup** nastavte spouštěcí PowerShell skript níže. Pro počítače, jež dostávají doménovou síť až po startu, nastavte ve stejné politice čekání na síť při startu a přihlášení. Při opakovaném běhu po dokončené registraci se použije existující token.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.3\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -EnrollmentServer 'https://enroll.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.3' -Release '0.0.3'
+$ErrorActionPreference = 'Stop'
+
+$package = '\\server\dochazka\agent-v0.0.4'
+$logDirectory = Join-Path $env:ProgramFiles 'DochazkaAgent\Logs'
+$log = Join-Path $logDirectory 'startup.log'
+New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+Add-Content -LiteralPath $log -Encoding UTF8 -Value "$(Get-Date -Format o) START $(whoami)"
+
+$installParams = @{
+    Server           = 'https://dochazka.example.cz'
+    EnrollmentServer = 'https://enroll.example.cz'
+    PackagePath      = $package
+    Release          = '0.0.4'
+}
+
+try {
+    & (Join-Path $package 'Install-Agent.ps1') @installParams
+    Add-Content -LiteralPath $log -Encoding UTF8 -Value "$(Get-Date -Format o) OK"
+} catch {
+    Add-Content -LiteralPath $log -Encoding UTF8 -Value "$(Get-Date -Format o) ERROR $($_.Exception.Message)"
+    throw
+}
 ~~~
+
+Průběh instalace najdete v souboru `%ProgramFiles%\DochazkaAgent\Logs\startup.log`.
 
 3. Povolte úspěšné audity **Logon** i **Logoff** v Advanced Audit Policy. Restartujte pilotní stanici, ověřte službu `DochazkaAgent` a položku `PILOT01$@EXAMPLE.CZ` na kartě **Zařízení**. Proveďte místní interaktivní přihlášení a odhlášení již evidovaného zaměstnance. Po odeslání další dávky musí výkaz ukázat interval mezi těmito událostmi. Služba sleduje interaktivní a cached-interactive události 4624/4634, spánek a probuzení 42/107 v protokolu Kernel-Power. Zámek obrazovky sám směnu neukončuje. Při odpojení sítě se data ukládají do místní SQLite fronty. Po návratu spojení je agent znovu odešle.
 4. Pokud chybí vazba na zaměstnance, centrála na kartě **Zařízení** zobrazí upozornění s nepřiřazeným SID. Doplňte jej v adresáři. Agent doručení zopakuje každou hodinu a pokouší se o přiřazení po dobu 30 dnů od prvního odmítnutí. Chyby sběru a spojení najdete také v aplikačním protokolu Windows pod zdrojem `DochazkaAgent`.
 
+## Servisní přihlášení
+
+Nasaďte centrálu `docker-v0.0.3` a balíček agenta `agent-v0.0.4` se změněným `-Release`. Instalátor nastaví spuštění ikony **Docházka** při interaktivním přihlášení. Pokud je ikona skrytá, otevřete skryté ikony v oznamovací oblasti Windows.
+
+Po samostatném místním přihlášení pod účtem zaměstnance zvolte **Označit relaci jako servisní**. Po doručení přihlášení do centrály ikona otevře jednorázový odkaz. Potvrďte celou relaci vlastním účtem správce pomocí passkey nebo hesla. Pokud agent ještě přihlášení neodeslal, zopakujte akci po další dávce. Zpětně upravíte příznak jako správce ve **Výkazu** pod **Relace počítače**.
+
+Servisní relace zůstává uložená a v běžném výkazu se zobrazí po zapnutí **Zobrazit servisní relace**. Evidované servisní úseky se vynechávají ze součtu odpracované doby a z mzdového exportu.
+
+Vedoucí v **Denním přehledu** vidí zaměstnance svého týmu a stav podle dnešní evidence Windows. Délka práce se zobrazí po zaznamenaném odhlášení. Pokud se zaměstnanec znovu přihlásí, přehled ukáže stav **Přítomen** a součet už uzavřených relací. Servisní relace se v přehledu nezapočítávají.
+
 ## Obnova a vyřazení
 
-Pokud pilotní stanice potřebují proxy, přidejte do startup skriptu `-ProxyUri 'http://proxy.example.cz:3128'`. Volba se použije pro registraci i odesílání událostí. Další režimy a ověření účtem počítače popisuje [nastavení proxy](../README.md#připojení-přes-proxy).
+Pokud pilotní stanice potřebují proxy, přidejte do startup skriptu `-ProxyUri 'http://proxy.example.cz:3128'`. Režim se standardně použije pro registraci i odesílání událostí. Pro přímou registraci přes interní bránu použijte spolu s `-EnrollmentServer` parametr `-EnrollmentDirect`. Další režimy a ověření účtem počítače popisuje [nastavení proxy](../README.md#připojení-přes-proxy).
 
 Při nové instalaci na stejný doménový účet počítače vydá brána nový token. Starší token okamžitě ztratí platnost. Aktualizace pomocí `-Release` při zachování složky v ProgramData ponechá token i frontu. Při vyřazení odstraňte stanici z AD skupiny a v centrále použijte **Odebrat**. První krok uzavře možnost další registrace, druhý okamžitě odvolá dosud platný token. Centrála uchovává odvolání podle celého principálu včetně realmu i při reinstalaci. Pro náhradu odvolané stanice evidujte nový doménový účet s novým jménem.
 

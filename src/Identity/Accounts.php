@@ -42,6 +42,11 @@ final class Accounts
 
     public function login(array $i): array
     {
+        return $this->establishSession($this->verifyPasswordLogin($i));
+    }
+
+    public function verifyPasswordLogin(#[\SensitiveParameter] array $i): Employee
+    {
         // Expire old buckets periodically even when the supplied login does not exist.
         if (random_int(1, 64) === 1) {
             $this->db->executeStatement("DELETE FROM login_limit WHERE since < now() - interval '15 minutes'");
@@ -56,15 +61,20 @@ final class Accounts
             throw new Problem('Neplatné přihlášení.', 401);
         }
         $this->db->delete('login_limit',['bucket'=>$bucket]);
-        return $this->establishSession($employee);
+        return $employee;
     }
 
-    public function establishSession(Employee $employee): array
+    public function requireActive(Employee $employee): void
     {
         $today = new DateTimeImmutable('today');
         if ($employee->archivedOn !== null || $employee->starts > $today || ($employee->ends && $employee->ends < $today)) {
             throw new Problem('Neplatné přihlášení.', 401);
         }
+    }
+
+    public function establishSession(Employee $employee): array
+    {
+        $this->requireActive($employee);
         if (!$employee->credentialsReady) {
             // Existing accounts prove possession at their first login after migration.
             $this->db->executeStatement(

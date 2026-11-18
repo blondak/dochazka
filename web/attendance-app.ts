@@ -3,8 +3,14 @@ import type { FileUploadUploaderEvent } from 'primevue/fileupload'
 
 interface Person {id:number;name:string;number:string|null;team:string;roles:string[];attendance_enabled:boolean;archived_on?:string|null;sid?:string|null;login?:string;starts?:string;ends?:string|null}
 interface Row {day:string;kind:string;from:string;to:string}
-interface RequestRow {id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean}
-interface Sheet {rows:Row[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];vacation_conflict?:boolean;requests:RequestRow[];fingerprint:string}
+interface ComputerSession {device:number;station:string;session:string;from:string;to:string|null;service:boolean}
+interface DailyAttendance {
+    day:string
+    updated:string
+    people:{id:number;name:string;status:'present'|'finished'|'absent'|'untracked';worked_seconds:number|null}[]
+}
+interface RequestRow {id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean;merged_work?:boolean}
+interface Sheet {rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];vacation_conflict?:boolean;requests:RequestRow[];fingerprint:string}
 interface Device {id:number;name:string;seen:string|null;revoked:boolean;registered:boolean;warnings:string|null}
 interface Payroll {people:{id:number;name:string;approved:boolean}[];versions:{version:number;created:string}[];changed:boolean}
 interface Passkey {id:string;label:string;created:string}
@@ -39,13 +45,23 @@ const freshRequest = () => ({kind:'LEKAR',from:'',to:'',fromTime:'',toTime:'',no
 const tabIcons: Record<string, string> = {
     'Zaměstnanci': 'pi pi-users', 'Zařízení': 'pi pi-desktop', 'První kroky': 'pi pi-list-check',
     'Výkaz': 'pi pi-calendar', 'Žádosti': 'pi pi-file-edit', 'Uzávěrka': 'pi pi-check-square',
+    'Denní přehled': 'pi pi-calendar-clock',
+    'Nastavení docházky': 'pi pi-sliders-h',
 }
 const tabSlugs: Record<string, string> = {
     'Zaměstnanci': 'zamestnanci', 'Zařízení': 'zarizeni', 'První kroky': 'prvni-kroky',
     'Výkaz': 'vykaz', 'Žádosti': 'zadosti', 'Uzávěrka': 'uzaverka',
+    'Denní přehled': 'denni-prehled',
+    'Nastavení docházky': 'nastaveni-dochazky',
 }
 const monthlyTabs = ['Výkaz', 'Žádosti', 'Uzávěrka']
 const requestSeverities: Record<string, string> = {pending:'warn', approved:'success', rejected:'danger'}
+const dailyStatuses = {
+    present: {label:'Přítomen', severity:'success'},
+    finished: {label:'Odpracováno', severity:'info'},
+    absent: {label:'Nepřítomen', severity:'secondary'},
+    untracked: {label:'Bez přiřazeného účtu', severity:'warn'},
+}
 const date = (s: string) => new Date(s.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00'))
 class ApiError extends Error {
     constructor(message: string, readonly status: number) {
@@ -64,6 +80,11 @@ async function api<T>(op:string,data:object={}):Promise<T>{
 export function setupAttendance() {
     const user=ref<Person|null>(null), people=ref<Person[]>([]), devices=ref<Device[]>([]), payroll=ref<Payroll|null>(null)
     const person=ref(0), month=ref(today.slice(0,7)),sheet=ref<Sheet|null>(null),tab=ref('Výkaz')
+    const daily = ref<DailyAttendance|null>(null)
+    const gapMinutes = ref<string|null>(null)
+    const mergeRows = ref<number[]>([])
+    const mergeDay = computed(() => sheet.value?.rows[mergeRows.value[0]]?.day)
+    let dailyTimer: number | undefined
     const preview=ref(''), proofVisible=ref(false)
     const settingsVisible = ref(false)
     const confirmationVisible = ref(false)
@@ -84,12 +105,19 @@ export function setupAttendance() {
     let cameraRequest = 0
     const busy=ref(false),error=ref(''),notice=ref(''), login=ref(''),password=ref(''),activation=ref(false),code=ref('')
     const starting=ref(true), setupAvailable=ref(false)
+    const serviceCode = /^#service-session=([a-f0-9]{64})$/.exec(location.hash)?.[1]
+    const serviceContext = ref<{station:string;from:string}|null>(null)
+    const serviceDone = ref(false), showSessionTable = ref(false), showServiceSessions = ref(false)
+    const serviceCredentials = ref({login:'', password:''})
     const initial=ref({token:'',name:'',login:'',password:'',repeat:''})
     const form=ref(freshRequest()), edit=ref<Person>(freshPerson()), deviceName=ref(''), secret=ref('')
     const editor = ref<Editor|null>(null), showArchived = ref(false)
     let popPending = false
     const directoryPeople = computed(() => showArchived.value ? people.value : people.value.filter(p => !p.archived_on))
     const hasRole = (role:string) => user.value?.roles.includes(role) ?? false
+    const visibleSessions = computed(() => (sheet.value?.sessions ?? []).filter(session =>
+        session.service ? showServiceSessions.value : showSessionTable.value && hasRole('admin'),
+    ))
     const ownSheet = computed(() => user.value?.id === person.value)
     const selectedPerson = computed(() => people.value.find(p => p.id === person.value))
     const managesPerson = computed(() => hasRole('manager') && user.value?.team === selectedPerson.value?.team)
@@ -118,6 +146,8 @@ export function setupAttendance() {
         ...(hasRole('payroll') ? ['Uzávěrka', 'Výkaz'] : []),
         ...(hasRole('admin') || hasRole('manager') || (hasRole('employee') && user.value?.attendance_enabled)
             ? (hasRole('payroll') ? ['Žádosti'] : ['Výkaz', 'Žádosti']) : []),
+        ...(hasRole('manager') ? ['Denní přehled'] : []),
+        ...(hasRole('admin') ? ['Nastavení docházky'] : []),
     ])
     const hours=(seconds:number)=>Math.floor(seconds/3600)+' h '+Math.floor(seconds%3600/60)+' min'
     const time=(s:string)=>s?new Intl.DateTimeFormat('cs-CZ',{timeZone:'Europe/Prague',hour:'2-digit',minute:'2-digit'}).format(date(s)):''
@@ -141,9 +171,17 @@ export function setupAttendance() {
         if(!user.value)return
         try {
             if(tab.value==='Zařízení' || tab.value==='První kroky')devices.value=await api('devices')
+            else if(tab.value==='Denní přehled') daily.value=await api('daily-attendance')
+            else if(tab.value==='Nastavení docházky') {
+                gapMinutes.value = String((await api<{gap_minutes:number}>('attendance-merge-settings')).gap_minutes)
+            }
             else if(tab.value==='Uzávěrka') payroll.value=await api('payroll',scope())
             else if(tab.value==='Zaměstnanci')people.value=await api('people')
-            else if (['Výkaz', 'Žádosti'].includes(tab.value) && person.value) sheet.value=await api('sheet',scope())
+            else if (['Výkaz', 'Žádosti'].includes(tab.value) && person.value) {
+                const next = await api<Sheet>('sheet', scope())
+                if (next.fingerprint !== sheet.value?.fingerprint) mergeRows.value = []
+                sheet.value = next
+            }
         } catch (error) {
             sheet.value = null
             payroll.value = null
@@ -175,6 +213,7 @@ export function setupAttendance() {
                 devices.value = []
                 sheet.value = null
                 payroll.value = null
+                daily.value = null
                 secret.value = ''
                 proofVisible.value = false
                 photoVisible.value = false
@@ -259,15 +298,33 @@ export function setupAttendance() {
             },
         })
     }
-    function signInWithPasskey(){return run(async()=>{
-        const {publicKey} = await api<{publicKey:PublicKeyCredentialRequestOptionsJSON}>('passkey-login-options')
+    async function passkeyAssertion(endpoint:string, parameters:object = {}) {
+        const {publicKey} = await api<{publicKey:PublicKeyCredentialRequestOptionsJSON}>(endpoint, parameters)
         const key = await navigator.credentials.get({publicKey:PublicKeyCredential.parseRequestOptionsFromJSON(publicKey)})
         if(!(key instanceof PublicKeyCredential)) throw new Error('Ověření bylo zrušeno.')
-        await setupUser(await api('passkey-login', {id:key.id, ...key.toJSON().response}))
+        return {id:key.id, ...key.toJSON().response}
+    }
+    function signInWithPasskey(){return run(async()=>{
+        await setupUser(await api('passkey-login', await passkeyAssertion('passkey-login-options')))
     })}
+    function verifyServiceSession(withPasskey = false) {return run(async()=>{
+        try {
+            const input = withPasskey
+                ? {passkey: await passkeyAssertion('service-session-passkey-options', {code:serviceCode})}
+                : serviceCredentials.value
+            await api('service-session-verify', {code:serviceCode, ...input})
+            serviceDone.value = true
+        } finally {
+            serviceCredentials.value.password = ''
+        }
+    })}
+    function openAttendance() {
+        location.assign(location.pathname)
+    }
     function clearScope() {
         sheet.value = null
         payroll.value = null
+        mergeRows.value = []
     }
     function view(): AttendanceView {
         return {
@@ -428,6 +485,44 @@ export function setupAttendance() {
             action: note => save('approve', {...input, note}, 'Výkaz byl schválen.'),
         })
     }
+    function changeServiceSession(session:ComputerSession) {
+        const service = !session.service
+        const label = service ? 'Označit jako servisní' : 'Zrušit servisní označení'
+        openConfirmation({
+            title: label, label,
+            description: [session.station, moment(session.from), selectedPerson.value?.name].filter(Boolean).join(' · '),
+            action: () => save('service-session-change', {
+                employee:person.value, device:session.device, session:session.session, service,
+            }, service ? 'Relace je označena jako servisní.' : 'Servisní označení bylo zrušeno.'),
+        })
+    }
+    function toggleMergeRow(index:number) {
+        const row = sheet.value?.rows[index]
+        if (!canReview.value || row?.kind !== 'PRACE' || (mergeDay.value && row.day !== mergeDay.value)) return
+        mergeRows.value = mergeRows.value.includes(index)
+            ? mergeRows.value.filter(value => value !== index)
+            : [...mergeRows.value, index]
+    }
+    function confirmMergeRows() {
+        if (!canReview.value || !sheet.value || mergeRows.value.length < 2) return
+        const rows = [...mergeRows.value].sort((a, b) => a - b)
+        const first = sheet.value.rows[rows[0]]
+        const last = sheet.value.rows[rows[rows.length - 1]]
+        const input = {...scope(), fingerprint:sheet.value.fingerprint, rows}
+        openConfirmation({
+            title: 'Spojit pracovní úseky',
+            description: day(first.day) + ' · ' + time(first.from) + ' – ' + time(last.to),
+            label: 'Potvrdit spojení',
+            action: () => save('merge-work-rows', input, 'Vybrané pracovní úseky byly spojeny.'),
+        })
+    }
+    function saveMergeLimit() {return run(async()=>{
+        const value = gapMinutes.value ?? ''
+        if (!/^\d+$/.test(value)) throw new Error('Zadejte limit v celých minutách.')
+        const {gap_minutes} = await api<{gap_minutes:number}>('attendance-merge-limit', {gap_minutes:Number(value)})
+        gapMinutes.value = String(gap_minutes)
+        notice.value = 'Limit automatického spojování byl uložen.'
+    })}
     function archivePerson(data:Person) {
         const archived = !data.archived_on
         const label = archived ? 'Archivovat zaměstnance' : 'Zrušit archivaci'
@@ -589,10 +684,18 @@ export function setupAttendance() {
     })}
     onMounted(async()=>{
         window.addEventListener('popstate', restoreView)
+        dailyTimer = window.setInterval(() => {
+            if (tab.value === 'Denní přehled' && document.visibilityState === 'visible') void run(refresh)
+        }, 30_000)
+        if (serviceCode) history.replaceState(history.state, '', location.pathname + location.search)
         try {
             if(window.isSecureContext && typeof PublicKeyCredential !== 'undefined'
                 && typeof PublicKeyCredential.parseCreationOptionsFromJSON === 'function'){
                 passkeyAvailable.value = (await api<{available:boolean}>('passkey-status').catch(() => ({available:false}))).available
+            }
+            if (serviceCode) {
+                serviceContext.value = await api('service-session-details', {code:serviceCode})
+                return
             }
             setupAvailable.value=(await api<{available:boolean}>('setup-status')).available
             if(!setupAvailable.value) await setupUser(await api('me'))
@@ -606,7 +709,10 @@ export function setupAttendance() {
             }
         }
     })
-    onUnmounted(() => window.removeEventListener('popstate', restoreView))
+    onUnmounted(() => {
+        window.removeEventListener('popstate', restoreView)
+        window.clearInterval(dailyTimer)
+    })
     return {
         starting, setupAvailable, initial, createAdmin, submitRequest, submitProof, showProof, preview, proofVisible,
         settingsVisible, passwords, changePassword, showSettings, clearSettings, signInWithPasskey,
@@ -616,6 +722,10 @@ export function setupAttendance() {
         user, people, devices, payroll, person, month, sheet, tab, tabs, busy, error, notice, login, password,
         activation, code, form, edit, deviceName, secret, labels, roles, requestKinds, requestSeverities,
         tabIcons, time, moment, day, hours, requestPeriod, canUploadProof, scope, run, refresh, signIn, signOut, roleNames, hasRole,
+        serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
+        showSessionTable, showServiceSessions, visibleSessions, changeServiceSession,
+        daily, dailyStatuses,
+        gapMinutes, saveMergeLimit, mergeRows, mergeDay, toggleMergeRow, confirmMergeRows,
         ownSheet, canReview, selectedPerson, inActionDialog, approvalBlockers, selectPerson, selectMonth, moveMonth,
         managesPerson, canSubmitRequest, scopePeople, editor, dismissEditor, showArchived, setShowArchived, directoryPeople,
         changeTab, submit, download, editPerson, addDevice, archivePerson, confirmationVisible, confirmation, decisionReason,

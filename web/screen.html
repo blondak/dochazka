@@ -15,6 +15,29 @@
     <PvMessage v-if="notice && !inActionDialog" severity="success" :pt="{root: {role:'status', 'aria-live':'polite'}}">{{ notice }}</PvMessage>
     <p v-if="starting" role="status">Načítám docházku…</p>
 
+    <PvCard v-else-if="serviceCode" class="auth-card">
+        <template #title><h1>Servisní přihlášení</h1></template>
+        <template #content>
+            <PvMessage v-if="serviceDone" severity="success">Celá relace je označena jako servisní.</PvMessage>
+            <template v-else-if="serviceContext">
+                <p><strong>{{ serviceContext.station }}</strong> · {{ moment(serviceContext.from) }}</p>
+                <p>Potvrďte označení celé relace vlastním účtem správce.</p>
+                <div class="stack">
+                    <PvButton v-if="passkeyAvailable" type="button" label="Potvrdit pomocí passkey"
+                        icon="pi pi-key" :disabled="busy" @click="verifyServiceSession(true)" />
+                    <label for="service-login">Účet správce</label>
+                    <PvInputText id="service-login" v-model="serviceCredentials.login" autocomplete="off" maxlength="200" />
+                    <label for="service-password">Heslo správce</label>
+                    <PvPassword v-model="serviceCredentials.password" input-id="service-password" :input-props="{autocomplete:'off'}"
+                        @keyup.enter="serviceCredentials.login && serviceCredentials.password && verifyServiceSession()" />
+                    <PvButton type="button" label="Potvrdit heslem" outlined :loading="busy"
+                        :disabled="!serviceCredentials.login || !serviceCredentials.password" @click="verifyServiceSession()" />
+                </div>
+            </template>
+            <PvButton label="Přejít do docházky" text :disabled="busy" @click="openAttendance" />
+        </template>
+    </PvCard>
+
     <PvCard v-else-if="setupAvailable" class="auth-card">
         <template #title><h1>První spuštění</h1></template>
         <template #content>
@@ -92,6 +115,50 @@
         <PvButton v-if="error && !inActionDialog && !busy && (['Výkaz', 'Žádosti'].includes(tab) && !sheet || tab === 'Uzávěrka' && !payroll)"
             class="reload-button" label="Načíst znovu" icon="pi pi-refresh" outlined @click="run(refresh)" />
 
+        <template v-if="tab === 'Denní přehled'">
+            <PvToolbar aria-label="Nástroje denního přehledu" class="table-toolbar">
+                <template #start>
+                    <time v-if="daily" :datetime="daily.day">{{ day(daily.day) }}</time>
+                </template>
+                <template #end>
+                    <PvButton label="Obnovit" icon="pi pi-refresh" outlined :loading="busy" @click="run(refresh)" />
+                </template>
+            </PvToolbar>
+            <PvCard v-if="daily">
+                <template #title><h2 id="team-attendance">Docházka týmu</h2></template>
+                <template #content>
+                    <p>Stav podle evidence Windows. Aktualizováno v {{ time(daily.updated) }}.</p>
+                    <div class="table-region" role="region" aria-labelledby="team-attendance" tabindex="0">
+                        <PvDataTable :value="daily.people" data-key="id" size="small" striped-rows :table-props="{'aria-labelledby':'team-attendance'}">
+                            <PvColumn field="name" header="Zaměstnanec" />
+                            <PvColumn header="Stav">
+                                <template #body="{ data }"><PvTag :value="dailyStatuses[data.status].label" :severity="dailyStatuses[data.status].severity" /></template>
+                            </PvColumn>
+                            <PvColumn header="Odpracováno z uzavřených relací">
+                                <template #body="{ data }">{{ data.worked_seconds === null ? '—' : hours(data.worked_seconds) }}</template>
+                            </PvColumn>
+                            <template #empty>V týmu zatím není žádný zaměstnanec v evidenci.</template>
+                        </PvDataTable>
+                    </div>
+                </template>
+            </PvCard>
+            <p v-else-if="busy" role="status">Načítám stav týmu…</p>
+        </template>
+
+        <PvCard v-if="tab === 'Nastavení docházky' && gapMinutes !== null">
+            <template #title><h2>Automatické spojování úseků</h2></template>
+            <template #content>
+                <form class="stack" @submit.prevent="saveMergeLimit">
+                    <label for="merge-gap">Maximální mezera v minutách</label>
+                    <PvInputText id="merge-gap" v-model="gapMinutes" type="number" min="0" max="1439" step="1"
+                        required aria-describedby="merge-gap-help" />
+                    <p id="merge-gap-help">Úseky na stejném počítači se mohou spojit v rámci jednoho dne. Nula spojování vypne. Změna platí od dneška.</p>
+                    <PvButton type="submit" label="Uložit limit" :loading="busy" />
+                </form>
+            </template>
+        </PvCard>
+        <PvButton v-else-if="tab === 'Nastavení docházky' && error && !busy" label="Načíst znovu" icon="pi pi-refresh" outlined @click="run(refresh)" />
+
         <PvCard v-if="tab === 'První kroky'">
             <template #content>
                 <article class="record">
@@ -131,13 +198,59 @@
             <PvCard>
                 <template #title><h2 id="month-rows">Průběh měsíce</h2></template>
                 <template #content>
+                    <PvToolbar v-if="canReview && sheet.rows.some(row => row.kind === 'PRACE')" aria-label="Nástroje pracovních úseků" class="table-toolbar">
+                        <template #start>
+                            <PvButton label="Spojit vybrané úseky" icon="pi pi-link" outlined
+                                :disabled="busy || mergeRows.length < 2" @click="confirmMergeRows" />
+                        </template>
+                    </PvToolbar>
                     <div class="table-region" role="region" aria-labelledby="month-rows" tabindex="0">
                         <PvDataTable :value="sheet.rows" size="small" striped-rows :table-props="{'aria-labelledby':'month-rows'}">
+                            <PvColumn v-if="canReview && sheet.rows.some(row => row.kind === 'PRACE')" header="Výběr">
+                                <template #body="{ data, index }">
+                                    <PvCheckbox v-if="data.kind === 'PRACE'" binary :model-value="mergeRows.includes(index)"
+                                        :disabled="busy || !!mergeDay && data.day !== mergeDay"
+                                        :aria-label="'Vybrat pracovní úsek ' + day(data.day) + ' ' + time(data.from) + ' – ' + time(data.to)"
+                                        @update:model-value="toggleMergeRow(index)" />
+                                </template>
+                            </PvColumn>
                             <PvColumn header="Datum"><template #body="{data}">{{ day(data.day) }}</template></PvColumn>
                             <PvColumn header="Druh"><template #body="{data}">{{ labels[data.kind] }}</template></PvColumn>
                             <PvColumn header="Od"><template #body="{data}">{{ data.from ? time(data.from) : 'Celý den' }}</template></PvColumn>
                             <PvColumn header="Do"><template #body="{data}">{{ time(data.to) }}</template></PvColumn>
                             <template #empty>V tomto měsíci zatím nejsou evidované úseky.</template>
+                        </PvDataTable>
+                    </div>
+                </template>
+            </PvCard>
+            <PvToolbar aria-label="Nástroje relací počítače" class="table-toolbar">
+                <template #start>
+                    <PvButton v-if="hasRole('admin')" label="Relace počítače" icon="pi pi-desktop" outlined
+                        :aria-pressed="showSessionTable" @click="showSessionTable = !showSessionTable" />
+                    <PvButton label="Zobrazit servisní relace" icon="pi pi-wrench"
+                        :outlined="!showServiceSessions" :aria-pressed="showServiceSessions" @click="showServiceSessions = !showServiceSessions" />
+                </template>
+            </PvToolbar>
+            <PvCard v-if="showSessionTable || showServiceSessions">
+                <template #title><h2 id="computer-sessions">{{ showSessionTable ? 'Relace počítače' : 'Servisní relace' }}</h2></template>
+                <template #content>
+                    <div class="table-region" role="region" aria-labelledby="computer-sessions" tabindex="0">
+                        <PvDataTable :value="visibleSessions" size="small" striped-rows :table-props="{'aria-labelledby':'computer-sessions'}">
+                            <PvColumn field="station" header="Zařízení" />
+                            <PvColumn header="Přihlášení"><template #body="{ data }">{{ moment(data.from) }}</template></PvColumn>
+                            <PvColumn header="Odhlášení"><template #body="{ data }">{{ moment(data.to) }}</template></PvColumn>
+                            <PvColumn header="Druh">
+                                <template #body="{ data }"><PvTag v-if="data.service" value="Servisní" severity="secondary" /><span v-else>Pracovní</span></template>
+                            </PvColumn>
+                            <PvColumn v-if="hasRole('admin')" header="Akce">
+                                <template #body="{ data }">
+                                    <PvButton :icon="data.service ? 'pi pi-undo' : 'pi pi-wrench'"
+                                        :aria-label="data.service ? 'Zrušit servisní označení' : 'Označit jako servisní'"
+                                        v-tooltip.top="data.service ? 'Zrušit servisní označení' : 'Označit jako servisní'"
+                                        text size="small" :disabled="busy" @click="changeServiceSession(data)" />
+                                </template>
+                            </PvColumn>
+                            <template #empty>Žádné relace k zobrazení.</template>
                         </PvDataTable>
                     </div>
                 </template>
@@ -173,17 +286,18 @@
                     <p v-if="hasRole('manager') && ownSheet && sheet.requests.some(r => r.status === 'pending')">
                         Vaše žádosti může vyřídit druhý vedoucí ve vašem týmu.
                     </p>
-                    <article v-for="request in sheet.requests" :key="request.id" class="record" :aria-label="labels[request.kind] + ' · ' + requestPeriod(request)">
+                    <article v-for="request in sheet.requests" :key="request.id" class="record"
+                        :aria-label="(request.merged_work ? 'Spojení pracovních úseků' : labels[request.kind]) + ' · ' + requestPeriod(request)">
                         <div class="record-info">
                             <div class="record-title">
-                                <strong>{{ labels[request.kind] }}</strong>
+                                <strong>{{ request.merged_work ? 'Spojení pracovních úseků' : labels[request.kind] }}</strong>
                                 <PvTag :severity="requestSeverities[request.status]" :value="labels[request.status]" />
                                 <PvTag v-if="request.kind === 'LEKAR' && request.status === 'approved'"
                                     :severity="request.has_proof ? 'success' : 'warn'"
                                     :value="request.has_proof ? 'Propustka doložena' : 'Čeká na propustku'" />
                             </div>
                             <div>{{ requestPeriod(request) }}</div>
-                            <p v-if="request.note">{{ request.note }}</p>
+                            <p v-if="request.note && !request.merged_work">{{ request.note }}</p>
                             <p v-if="request.reason">Důvod rozhodnutí: {{ request.reason }}</p>
                             <div v-if="canUploadProof(request)" class="proof-upload">
                                 <PvFileUpload mode="basic" choose-label="Vybrat fotografii" choose-icon="pi pi-image"

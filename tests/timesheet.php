@@ -41,4 +41,27 @@ check(!$r['seconds'] && $r['issues'] !== [], 'uncertain interval crossing journa
 $r = Timesheet::build('2026-11', [signal('login', '2026-11-01 22:00'), signal('logout', '2026-11-02 05:00')], [],
     new DateTimeImmutable('2026-11-02 00:00'), new DateTimeImmutable('2026-12-01 00:00'));
 check($r['seconds'] === 18000 && count($r['rows']) === 1, 'night shift clipped to employment start');
+$restart = [
+    signal('login', '2026-11-02 08:00'), signal('logout', '2026-11-02 09:00'),
+    signal('login', '2026-11-02 09:05'), signal('logout', '2026-11-02 10:00'),
+];
+$limits = ['2026-11-02' => 5, '2026-11-03' => 5];
+$r = Timesheet::build('2026-11', $restart, [], mergeLimits: $limits);
+check($r['seconds'] === 7200 && count($r['rows']) === 1, 'restart merged at the exact limit');
+$r = Timesheet::build('2026-11', $restart, [], mergeLimits: ['2026-11-02' => 4]);
+check($r['seconds'] === 6900 && count($r['rows']) === 2, 'gap larger than limit');
+$justOver = $restart;
+$justOver[2]['happened'] = '2026-11-02 09:05:00.100';
+$r = Timesheet::build('2026-11', $justOver, [], mergeLimits: $limits);
+check(count($r['rows']) === 2, 'subsecond excess of exact limit');
+$r = Timesheet::build('2026-11', $restart, [absence('PRESTAVKA', '2026-11-02 09:01', '2026-11-02 09:02')], mergeLimits: $limits);
+check($r['seconds'] === 6900 && count($r['rows']) === 2, 'explicit break prevents automatic merge');
+$blocked = [[strtotime('2026-11-02 09:01'), strtotime('2026-11-02 09:02')]];
+$r = Timesheet::build('2026-11', $restart, [], mergeLimits: $limits, serviceRanges: $blocked);
+check($r['seconds'] === 6900 && count($r['rows']) === 2, 'service session prevents automatic merge');
+$r = Timesheet::build('2026-11', [
+    signal('login', '2026-11-02 23:55'), signal('logout', '2026-11-03 00:00'),
+    signal('login', '2026-11-03 00:04'), signal('logout', '2026-11-03 00:09'),
+], [], mergeLimits: $limits);
+check($r['seconds'] === 600, 'restart at midnight is not merged across days');
 echo "Timesheet OK\n";

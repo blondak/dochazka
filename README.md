@@ -13,8 +13,8 @@ Rozbalte archiv **central-deploy.tar.gz** z vydání centrály a ve stejném adr
 ~~~dotenv
 TRAEFIK_NETWORK=traefik
 DB_PASSWORD=sem-vlozte-vygenerovane-heslo
-APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.2
-WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.2
+APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.3
+WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.3
 SETUP_TOKEN=sem-vlozte-vygenerovany-kod
 PASSKEY_ORIGIN=https://dochazka.example.cz
 ~~~
@@ -52,17 +52,27 @@ Apitte po rozpoznání routy spouští **ApiAccessMiddleware**. Web používá s
 
 Nette DI konfiguruje **nettrine/dbal** a **nettrine/orm**. Entity jsou v jednotlivých doménách pod **src/**. DBAL obsluhuje například idempotentní příjem událostí a sestavování výkazů s přesností uložených časů. Schéma spravují SQL migrace v **migrations/**.
 
+### Denní přehled a spojování úseků
+
+Vedoucí v **Denním přehledu** vidí stav členů svého týmu podle dnešních událostí Windows a součet uzavřených pracovních relací. Servisní přihlášení do součtu ani do stavu přítomnosti nevstupuje.
+
+Správce v **Nastavení docházky** určí nejdelší mezeru pro automatické spojení uzavřených relací na stejném počítači a v jednom místním dni. Výchozí hodnota je 0 a změna platí ode dne nastavení. Spojování respektuje schválené přestávky, nepřítomnosti a servisní relace.
+
+Vedoucí může ve výkazu člena týmu zaškrtnout pracovní úseky jednoho dne a potvrdit spojení od nejdřívějšího začátku do nejpozdějšího konce. Oprava se uloží mezi žádosti jako **Spojení pracovních úseků**, kde ji vedoucí může odvolat.
+
 ## Windows agent v doméně Samba AD
 
 Pro hromadné nasazení předá GPO instalačnímu skriptu adresu centrály a registrační brány. Stanice se ověří vlastním účtem počítače. Registraci mohou provést členové vybrané skupiny v AD. Přípravu brány, GPO, aktualizaci a odvolání přístupu popisuje [návod pro Samba AD](deploy/gpo.md).
 
-Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.3-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.3-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
+Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.4-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.4-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
 
-Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.3-single-file'` a pro balíček s DLL použijte `-Release '0.0.3'`.
+Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.4-single-file'` a pro balíček s DLL použijte `-Release '0.0.4'`.
 
 ### Připojení přes proxy
 
-Parametry instalačního skriptu platí pro první registraci i následné odesílání událostí. Na již nainstalované stanici se změna projeví po opětovném spuštění služby. Token a fronta zůstanou dostupné.
+Režim proxy standardně platí pro první registraci i následné odesílání událostí. Na již nainstalované stanici se změna projeví po opětovném spuštění služby. Token a fronta zůstanou dostupné.
+
+Pokud má stanice přímý přístup k interní bráně a centrálu kontaktuje přes systémovou proxy, použijte `-EnrollmentServer` spolu s `-EnrollmentDirect -ProxyMode System`. Přímé spojení se použije pro registraci na bráně. Služba pro odesílání docházky použije režim `System`.
 
 | Nastavení instalátoru | Připojení |
 | --- | --- |
@@ -74,21 +84,21 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 
 ### Ruční registrace stanice
 
-1. Rozbalte balíček **agent-v0.0.3-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
+1. Rozbalte balíček **agent-v0.0.4-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
 2. V centrále na kartě **Zařízení** zaregistrujte stanici. Kód uložte jako **JMENO-POCITACE.txt** do adresáře s registracemi. Na sdílení dejte každému počítačovému účtu právo číst jen jeho vlastní kód. Registraci proveďte během hodinové platnosti.
 3. Při pilotu spusťte příkaz níže jako správce. Pro nasazení přes Samba AD nastavte stejný příkaz jako spouštěcí PowerShell skript v konfiguraci počítače v doménové GPO. Při aktualizaci změňte **PackagePath** a **Release**. Služba si ponechá lokální frontu i registraci.
 4. V GPO povolte úspěšný audit přihlášení a odhlášení. Na pilotní stanici ověřte párování událostí 4624 a 4634 v protokolu Security a postup při práci bez připojení. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.3\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.3' -Release '0.0.3' -EnrollmentDirectory '\\server\dochazka-registrace'
+& '\\server\dochazka\agent-v0.0.4\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.4' -Release '0.0.4' -EnrollmentDirectory '\\server\dochazka-registrace'
 ~~~
 
 ## Vydání
 
 | Tag v repozitáři | Výstup |
 | --- | --- |
-| [agent-v0.0.3](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.3) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
-| [docker-v0.0.2](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.2) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.2`, `web-0.0.2` a `enroll-0.0.2` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
+| [agent-v0.0.4](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.4) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
+| [docker-v0.0.3](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.3) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.3`, `web-0.0.3` a `enroll-0.0.3` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
 
 Integrační test **tests/workflow.py** potřebuje PHP 8.4 a přístup k testovací PostgreSQL přes proměnné **PGHOST**, **PGPORT**, **PGDATABASE**, **PGUSER** a **PGPASSWORD**. Vytvoří vlastní dočasné schéma. Samostatný test výpočtu výkazu spustíte jako **php tests/timesheet.php**.
 

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
@@ -7,6 +7,7 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$')][string]$Release,
     [string]$EnrollmentDirectory,
     [uri]$EnrollmentServer,
+    [switch]$EnrollmentDirect,
     [ValidateSet('System','Direct','Custom')][string]$ProxyMode,
     [uri]$ProxyUri,
     [switch]$ProxyUseDefaultCredentials
@@ -15,6 +16,7 @@ $ErrorActionPreference = 'Stop'
 if ($Server.Scheme -ne 'https') { throw 'Server must use HTTPS.' }
 if ($EnrollmentServer -and $EnrollmentServer.Scheme -ne 'https') { throw 'EnrollmentServer must use HTTPS.' }
 if ($EnrollmentDirectory -and $EnrollmentServer) { throw 'Select one enrollment method.' }
+if ($EnrollmentDirect -and !$EnrollmentServer) { throw 'EnrollmentDirect requires EnrollmentServer.' }
 $name = 'DochazkaAgent'
 $data = Join-Path $env:ProgramData $name
 $root = Join-Path $env:ProgramFiles $name
@@ -66,10 +68,10 @@ $proxyAuth = if ($PSBoundParameters.ContainsKey('ProxyUseDefaultCredentials')) {
     [bool]$existing.ProxyUseDefaultCredentials
 } else { $false }
 if ($ProxyMode -eq 'Direct' -and $proxyAuth) { throw 'Direct connection does not accept proxy credentials.' }
-$proxyAddress = if ($ProxyUri) { $ProxyUri.AbsoluteUri }
+$proxyAddress = if ($ProxyUri) { $ProxyUri.AbsoluteUri } else { $null }
 $storedMode = if ($existing.ProxyMode) { $existing.ProxyMode } else { 'System' }
 $proxyChanged = $existing -and (
-    $storedMode -ne $ProxyMode -or $existing.ProxyUri -ne $proxyAddress -or
+    $storedMode -ne $ProxyMode -or ![object]::Equals($existing.ProxyUri, $proxyAddress) -or
     [bool]$existing.ProxyUseDefaultCredentials -ne $proxyAuth
 )
 
@@ -78,6 +80,7 @@ if (!$existing) {
     if ($EnrollmentServer) {
         if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne 'S-1-5-18') { throw 'Domain enrollment requires the LocalSystem computer startup context.' }
         $request.Uri = $EnrollmentServer.AbsoluteUri.TrimEnd('/') + '/api/v1/domain-enroll'
+        $request.TimeoutSec = 60
         $request.UseDefaultCredentials = $true
         $request.Body = '{}'
     } elseif ($EnrollmentDirectory) {
@@ -90,11 +93,15 @@ if (!$existing) {
     $originalProxy = [Net.WebRequest]::DefaultWebProxy
     $originalCredentials = if ($originalProxy) { $originalProxy.Credentials }
     try {
-        if ($ProxyMode -eq 'Custom') {
+        if ($EnrollmentDirect -or $ProxyMode -eq 'Direct') {
+            if ($PSVersionTable.PSVersion.Major -ge 6) {
+                $request.NoProxy = $true
+            } else {
+                [Net.WebRequest]::DefaultWebProxy = New-Object Net.WebProxy
+            }
+        } elseif ($ProxyMode -eq 'Custom') {
             $request.Proxy = $ProxyUri
             if ($proxyAuth) { $request.ProxyUseDefaultCredentials = $true }
-        } elseif ($ProxyMode -eq 'Direct') {
-            [Net.WebRequest]::DefaultWebProxy = New-Object Net.WebProxy
         } elseif ($proxyAuth -and $originalProxy) {
             $originalProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials
         }
@@ -107,10 +114,12 @@ if (!$existing) {
 }
 if (!$existing -or $proxyChanged) {
     $token = if ($existing) { $existing.Token } else { $reply.token }
-    $json = @{
+    $settings = @{
         Server=$Server.AbsoluteUri; Token=$token; ProxyMode=$ProxyMode
-        ProxyUri=$proxyAddress; ProxyUseDefaultCredentials=$proxyAuth
-    } | ConvertTo-Json
+        ProxyUseDefaultCredentials=$proxyAuth
+    }
+    if ($ProxyUri) { $settings.ProxyUri = $proxyAddress }
+    $json = $settings | ConvertTo-Json
     [IO.File]::WriteAllText("$config.tmp",$json,(New-Object Text.UTF8Encoding($false)))
     if ($existing) {
         [IO.File]::SetCreationTimeUtc("$config.tmp", [IO.File]::GetCreationTimeUtc($config))
@@ -146,3 +155,7 @@ catch {
     }
     throw
 }
+
+$tray = $path + ' --tray "' + $Server.AbsoluteUri + '"'
+$runKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+New-ItemProperty -Path $runKey -Name $name -Value $tray -PropertyType String -Force | Out-Null

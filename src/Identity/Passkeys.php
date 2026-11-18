@@ -6,6 +6,7 @@ namespace Dochazka\Identity;
 
 use Dochazka\Http\Problem;
 use Doctrine\ORM\EntityManagerInterface;
+use Dochazka\Staff\Employee;
 use lbuchs\WebAuthn\Binary\ByteBuffer;
 use lbuchs\WebAuthn\WebAuthn;
 use lbuchs\WebAuthn\WebAuthnException;
@@ -64,18 +65,26 @@ final class Passkeys
         return ['ok' => true];
     }
 
-    public function authenticationOptions(): object
+    public function authenticationOptions(?string $serviceCode = null): object
     {
         $webauthn = $this->engine();
         $options = $webauthn->getGetArgs(timeout: 90, requireUserVerification: true);
-        $this->remember($webauthn, 'login', null);
+        $this->remember($webauthn, $serviceCode === null ? 'login' : 'service-session', null, $serviceCode ?? '');
         return $options;
     }
 
     public function authenticate(array $input): array
     {
+        return $this->accounts->establishSession($this->verifyAuthentication($input));
+    }
+
+    public function verifyAuthentication(array $input, ?string $serviceCode = null): Employee
+    {
         $webauthn = $this->engine();
-        $flow = $this->consume('login', null);
+        $flow = $this->consume($serviceCode === null ? 'login' : 'service-session', null);
+        if ($serviceCode !== null && !hash_equals($flow['label'], $serviceCode)) {
+            throw new Problem('Ověření patří k jinému požadavku.', 409);
+        }
         $key = $this->em->find(Passkey::class, (string) ($input['id'] ?? ''));
         if (!$key) {
             throw new Problem('Passkey se nepodařilo ověřit.', 401);
@@ -94,7 +103,7 @@ final class Passkeys
         }
         $key->signatureCounter = $webauthn->getSignatureCounter();
         $this->em->flush();
-        return $this->accounts->establishSession($key->employee);
+        return $key->employee;
     }
 
     public function listing(): array
@@ -130,7 +139,7 @@ final class Passkeys
     private function remember(WebAuthn $webauthn, string $type, ?int $employee, string $label = ''): void
     {
         $section = $this->session->getSection('passkeys');
-        $section->set('flow', [
+        $section->set($type === 'service-session' ? 'service-flow' : 'flow', [
             'challenge' => $webauthn->getChallenge()->getBinaryString(),
             'type' => $type,
             'employee' => $employee,
@@ -142,8 +151,9 @@ final class Passkeys
     private function consume(string $type, ?int $employee): array
     {
         $section = $this->session->getSection('passkeys');
-        $flow = $section->get('flow');
-        $section->remove('flow');
+        $key = $type === 'service-session' ? 'service-flow' : 'flow';
+        $flow = $section->get($key);
+        $section->remove($key);
         if (!$flow || $flow['type'] !== $type || $flow['employee'] !== $employee || $flow['expires'] <= time()) {
             throw new Problem('Ověření vypršelo. Zkuste to znovu.', 409);
         }

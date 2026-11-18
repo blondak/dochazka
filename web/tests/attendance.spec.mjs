@@ -27,7 +27,7 @@ function sheet(overrides = {}) {
     }
 }
 
-async function openApp(page, user, endpoints = {}) {
+async function openApp(page, user, endpoints = {}, path = '/') {
     await page.clock.setFixedTime(fixedTime)
     const handlers = {
         'setup-status': () => ({available:false}),
@@ -43,7 +43,7 @@ async function openApp(page, user, endpoints = {}) {
         const result = await handler(route.request().postDataJSON())
         await route.fulfill(result?.status ? {status:result.status, json:result.body} : {json:result})
     })
-    await page.goto('/')
+    await page.goto(path)
 }
 
 async function assertFits(page) {
@@ -251,6 +251,76 @@ test('a stale approval refreshes the sheet before a manager can retry', async ({
     await expect(page.getByRole('status')).toContainText('Výkaz byl schválen.')
 })
 
+test('a manager sees the current day and recorded worked time for the team', async ({page}) => {
+    let loads = 0
+    await openApp(page, manager, {
+        people:() => [manager,employee],
+        sheet:() => sheet(),
+        'daily-attendance':() => ({
+            day:'2026-11-17', updated:'2026-11-17T12:00:00+01:00',
+            people:[
+                {id:employee.id, name:employee.name, status:++loads === 1 ? 'present' : 'finished', worked_seconds:loads === 1 ? null : 27000},
+                {id:manager.id, name:manager.name, status:'absent', worked_seconds:null},
+            ],
+        }),
+    })
+    await page.getByRole('button', {name:'Denní přehled', exact:true}).click()
+    await expect(page.getByText('17. 11. 2026', {exact:true})).toBeVisible()
+    const employeeRow = page.getByRole('row').filter({hasText:employee.name})
+    await expect(employeeRow).toContainText('Přítomen')
+    await expect(page.getByRole('row').filter({hasText:manager.name})).toContainText('Nepřítomen')
+    await page.getByRole('button', {name:'Obnovit', exact:true}).click()
+    await expect(employeeRow).toContainText('Odpracováno')
+    await expect(employeeRow).toContainText('7 h 30 min')
+    await expect(page).toHaveURL(/sekce=denni-prehled/)
+})
+
+test('work rows must be from the same day and a manager confirms the merged range', async ({page}) => {
+    let merged
+    const row = (day, from, to) => ({
+        day:'2026-11-' + day, kind:'PRACE', from:'2026-11-' + day + 'T' + from + ':00+01:00',
+        to:'2026-11-' + day + 'T' + to + ':00+01:00',
+    })
+    await openApp(page, manager, {
+        people: () => [manager, employee],
+        sheet: () => sheet({rows: merged ? [row('17','08:00','12:00')] : [
+            row('17','08:00','10:00'), row('17','10:05','12:00'), row('18','08:00','10:00'),
+        ]}),
+        'merge-work-rows': input => { merged = input; return {ok:true} },
+    })
+    await page.getByRole('combobox', {name:'Osoba'}).click()
+    await page.getByRole('option', {name:employee.name}).click()
+    const boxes = page.getByRole('checkbox', {name:/Vybrat pracovní úsek/})
+    const merge = page.getByRole('button', {name:'Spojit vybrané úseky'})
+    await expect(merge).toBeDisabled()
+    await boxes.nth(0).check()
+    await expect(boxes.nth(2)).toBeDisabled()
+    await boxes.nth(1).check()
+    await merge.click()
+    const dialog = page.getByRole('dialog', {name:'Spojit pracovní úseky'})
+    await expect(dialog).toContainText('08:00 – 12:00')
+    expect(merged).toBeUndefined()
+    await dialog.getByRole('button', {name:'Potvrdit spojení'}).click()
+    await expect(page.getByRole('status')).toContainText('Vybrané pracovní úseky byly spojeny.')
+    expect(merged).toEqual({employee:employee.id, month:'2026-11', fingerprint:'test-fingerprint', rows:[0,1]})
+})
+
+test('administrator changes the global automatic merge limit', async ({page}) => {
+    let saved
+    await openApp(page, administrator, {
+        people: () => [administrator, employee],
+        'attendance-merge-settings': () => ({gap_minutes:0}),
+        'attendance-merge-limit': input => { saved = input; return input },
+    })
+    await page.getByRole('button', {name:'Nastavení docházky', exact:true}).click()
+    const limit = page.getByRole('spinbutton', {name:'Maximální mezera v minutách'})
+    await expect(limit).toHaveValue('0')
+    await limit.fill('5')
+    await page.getByRole('button', {name:'Uložit limit'}).click()
+    await expect(page.getByRole('status')).toContainText('Limit automatického spojování byl uložen.')
+    expect(saved).toEqual({gap_minutes:5})
+})
+
 test('closing a passkey removal confirmation preserves the settings dialog', async ({page}) => {
     const passkey = {id:'synthetic-key', label:'Testovací telefon', created:'2026-11-17T08:00:00+01:00'}
     let removed
@@ -273,6 +343,48 @@ test('closing a passkey removal confirmation preserves the settings dialog', asy
     await confirmation.getByRole('button', {name:'Odebrat passkey', exact:true}).click()
     await expect(settings.getByRole('status')).toContainText('Passkey byla odebrána.')
     expect(removed).toEqual({id:passkey.id})
+})
+
+test('technician verifies a single service session without signing in to the app', async ({page}) => {
+    const code = 'ab'.repeat(32)
+    let verification
+    await openApp(page, null, {
+        'service-session-details': input => {
+            expect(input).toEqual({code})
+            return {station:'PC-10', from:'2026-11-17T18:00:00+01:00'}
+        },
+        'service-session-verify': input => { verification = input; return {ok:true} },
+    }, '/#service-session=' + code)
+    await expect(page.getByRole('heading', {name:'Servisní přihlášení'})).toBeVisible()
+    await expect(page.getByText('PC-10', {exact:true})).toBeVisible()
+    await expect(page).not.toHaveURL(/#service-session/)
+    await page.getByLabel('Účet správce').fill('technik')
+    await page.getByLabel('Heslo správce').fill('Test-password')
+    await page.getByRole('button', {name:'Potvrdit heslem'}).click()
+    await expect(page.getByText('Celá relace je označena jako servisní.')).toBeVisible()
+    expect(verification).toEqual({code, login:'technik', password:'Test-password'})
+    await expect(page.getByRole('button', {name:'Odhlásit', exact:true})).toHaveCount(0)
+})
+
+test('an administrator marks a past session and can filter it back into view', async ({page}) => {
+    let change
+    const session = {
+        station:'PC-10', device:10, session:'boot.1', from:'2026-11-17T18:00:00+01:00', to:'2026-11-17T19:00:00+01:00',
+    }
+    await openApp(page, administrator, {
+        people: () => [administrator, employee],
+        sheet: () => sheet({sessions:[{...session, service:!!change?.service}], seconds: change?.service ? 0 : 3600}),
+        'service-session-change': input => { change = input; return {ok:true} },
+    })
+    await page.getByRole('button', {name:'Výkaz', exact:true}).click()
+    await page.getByRole('button', {name:'Relace počítače', exact:true}).click()
+    await page.getByRole('button', {name:'Označit jako servisní', exact:true}).click()
+    await page.getByRole('dialog').getByRole('button', {name:'Označit jako servisní', exact:true}).click()
+    await expect(page.getByText('PC-10', {exact:true})).toHaveCount(0)
+    await page.getByRole('button', {name:'Zobrazit servisní relace', exact:true}).click()
+    await expect(page.getByText('PC-10', {exact:true})).toBeVisible()
+    await expect(page.getByRole('button', {name:'Zrušit servisní označení'})).toBeVisible()
+    expect(change).toEqual({employee:employee.id, device:10, session:'boot.1', service:true})
 })
 
 test('payroll opens a specific sheet, closes a ready month and downloads CSV', async ({page}) => {

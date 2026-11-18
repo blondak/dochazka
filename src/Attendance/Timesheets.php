@@ -6,6 +6,7 @@ namespace Dochazka\Attendance;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use DateTimeImmutable;
+use Dochazka\Absence\AbsenceRequest;
 use Dochazka\Http\Problem;
 use Dochazka\Audit\AuditTrail;
 use Dochazka\Identity\Accounts;
@@ -20,6 +21,7 @@ final class Timesheets
         private AuditTrail $audit,
         private Accounts $accounts,
         private Directory $directory,
+        private MergePolicy $mergePolicy,
     ) {}
 
     public function sheet(array $person, string $month): array
@@ -30,16 +32,47 @@ final class Timesheets
         if ($person['ends'] !== null) {
             $end = min($end, (new DateTimeImmutable($person['ends'], $start->getTimezone()))->modify('+1 day'));
         }
-        $signals = $person['sid'] === null || $start >= $end ? [] : $this->db->fetchAllAssociative(
-            "SELECT s.* FROM signal_session ss JOIN signal s USING (sid, device, session_key)
+        $recorded = $person['sid'] === null || $start >= $end ? [] : $this->db->fetchAllAssociative(
+            "SELECT s.*, ss.service_at, d.name AS station FROM signal_session ss JOIN signal s USING (sid, device, session_key)
+             JOIN device d ON d.id = ss.device
              WHERE ss.sid = ? AND tstzrange(ss.first_event, ss.last_event, '[]') && tstzrange(?, ?, '[)')
              ORDER BY s.happened, s.device, s.event_id",
             [$person['sid'], $start->format(DATE_ATOM), $end->format(DATE_ATOM)],
         );
+        $signals = $sessions = [];
+        foreach ($recorded as $event) {
+            $key = $event['device'].'/'.$event['session_key'];
+            $service = $event['service_at'] !== null;
+            $sessions[$key] ??= [
+                'device' => (int) $event['device'], 'station' => $event['station'], 'session' => $event['session_key'],
+                'from' => null, 'to' => null, 'service' => $service,
+            ];
+            if ($event['kind'] === 'login') {
+                $sessions[$key]['from'] ??= (new DateTimeImmutable($event['happened']))->format(DATE_ATOM);
+            } elseif ($event['kind'] === 'logout') {
+                $sessions[$key]['to'] = (new DateTimeImmutable($event['happened']))->format(DATE_ATOM);
+            }
+            if (!$service) {
+                unset($event['service_at'], $event['station']);
+                $signals[] = $event;
+            }
+        }
         $requests = $start >= $end ? [] : $this->db->fetchAllAssociative(
             'SELECT r.*, EXISTS(SELECT 1 FROM medical_proof p WHERE p.request_id=r.id) AS has_proof FROM request r WHERE employee=? AND begins < ? AND ends > ? ORDER BY begins,id',
             [$person['id'],$end->format(DATE_ATOM),$start->format(DATE_ATOM)]);
-        $sheet = Timesheet::build($month, $signals, $requests, $start, $end);
+        foreach ($requests as &$request) {
+            if (!$request['merged_work']) unset($request['merged_work']);
+        }
+        unset($request);
+        $sessions = array_values(array_filter($sessions, static fn(array $session) => $session['from'] !== null));
+        $serviceRanges = [];
+        foreach ($sessions as $session) {
+            if ($session['service']) {
+                $serviceRanges[] = [strtotime($session['from']), $session['to'] === null ? PHP_INT_MAX : strtotime($session['to'])];
+            }
+        }
+        $sheet = Timesheet::build($month, $signals, $requests, $start, $end,
+            $this->mergePolicy->limits($start, $end), $serviceRanges);
         $relevant = array_values(array_filter($signals,static fn($s) => strtotime($s['happened']) >= $start->getTimestamp() && strtotime($s['happened']) < $end->getTimestamp()));
         $hash = hash('sha256',json_encode([$person['number'],$sheet,$requests,$relevant],JSON_THROW_ON_ERROR));
         $approval = $this->db->fetchAssociative('SELECT * FROM approval WHERE employee=? AND month=?',[$person['id'],$month]);
@@ -47,6 +80,7 @@ final class Timesheets
             $request['kind'] === 'LEKAR' && $request['status'] === 'approved' && !$request['has_proof']
         ));
         return $sheet + [
+            'sessions' => $sessions,
             'requests' => $requests,
             'missing_proofs' => $missingProofs,
             'fingerprint' => $hash,
@@ -122,5 +156,58 @@ final class Timesheets
         }
         $this->approve($actor,$person,$i);
         return ['ok'=>true];
+    }
+
+    public function merge(array $input): array
+    {
+        $actor = $this->accounts->actor('manager');
+        $person = $this->directory->person($actor, (int) ($input['employee'] ?? 0), true);
+        if ($person['id'] === $actor['id'] || !$person['attendance_enabled']) {
+            throw new Problem('Spojení může potvrdit vedoucí jiného účtu s evidovanou docházkou.', 403);
+        }
+        $sheet = $this->sheet($person, $input['month'] ?? '');
+        if ($sheet['fingerprint'] !== ($input['fingerprint'] ?? '')) {
+            throw new Problem('Výkaz se změnil. Vyberte úseky znovu.', 409);
+        }
+        $selected = $input['rows'] ?? null;
+        if (!is_array($selected) || !array_is_list($selected) || count($selected) < 2) {
+            throw new Problem('Vyberte alespoň dva pracovní úseky.');
+        }
+        $parts = [];
+        $days = [];
+        foreach ($selected as $index) {
+            $row = is_int($index) ? ($sheet['rows'][$index] ?? null) : null;
+            if (!$row || $row['kind'] !== 'PRACE') {
+                throw new Problem('Vyberte platné pracovní úseky.');
+            }
+            $parts[$index] = $row;
+            $days[$row['day']] = true;
+        }
+        if (count($parts) < 2 || count($days) !== 1) {
+            throw new Problem('Vyberte různé úseky v jednom kalendářním dni.');
+        }
+        $start = new DateTimeImmutable('@'.min(array_map('strtotime', array_column($parts, 'from'))));
+        $end = new DateTimeImmutable('@'.max(array_map('strtotime', array_column($parts, 'to'))));
+        foreach ($sheet['requests'] as $request) {
+            if ($request['status'] === 'approved' && $request['kind'] !== 'PRACE'
+                && new DateTimeImmutable($request['begins']) < $end && new DateTimeImmutable($request['ends']) > $start) {
+                throw new Problem('Úseky nelze spojit přes schválenou přestávku nebo nepřítomnost.');
+            }
+        }
+        foreach ($sheet['sessions'] as $session) {
+            if ($session['service'] && new DateTimeImmutable($session['from']) < $end
+                && ($session['to'] === null || new DateTimeImmutable($session['to']) > $start)) {
+                throw new Problem('Úseky nelze spojit přes servisní relaci.');
+            }
+        }
+        $request = new AbsenceRequest(
+            $this->em->getReference(Employee::class, $person['id']), 'PRACE', $start, $end, 'Ruční spojení pracovních úseků',
+        );
+        $request->mergedWork = true;
+        $request->decide('approved', $this->em->getReference(Employee::class, $actor['id']), 'Potvrzeno ve výkazu.');
+        $this->em->persist($request);
+        $this->em->flush();
+        $this->audit->audit($actor['id'], 'attendance-merge', ['request' => $request->id, 'employee' => $person['id'], 'rows' => array_values($parts)]);
+        return ['ok' => true];
     }
 }

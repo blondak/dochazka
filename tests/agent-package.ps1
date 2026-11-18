@@ -29,8 +29,9 @@ if ((Get-Service $name -ErrorAction SilentlyContinue) -or (Test-Path $data) -or 
     throw 'Use a Windows test machine without an existing attendance agent.'
 }
 
-& $binary --self-test
-if ($LASTEXITCODE -ne 0) { throw "Agent self-test exited with code $LASTEXITCODE." }
+$selfTest = Start-Process -FilePath $binary -ArgumentList '--self-test' -Wait -PassThru
+if ($selfTest.ExitCode -ne 0) { throw "Agent self-test exited with code $($selfTest.ExitCode)." }
+$runKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
 
 try {
     # The seeded test registration keeps the smoke test local to this runner.
@@ -45,9 +46,20 @@ try {
     }
     [IO.Directory]::CreateDirectory($data, $acl) | Out-Null
     $server = 'https://127.0.0.1:1'
-    @{Server = $server; Token = '0' * 64; ProxyMode = 'Direct'} | ConvertTo-Json |
-        Set-Content -LiteralPath (Join-Path $data 'config.json') -Encoding ASCII
-    & $installer -Server $server -PackagePath $package -Release 'package-test'
+    $token = '0' * 64
+    $config = Join-Path $data 'config.json'
+    # Older PowerShell installers can leave an empty array in the optional proxy URI field.
+    @{Server = $server; Token = $token; ProxyMode = 'System'; ProxyUri = @()} | ConvertTo-Json |
+        Set-Content -LiteralPath $config -Encoding ASCII
+    & $installer -Server $server -PackagePath $package -Release 'package-test' -ProxyMode System
+    $settings = Get-Content -LiteralPath $config -Raw | ConvertFrom-Json
+    if ($settings.PSObject.Properties['ProxyUri'] -or $settings.Token -cne $token) {
+        throw 'The installer did not repair the optional proxy URI while preserving registration.'
+    }
+    $tray = Get-ItemPropertyValue -Path $runKey -Name $name
+    if ($tray -notlike '*Dochazka.Agent.exe" --tray "https://127.0.0.1:1/"') {
+        throw 'The installer did not register the tray for interactive logon.'
+    }
 
     $queue = Join-Path $data 'fronta.db'
     $deadline = (Get-Date).AddSeconds(20)
@@ -58,6 +70,7 @@ try {
     }
     Write-Output 'Windows executable, SQLite, and LocalSystem service OK.'
 } finally {
+    Remove-ItemProperty -Path $runKey -Name $name -ErrorAction SilentlyContinue
     if (Get-Service $name -ErrorAction SilentlyContinue) {
         Stop-Service $name -ErrorAction SilentlyContinue
         sc.exe delete $name | Out-Null

@@ -107,7 +107,7 @@ internal sealed class Journal(SqliteConnection db)
         cmd.ExecuteNonQuery();
     }
 
-    private static string Boot(string at)
+    internal static string Boot(string at)
     {
         using var reader=Query("System",$"*[System[EventID=12 and Provider[@Name='Microsoft-Windows-Kernel-General'] and TimeCreated[@SystemTime<='{at}']]]",true);
         using var rec=reader.ReadEvent();

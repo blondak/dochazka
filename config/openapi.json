@@ -165,7 +165,58 @@
           },
           "has_proof": {
             "type": "boolean"
+          },
+          "merged_work": {
+            "type": "boolean",
+            "description": "Žádost představuje potvrzené ruční spojení pracovních úseků."
           }
+        }
+      },
+      "AttendanceMergeLimit": {
+        "type": "object",
+        "required": ["gap_minutes"],
+        "properties": {
+          "gap_minutes": {"type": "integer", "minimum": 0, "maximum": 1439, "description": "Nula vypne automatické spojování."}
+        }
+      },
+      "DailyAttendance": {
+        "type": "object",
+        "required": ["day", "updated", "people"],
+        "properties": {
+          "day": {"type": "string", "format": "date"},
+          "updated": {"type": "string", "format": "date-time"},
+          "people": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "status", "worked_seconds"],
+              "properties": {
+                "id": {"type": "integer"},
+                "name": {"type": "string"},
+                "status": {"type": "string", "enum": ["present", "finished", "absent", "untracked"]},
+                "worked_seconds": {"type": ["integer", "null"], "minimum": 0}
+              }
+            }
+          }
+        }
+      },
+      "ServiceSessionCode": {
+        "type": "object",
+        "required": ["code"],
+        "properties": {
+          "code": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      },
+      "ComputerSession": {
+        "type": "object",
+        "required": ["device", "station", "session", "from", "to", "service"],
+        "properties": {
+          "device": {"type": "integer"},
+          "station": {"type": "string"},
+          "session": {"type": "string"},
+          "from": {"type": "string", "format": "date-time"},
+          "to": {"type": ["string", "null"], "format": "date-time"},
+          "service": {"type": "boolean"}
         }
       },
       "Sheet": {
@@ -176,6 +227,10 @@
             "items": {
               "$ref": "#/components/schemas/Row"
             }
+          },
+          "sessions": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/ComputerSession"}
           },
           "seconds": {
             "type": "integer"
@@ -343,6 +398,18 @@
       }
     },
     "responses": {
+      "AttendanceMergeLimit": {
+        "description": "Aktuální limit v minutách.",
+        "content": {
+          "application/json": {"schema": {"$ref": "#/components/schemas/AttendanceMergeLimit"}}
+        }
+      },
+      "DailyAttendance": {
+        "description": "Dnešní stav osob v týmu vedoucího.",
+        "content": {
+          "application/json": {"schema": {"$ref": "#/components/schemas/DailyAttendance"}}
+        }
+      },
       "Activate": {
         "description": "Úspěch",
         "content": {
@@ -378,6 +445,12 @@
           }
         }
       },
+      "Error404": {
+        "description": "Požadovaný údaj, relace nebo odkaz nejsou dostupné.",
+        "content": {
+          "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
+        }
+      },
       "Error409": {
         "description": "Konflikt se stavem evidence.",
         "content": {
@@ -396,6 +469,12 @@
               "$ref": "#/components/schemas/Error"
             }
           }
+        }
+      },
+      "Error429": {
+        "description": "Příliš mnoho pokusů o ověření.",
+        "content": {
+          "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
         }
       },
       "Close": {
@@ -578,6 +657,43 @@
       }
     },
     "requestBodies": {
+      "ServiceSessionCode": {
+        "required": true,
+        "content": {
+          "application/json": {"schema": {"$ref": "#/components/schemas/ServiceSessionCode"}}
+        }
+      },
+      "ServiceSessionVerify": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {"$ref": "#/components/schemas/ServiceSessionCode"},
+                {
+                  "type": "object",
+                  "properties": {
+                    "login": {"type": "string"},
+                    "password": {"type": "string", "format": "password"},
+                    "passkey": {
+                      "type": "object",
+                      "required": ["id", "clientDataJSON", "authenticatorData", "signature", "userHandle"],
+                      "properties": {
+                        "id": {"type": "string"},
+                        "clientDataJSON": {"type": "string"},
+                        "authenticatorData": {"type": "string"},
+                        "signature": {"type": "string"},
+                        "userHandle": {"type": "string"}
+                      }
+                    }
+                  },
+                  "oneOf": [{"required": ["login", "password"]}, {"required": ["passkey"]}]
+                }
+              ]
+            }
+          }
+        }
+      },
       "Activate": {
         "required": true,
         "content": {

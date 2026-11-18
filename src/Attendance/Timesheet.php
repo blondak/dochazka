@@ -42,12 +42,15 @@ final class Timesheet
         return $work;
     }
 
-    public static function build(string $month, array $signals, array $requests, ?Date $from = null, ?Date $until = null): array
+    public static function build(string $month, array $signals, array $requests, ?Date $from = null, ?Date $until = null,
+        array $mergeLimits = [], array $serviceRanges = []): array
     {
         $first = self::month($month);
         $limit = ($until ?? $first->modify('+1 month'))->getTimestamp();
         $start = ($from ?? $first)->getTimestamp();
         $open = $sleeping = $work = $doctor = $breaks = $vacations = $issues = [];
+        $freshLogins = $completeLogins = [];
+        $autoMerge = array_any($mergeLimits, static fn(int $minutes) => $minutes > 0);
         $flag = static function(int $ts, string $why) use (&$issues,$first,$start,$limit) {
             if ($ts >= $start && $ts < $limit) $issues[] = $first->setTimestamp($ts)->format('d.m. H:i').' '.$why;
         };
@@ -60,15 +63,20 @@ final class Timesheet
                     if (isset($sleeping[$key])) $flag($sleeping[$key], 'Chybí probuzení před dalším přihlášením.');
                     unset($sleeping[$key]);
                     $open[$key] = $ts;
+                    if ($autoMerge) $freshLogins[$key] = self::microseconds($s['happened']);
                     break;
                 case 'logout':
                     if (isset($open[$key])) {
                         $work[] = [$open[$key],$ts];
+                        if (isset($freshLogins[$key]) && $open[$key] < $ts) {
+                            $completeLogins[$s['device']][] = [$freshLogins[$key], self::microseconds($s['happened'])];
+                        }
                         unset($open[$key]);
                     } elseif (isset($sleeping[$key])) {
                         $flag($ts, 'Chybí probuzení před odhlášením.');
                         unset($sleeping[$key]);
                     } else $flag($ts,'Chybí přihlášení.');
+                    unset($freshLogins[$key]);
                     break;
                 case 'sleep':
                     if (isset($open[$key])) {
@@ -78,6 +86,7 @@ final class Timesheet
                     } elseif (!isset($sleeping[$key])) {
                         $flag($ts, 'Uspání bez přihlášení.');
                     }
+                    unset($freshLogins[$key]);
                     break;
                 case 'resume':
                     if (isset($sleeping[$key])) {
@@ -91,7 +100,7 @@ final class Timesheet
                     if (isset($open[$key]) && $open[$key] < $limit && $ts > $start) {
                         $flag(max($open[$key], $start), 'Neúplná relace před mezerou v záznamu.');
                     }
-                    unset($open[$key], $sleeping[$key]);
+                    unset($open[$key], $sleeping[$key], $freshLogins[$key]);
                     $flag($ts, 'Mezera v záznamu zařízení.');
                     break;
             }
@@ -107,13 +116,16 @@ final class Timesheet
                 case 'LEKAR': $doctor[] = $range; break;
                 case 'DOVOLENA': $vacations[] = $range; break;
                 case 'PRESTAVKA': $breaks[] = $range; break;
-                case 'PRACE': $work[] = $range; break;
+                case 'PRACE':
+                    array_push($work, ...(($r['merged_work'] ?? false) ? self::subtract([$range], $serviceRanges) : [$range]));
+                    break;
             }
         }
         $rows = [];
         $seconds = 0;
         $vacationConflict = false;
-        $work = self::subtract(self::union($work),array_merge($doctor,$breaks));
+        $gaps = self::shortGaps($completeLogins, $mergeLimits, $first, array_merge($doctor, $breaks, $vacations, $serviceRanges));
+        $work = self::subtract(self::union(array_merge($work, $gaps)),array_merge($doctor,$breaks));
         foreach (['PRACE'=>$work,'LEKAR'=>self::union($doctor),'DOVOLENA'=>self::union($vacations)] as $kind=>$ranges) {
             foreach ($ranges as [$a,$b]) {
                 $a = max($a,$start); $b = min($b,$limit);
@@ -146,5 +158,33 @@ final class Timesheet
         });
         $issues = array_values(array_unique($issues));
         return compact('rows','seconds','issues','pending') + ['vacation_conflict' => $vacationConflict];
+    }
+
+    private static function shortGaps(array $byDevice, array $limits, Date $date, array $excluded): array
+    {
+        $gaps = [];
+        foreach ($byDevice as $ranges) {
+            $previousEnd = null;
+            foreach (self::union($ranges) as [$from, $to]) {
+                if ($previousEnd !== null) {
+                    $fromSecond = (int) floor($from / 1_000_000);
+                    $day = $date->setTimestamp($fromSecond)->format('Y-m-d');
+                    if ($from - $previousEnd <= ($limits[$day] ?? 0) * 60_000_000
+                        && $date->setTimestamp((int) floor(($previousEnd - 1) / 1_000_000))->format('Y-m-d') === $day
+                        && !array_any($excluded, static fn(array $range) =>
+                            $range[0] * 1_000_000 < $from && $range[1] * 1_000_000 > $previousEnd)) {
+                        $gaps[] = [(int) floor($previousEnd / 1_000_000), $fromSecond];
+                    }
+                }
+                $previousEnd = $to;
+            }
+        }
+        return $gaps;
+    }
+
+    private static function microseconds(string $value): int
+    {
+        $date = new Date($value);
+        return $date->getTimestamp() * 1_000_000 + (int) $date->format('u');
     }
 }

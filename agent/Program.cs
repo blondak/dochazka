@@ -43,11 +43,20 @@ internal sealed class AttendanceService : ServiceBase
 {
     private readonly CancellationTokenSource stop = new();
     private Task? worker;
+    private Task? serviceSessions;
 
+    [STAThread]
     public static void Main(string[] args)
     {
+        if (args is ["--tray", var server])
+        {
+            Tray.Run(server);
+            return;
+        }
         if (args.SequenceEqual(new[] { "--self-test" }))
         {
+            if (ServiceSessionPipe.FormatLogon(0, 0x1b) != "0x1b" || ServiceSessionPipe.FormatLogon(1, 0) != "0x100000000")
+                throw new InvalidDataException("Unexpected Windows logon ID format.");
             using var systemHandler = new Settings("", "").CreateHandler();
             using var directHandler = new Settings("", "", "Direct").CreateHandler();
             using var customHandler = new Settings("", "", "Custom", "http://proxy.example.test:3128", true).CreateHandler();
@@ -100,6 +109,10 @@ internal sealed class AttendanceService : ServiceBase
     protected override void OnStart(string[] args)
     {
         worker = Task.Run(() => Loop(stop.Token));
+        serviceSessions = Task.Run(() => ServiceSessionPipe.Listen(LoadSettings, stop.Token));
+        _ = serviceSessions.ContinueWith(failed =>
+            EventLog.WriteEntry(ServiceName, failed.Exception!.GetBaseException().Message, EventLogEntryType.Warning),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
         _ = worker.ContinueWith(failed =>
         {
             try { EventLog.WriteEntry(ServiceName, failed.Exception!.GetBaseException().Message, EventLogEntryType.Error); }
@@ -114,14 +127,20 @@ internal sealed class AttendanceService : ServiceBase
     protected override void OnStop()
     {
         stop.Cancel();
-        if (worker != null) Task.WhenAny(worker, Task.Delay(TimeSpan.FromSeconds(15))).GetAwaiter().GetResult();
+        if (worker != null && serviceSessions != null)
+            Task.WhenAny(Task.WhenAll(worker, serviceSessions), Task.Delay(TimeSpan.FromSeconds(15))).GetAwaiter().GetResult();
     }
+
+    private static string DataPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "DochazkaAgent");
+
+    private static Settings LoadSettings() =>
+        JsonSerializer.Deserialize<Settings>(File.ReadAllText(Path.Combine(DataPath, "config.json"))) ?? throw new InvalidDataException();
 
     private async Task Loop(CancellationToken cancel)
     {
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "DochazkaAgent");
+        var path = DataPath;
         var configPath = Path.Combine(path, "config.json");
-        var config = JsonSerializer.Deserialize<Settings>(File.ReadAllText(configPath)) ?? throw new InvalidDataException();
+        var config = LoadSettings();
         var installed = File.GetCreationTimeUtc(configPath);
         var uri = new Uri(config.Server.TrimEnd('/') + "/api/v1/events");
         if (uri.Scheme != Uri.UriSchemeHttps) throw new InvalidDataException("Je vyžadováno HTTPS.");

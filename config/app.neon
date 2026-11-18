@@ -58,7 +58,11 @@ services:
     - Dochazka\Staff\Directory
     - Dochazka\Staff\StaffController
     - Dochazka\Attendance\Timesheets
+    - Dochazka\Attendance\DailyAttendance
+    - Dochazka\Attendance\MergePolicy
     - Dochazka\Attendance\AttendanceController
+    - Dochazka\Attendance\ServiceSessions
+    - Dochazka\Attendance\ServiceSessionController
     - Dochazka\Absence\Requests
     - Dochazka\Absence\AbsenceController
     - Dochazka\Payroll\Exports
