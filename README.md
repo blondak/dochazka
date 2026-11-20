@@ -96,7 +96,7 @@ Pro hromadné nasazení předá GPO instalačnímu skriptu adresu centrály a re
 
 Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.6-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.6-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
 
-Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.6-single-file'` a pro balíček s DLL použijte `-Release '0.0.6'`.
+Každý balíček rozbalte do vlastní složky. Při aktualizaci na sestavu s přímými oznámeními Windows změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.6-wts-single-file'` a pro balíček s DLL použijte `-Release '0.0.6-wts'`. Centrála zobrazí verzi agenta jako `0.0.6`.
 
 V **Nastavení → Zařízení** uvidíte poslední verzi nahlášenou běžící službou a čas posledního spojení. Agent hlásí verzi při pravidelném spojení s centrálou i bez nových událostí. U stanic, které verzi dosud nenahlásily, se zobrazuje pomlčka.
 
@@ -122,7 +122,7 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 4. V GPO povolte úspěšný audit přihlášení a odhlášení pro dočtení z protokolu Security. Na pilotní stanici ověřte přímá oznámení Windows a doručení po výpadku sítě. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.6\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.6' -Release '0.0.6' -EnrollmentDirectory '\\server\dochazka-registrace'
+& '\\server\dochazka\agent-v0.0.6-wts\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.6-wts' -Release '0.0.6-wts' -EnrollmentDirectory '\\server\dochazka-registrace'
 ~~~
 
 ## Vydání
