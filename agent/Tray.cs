@@ -14,7 +14,8 @@ internal sealed class Tray(Uri server)
     private const uint MouseSelect = 0x0400;
     private const uint KeyboardSelect = 0x0401;
     private const uint MenuService = 1;
-    private const uint MenuExit = 2;
+    private const uint MenuPasskey = 2;
+    private const uint MenuExit = 3;
     private static readonly uint TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
     private nint window, defaultProcedure;
     private int opening;
@@ -78,32 +79,40 @@ internal sealed class Tray(Uri server)
         try
         {
             AppendMenu(menu, 0, MenuService, "Označit relaci jako servisní");
+            AppendMenu(menu, 0, MenuPasskey, "Označit pomocí passkey v prohlížeči");
             AppendMenu(menu, 0, MenuExit, "Ukončit ikonu");
             if (!GetCursorPos(out var point)) return;
             SetForegroundWindow(window);
             var selected = TrackPopupMenu(menu, 0x0102, point.X, point.Y, 0, window, 0);
             PostMessage(window, 0, 0, 0);
-            if (selected == MenuService) _ = OpenRequest();
+            if (selected is MenuService or MenuPasskey) _ = OpenRequest(selected == MenuPasskey);
             if (selected == MenuExit) PostQuitMessage(0);
         }
         finally { DestroyMenu(menu); }
     }
 
-    private async Task OpenRequest()
+    private async Task OpenRequest(bool passkey)
     {
         if (Interlocked.Exchange(ref opening, 1) != 0) return;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
             var code = await ServiceSessionPipe.RequestCode(timeout.Token);
-            var url = server.AbsoluteUri.TrimEnd('/') + "/#service-session=" + code;
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+            if (passkey)
+            {
+                var url = server.AbsoluteUri.TrimEnd('/') + "/#service-session=" + code;
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+                return;
+            }
+            if (await ServiceSessionConfirmation.PromptAndVerify(server, code))
+                MessageBox(0, "Relace byla označena jako servisní.", "Docházka", 0x40);
         }
         catch (InvalidOperationException error) { MessageBox(0, error.Message, "Docházka", 0x30); }
         catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException
-            or UnauthorizedAccessException or Win32Exception)
+            or UnauthorizedAccessException or Win32Exception or HttpRequestException or System.Text.Json.JsonException)
         {
-            MessageBox(0, "Služba Docházka nebo prohlížeč nejsou dostupné. Zkuste to znovu.", "Docházka", 0x30);
+            MessageBox(0, passkey ? "Služba Docházka nebo prohlížeč nejsou dostupné. Zkuste to znovu."
+                : "Označení se nepodařilo potvrdit. Ověřte spojení s centrálou a stav relace ve výkazu.", "Docházka", 0x30);
         }
         finally { Volatile.Write(ref opening, 0); }
     }

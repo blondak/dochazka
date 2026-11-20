@@ -40,7 +40,26 @@ requestBody:
                     to: {type: string, format: date}
                     token: {type: string}
 responses:
-    '200': {description: Počet přidaných, změněných a odebraných zápisů a otisk náhledu}
+    '200':
+        description: Změny a důvody přeskočení svátků a firemního volna. Jeden den zaměstnance může mít více důvodů.
+        content:
+            application/json:
+                schema:
+                    type: object
+                    required: [added, changed, removed, skipped]
+                    properties:
+                        added: {type: integer}
+                        changed: {type: integer}
+                        removed: {type: integer}
+                        token: {type: string, description: Otisk pro potvrzení náhledu}
+                        skipped:
+                            type: object
+                            required: [missing_model, without_shift, occupied, unchanged]
+                            properties:
+                                missing_model: {type: integer}
+                                without_shift: {type: integer}
+                                occupied: {type: integer}
+                                unchanged: {type: integer}
 NEON)]
     public function holidayControl(ApiRequest $request, ApiResponse $response): ApiResponse
     {

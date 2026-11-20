@@ -65,7 +65,14 @@ NEON)]
     #[LoggedIn, Role('admin')]
     public function saveAttendanceAccount(ApiRequest $request, ApiResponse $response): ApiResponse
     {
-        return $this->json->respond($request, $response, fn(array $input) => $this->catalog->save($this->accounts->actor('admin')['id'], $input));
+        return $this->json->respond($request, $response, function (array $input): array {
+            $actor = $this->accounts->actor('admin')['id'];
+            $result = $this->catalog->save($actor, $input);
+            if ($input['code'] === 'PRACE' && isset($input['break_rule'])) {
+                $this->holidayEntries->reconcileBreakRule($input['break_rule']['effective_on'], $actor);
+            }
+            return $result;
+        });
     }
 
     #[Path('/work-models'), Method('POST')]

@@ -266,29 +266,59 @@ test('a stale approval refreshes the sheet before a manager can retry', async ({
 })
 
 test('a manager sees the current day and recorded worked time for the team', async ({page}) => {
+    await page.setViewportSize({width:320,height:720})
     let loads = 0
+    const holidayInputs = []
+    let openedSheet
     await openApp(page, manager, {
-        people:() => [manager,employee],
-        sheet:() => sheet(),
+        people:() => loads ? [manager,employee] : [manager],
+        sheet:data => { openedSheet = data; return sheet() },
+        'holiday-control':data => {
+            holidayInputs.push(data)
+            return {token:'preview',added:0,changed:0,removed:0,skipped:{missing_model:1,without_shift:0,occupied:1,unchanged:0}}
+        },
         'daily-attendance':() => ({
             day:'2026-11-17', updated:'2026-11-17T12:00:00+01:00',
             people:[
-                {id:employee.id, name:employee.name, status:++loads === 1 ? 'present' : 'finished', worked_seconds:loads === 1 ? null : 27000},
-                {id:manager.id, name:manager.name, status:'absent', worked_seconds:null},
+                {id:employee.id, name:employee.name, status:++loads === 1 ? 'present' : 'finished',
+                    from:'2026-11-17T08:00:00+01:00', to:loads === 1 ? null : '2026-11-17T16:00:00+01:00',
+                    worked_seconds:loads === 1 ? null : 27000},
+                {id:manager.id, name:manager.name, status:'absent', from:null, to:null, worked_seconds:null},
             ],
         }),
-    })
+    }, '/?mesic=2026-10')
     await navigate(page, 'Denní přehled')
+    await assertFits(page)
     const holidayIcon = page.getByRole('button', {name:'Kontrola svátků', exact:true}).locator('.p-button-icon')
     expect(await holidayIcon.evaluate(icon => getComputedStyle(icon, '::before').content)).not.toBe('none')
     await expect(page.getByText('17. 11. 2026', {exact:true})).toBeVisible()
     const employeeRow = page.getByRole('row').filter({hasText:employee.name})
     await expect(employeeRow).toContainText('Přítomen')
+    await expect(employeeRow.getByRole('cell', {name:'08:00', exact:true})).toBeVisible()
+    await expect(employeeRow.getByRole('cell', {name:'—', exact:true})).toHaveCount(2)
     await expect(page.getByRole('row').filter({hasText:manager.name})).toContainText('Nepřítomen')
     await page.getByRole('button', {name:'Obnovit', exact:true}).click()
     await expect(employeeRow).toContainText('Odpracováno')
+    await expect(employeeRow.getByRole('cell', {name:'16:00', exact:true})).toBeVisible()
     await expect(employeeRow).toContainText('7:30')
     await expect(page).toHaveURL(/sekce=denni-prehled/)
+    await page.getByRole('button', {name:'Kontrola svátků', exact:true}).click()
+    const dialog = page.getByRole('dialog', {name:'Kontrola svátků a firemního volna'})
+    await dialog.getByLabel('Od', {exact:true}).fill('2026-11-16')
+    await dialog.getByLabel('Do včetně').fill('2026-11-16')
+    await dialog.getByRole('button', {name:'Zobrazit náhled'}).click()
+    await expect(dialog.getByRole('status')).toContainText('Bez platného pracovního modelu · 1')
+    await expect(dialog.getByRole('status')).toContainText('Existující docházka nebo žádost · 1')
+    await expect(dialog.getByRole('button', {name:'Potvrdit kontrolní běh'})).toHaveCount(0)
+    await dialog.getByRole('button', {name:'Obnovit náhled'}).click()
+    const expectedRange = {from:'2026-11-16', to:'2026-11-16'}
+    await expect.poll(() => holidayInputs).toEqual([expectedRange, expectedRange])
+    await page.keyboard.press('Escape')
+    await employeeRow.getByRole('button', {name:'Otevřít výkaz · ' + employee.name}).click()
+    await expect.poll(() => openedSheet).toEqual({employee:employee.id,month:'2026-11'})
+    await expect(page).toHaveURL(/sekce=vykaz/)
+    await page.goBack()
+    await expect(employeeRow).toBeVisible()
 })
 
 test('the monthly table hides empty weekends and shows the selected day at desktop and mobile widths', async ({page}) => {
@@ -553,7 +583,7 @@ test('administrator can find an employee and confirm sensitive device actions on
     await openApp(page, administrator, {
         people:() => [staff,administrator],
         invite:data => { invitation = data; return {code:'single-use-admin-code'} },
-        devices:() => [{id:9, name:'Testovací PC', seen:'', revoked:!!revoked, warnings:''}],
+        devices:() => [{id:9, name:'Testovací PC', seen:'', agent_version:'0.0.6', revoked:!!revoked, warnings:''}],
         revoke:data => { revoked = data; return {ok:true} },
     })
     await assertFits(page)
@@ -573,6 +603,8 @@ test('administrator can find an employee and confirm sensitive device actions on
     await page.getByRole('button', {name:'Skrýt kód'}).click()
     await expect(page.getByText('single-use-admin-code')).toHaveCount(0)
     await navigate(page, 'Zařízení')
+    await expect(page.getByRole('columnheader', {name:'Verze agenta'})).toBeVisible()
+    await expect(page.getByRole('row', {name:/Testovací PC/}).getByRole('cell', {name:'0.0.6', exact:true})).toBeVisible()
     await page.getByRole('button', {name:'Odebrat přístup'}).click()
     const revoke = page.getByRole('dialog', {name:'Odebrat přístup stanice'})
     await expect(revoke).toContainText('Testovací PC')
@@ -891,6 +923,58 @@ test('administrator creates a custom account and assigns a four-hour work model'
     expect(assignment).toMatchObject({id:employee.id, work_model:{model:1,effective_on:'2026-11-17'}})
 })
 
+test('a work model copies a day to the next day or to selected weekdays', async ({page}) => {
+    let saved
+    await openApp(page, administrator, {
+        'work-models':() => [],
+        'work-model':data => { saved = data; return {id:1} },
+    })
+    await navigate(page, 'Pracovní modely')
+    await page.getByRole('button', {name:'Nový pracovní model'}).click()
+    const editor = page.getByRole('dialog', {name:'Nový pracovní model'})
+    await expect(editor.getByRole('table', {name:'Týdenní rozvrh'}).getByRole('row')).toHaveCount(8)
+    await editor.getByLabel('Název modelu').fill('Provoz s přestávkou')
+    await editor.getByLabel('Pondělí – začátek').fill('07:15')
+    await editor.getByLabel('Pondělí – konec').fill('15:45')
+    await expect(editor.getByLabel('Pondělí – přestávka od')).toHaveCount(0)
+    await editor.getByLabel('Pondělí – režim přestávky').click()
+    await page.getByRole('option', {name:'Pevná přestávka od–do'}).click()
+    await editor.getByLabel('Pondělí – přestávka od').fill('11:30')
+    await editor.getByLabel('Pondělí – přestávka do').fill('12:00')
+    await editor.getByRole('button', {name:'Kopírovat do dalšího dne (Pondělí → Úterý)'}).click()
+    await expect(editor.getByLabel('Úterý – přestávka od')).toHaveValue('11:30')
+    await editor.getByLabel('Úterý – začátek').fill('07:30')
+    await expect(editor.getByLabel('Pondělí – začátek')).toHaveValue('07:15')
+
+    await page.setViewportSize({width:320,height:720})
+    await assertFits(page)
+    const copyButton = editor.getByRole('button', {name:'Kopírovat do vybraných dnů (Pondělí)'})
+    const copy = page.getByRole('dialog', {name:'Kopírovat nastavení dne'})
+    await copyButton.click()
+    await copy.getByRole('checkbox', {name:'Středa'}).check()
+    await page.keyboard.press('Escape')
+    await expect(copy).toBeHidden()
+    await expect(editor.getByLabel('Středa – začátek')).toHaveValue('08:00')
+
+    await copyButton.click()
+    const confirm = copy.getByRole('button', {name:'Kopírovat nastavení', exact:true})
+    await expect(confirm).toBeDisabled()
+    await expect(copy.getByRole('checkbox', {name:'Pondělí'})).toHaveCount(0)
+    await copy.getByRole('checkbox', {name:'Čtvrtek'}).check()
+    await copy.getByRole('checkbox', {name:'Sobota'}).check()
+    await confirm.click()
+    await expect(copy).toBeHidden()
+    await expect(editor.getByRole('checkbox', {name:'Sobota – pracovní den'})).toBeChecked()
+    await editor.getByRole('button', {name:'Kopírovat do dalšího dne (Neděle → Pondělí)'}).click()
+    await expect(editor.getByRole('checkbox', {name:'Pondělí – pracovní den'})).not.toBeChecked()
+    await editor.getByRole('button', {name:'Uložit model'}).click()
+    await expect(editor).toBeHidden()
+
+    const defaultDay = {break_mode:'account',start:'08:00',end:'12:00',break_start:null,break_end:null}
+    const copiedDay = {break_mode:'fixed',start:'07:15',end:'15:45',break_start:'11:30',break_end:'12:00'}
+    expect(saved.week).toEqual([null, {...copiedDay,start:'07:30'}, defaultDay, copiedDay, defaultDay, copiedDay, null])
+})
+
 test('vacation request previews hours and a manager sees them when deciding', async ({page}) => {
     let submitted
     await openApp(page, manager, {
@@ -901,17 +985,21 @@ test('vacation request previews hours and a manager sees them when deciding', as
         request:input => { submitted = input; return {id:1} },
         decide:() => ({ok:true}),
     })
-    await page.getByRole('combobox', {name:'Osoba'}).click()
-    await page.getByRole('option', {name:employee.name}).click()
     await navigate(page, 'Žádosti')
-    await page.getByRole('button', {name:'Nová žádost nebo oprava'}).click()
+    await page.setViewportSize({width:320,height:720})
+    const toolbar = page.getByRole('toolbar', {name:'Nástroje žádostí'})
+    await expect(toolbar.getByLabel('Období')).toHaveValue('2026-11')
+    await assertFits(page)
+    await toolbar.getByRole('combobox', {name:'Osoba'}).click()
+    await page.getByRole('option', {name:employee.name}).click()
+    await toolbar.getByRole('button', {name:'Nová žádost nebo oprava'}).click()
     await page.getByRole('combobox', {name:'Druh'}).click()
     await page.getByRole('option', {name:'Dovolená'}).click()
     await page.getByLabel('První den', {exact:true}).fill('2026-11-16')
     await page.getByLabel('Poslední den včetně').fill('2026-11-16')
     await expect(page.getByText('Plánované čerpání 4:00')).toBeVisible()
     await page.getByRole('button', {name:'Odeslat žádost'}).click()
-    expect(submitted.kind).toBe('DOVOLENA')
+    expect(submitted).toMatchObject({employee:employee.id,kind:'DOVOLENA'})
     await navigate(page, 'Výkaz')
     await page.getByRole('table', {name:'Dny v měsíci'}).getByRole('button', {name:/16\. 11\./}).click()
     const daily = page.getByRole('table', {name:'Žádosti vybraného dne'})
@@ -936,8 +1024,8 @@ test('an empty Saturday is selected when it is today and a manager can enter vac
     await expect(page.getByRole('heading', {name:/Detail dne.*14\. 11/})).toBeVisible()
     const bar = page.getByRole('toolbar', {name:'Nástroje výkazu'})
     const layout = await bar.evaluate(el => {
-        const grid = el.nextElementSibling.getBoundingClientRect()
-        const rect = el.getBoundingClientRect()
+        const grid = document.getElementById('month-days-title').closest('.p-card').getBoundingClientRect()
+        const rect = el.closest('.p-card').getBoundingClientRect()
         return {width:Math.abs(grid.width - rect.width), above:rect.bottom <= grid.top}
     })
     expect(layout.width).toBeLessThan(1)

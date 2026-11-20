@@ -104,12 +104,20 @@ def exercise(connect, php_command):
     token = anonymous.call("enroll", registration, web=False)["token"]
     anonymous.call("enroll", registration, 401, web=False)
     anonymous.call("sheet", scope, 401, token=token)
+    assert admin.call("devices")[0]["agent_version"] is None
+    emp.call("devices", status=403)
     events = [{"id":str(i),"session":"boot.1","sid":sid,"kind":kind,
                "at":datetime.fromisoformat(month+"-03T"+hour+":00").replace(tzinfo=zone).isoformat()}
               for i,(kind,hour) in enumerate([("logout","16"),("login","08")])]
     for expected in ["accepted","duplicate"]:
         results = anonymous.call("events", {"events": events}, token=token, web=False)["results"]
         assert [r["status"] for r in results] == [expected,expected]
+    for version, expected in [("0.0.6", "0.0.6"), (None, "0.0.6"), ("<script>", "0.0.6"), ("0.0.7-rc.1", "0.0.7-rc.1")]:
+        heartbeat = {"events": []}
+        if version is not None:
+            heartbeat["agent_version"] = version
+        assert anonymous.call("events", heartbeat, token=token, web=False)["results"] == []
+        assert admin.call("devices")[0]["agent_version"] == expected
     service = {"session": "638990000000000000.0x1b", "sid": sid}
     events_for_service = [
         dict(service, id="tech-login", kind="login", at=month+"-04T18:00:00+01:00"),
@@ -158,10 +166,11 @@ def exercise(connect, php_command):
     admin.call("daily-attendance", status=403)
     assert clients["managerB"][0].call("daily-attendance")["people"] == []
 
-    def employee_today(status, seconds=None):
+    def employee_today(status, seconds=None, begins=None, ends=None):
         daily = manager.call("daily-attendance")
         assert daily["day"] == day_start.date().isoformat()
-        assert daily["people"] == [{"id": uid, "name": "employeeA", "status": status, "worked_seconds": seconds}]
+        assert daily["people"] == [{"id": uid, "name": "employeeA", "status": status, "worked_seconds": seconds,
+                                    "from": begins, "to": ends}]
 
     employee_today("absent")
     current_events = [
@@ -170,11 +179,11 @@ def exercise(connect, php_command):
         {"id":"day-return", "kind":"login", "session":"day.2", "sid":sid, "at":now.isoformat()},
     ]
     anonymous.call("events", {"events": current_events[:2]}, token=token, web=False)
-    employee_today("finished", today_seconds)
+    employee_today("finished", today_seconds, day_start.isoformat(), logout.isoformat())
     anonymous.call("events", {"events": current_events[2:]}, token=token, web=False)
-    employee_today("present", today_seconds)
+    employee_today("present", today_seconds, day_start.isoformat())
     admin.call("service-session-change", dict(change, session="day.2", service=True))
-    employee_today("finished", today_seconds)
+    employee_today("finished", today_seconds, day_start.isoformat(), logout.isoformat())
     anonymous.call("events", {"events": [dict(current_events[2], id="day-return-logout", kind="logout")]}, token=token, web=False)
     initial_model = admin.call("work-model", {"name": "Běžná směna", "effective_on": month+"-01",
         "week": [{"start": "08:00", "end": "16:00"}] * 7})["id"]
@@ -402,6 +411,14 @@ def exercise(connect, php_command):
     subject_login.call("activate", dict(admin.call("invite", subject), password=pw))
     subject_login.call("login", {"login": "catalog-worker", "password": pw})
     employee = subject["id"]
+    november_holiday = {"employee": employee, "from": "2025-11-17", "to": "2025-11-17"}
+    no_model = manager.call("holiday-control", november_holiday)
+    assert no_model["added"] == 0 and no_model["skipped"]["missing_model"] == 1
+    holiday_visit = manager.call("request", {"employee": employee, "kind": "LEKAR",
+        "from": "2025-11-17T08:00", "to": "2025-11-17T09:00"})
+    occupied = manager.call("holiday-control", november_holiday)["skipped"]
+    assert occupied["missing_model"] == 1 and occupied["occupied"] == 1
+    manager.call("decide", dict(holiday_visit, status="rejected", reason="Návštěva se nekonala"))
     vacation = {"employee": employee, "kind": "DOVOLENA", "from": "2024-03-28", "to": "2024-04-03"}
     manager.call("request-preview", vacation, 409)
     model = {"name": "Dopolední", "effective_on": "2024-03-25",
@@ -412,6 +429,12 @@ def exercise(connect, php_command):
     admin.call("work-model", dict(model, id=model_id, effective_on="2024-04-02", week=[
         {"start": "09:00", "end": "14:00", "break_start": "11:30", "break_end": "12:00"}
     ] * 5 + [None, None]))
+    november_preview = manager.call("holiday-control", november_holiday)
+    assert november_preview["added"] == 1 and november_preview["skipped"]["missing_model"] == 0
+    assert manager.call("holiday-control", dict(november_holiday, token=november_preview["token"]))["added"] == 1
+    assert manager.call("holiday-control", november_holiday)["skipped"]["unchanged"] == 1
+    november_sheet = manager.call("sheet", {"employee": employee, "month": "2025-11"})
+    assert sum(r["seconds"] for r in november_sheet["rows"] if r.get("generated_holiday")) == 16200
     assert manager.call("request-preview", vacation) == {"seconds": 46800, "days": ["2024-03-28", "2024-04-02", "2024-04-03"]}
     request = manager.call("request", vacation)
     manager.call("decide", dict(request, status="approved"))
@@ -465,7 +488,7 @@ def exercise(connect, php_command):
     assert not settings["days"]
     assert catalog_sheet["calendar_days"]["2024-04-01"] == {"name": "Velikonoční pondělí", "account": "SVATEK"}
     assert totals["SVATEK"] == 14400
-    assert "CATALOG;2024-04-01;SVATEK;2024-04-01T08:00:00+02:00;2024-04-01T12:00:00+02:00;14400" in export
+    assert "CATALOG;2024-04-01;SVATEK;;;14400" in export
     calendar = {"code": "FIRMA", "name": "Firemní volno", "position": 45, "behavior": "calendar",
                 "requires_proof": False, "active": True, "description": "", "payroll_code": "VOL", "effective_on": "2024-03-01"}
     admin.call("attendance-account", calendar)
@@ -494,6 +517,8 @@ def exercise(connect, php_command):
     admin.call("calendar-day", dict(day_off, day="2024-04-04"))
     admin.call("calendar-day", dict(day_off, day="2024-04-06"))
     admin.call("calendar-day", dict(day_off, day="2024-04-10"))
+    skip_example = manager.call("holiday-control", {"employee": employee, "from": "2024-04-04", "to": "2024-04-06"})
+    assert skip_example["skipped"] == {"missing_model": 0, "without_shift": 1, "occupied": 1, "unchanged": 0}
     assert "Přidáno 2, změněno 1, odebráno 0" in fill("2024-04-01", "2024-04-10")
     admin.call("attendance-account", dict(calendar, behavior="work"), 409)
     manager.call("request-preview", dict(vacation, **{"from": day_off["day"], "to": day_off["day"]}), 422)
@@ -694,6 +719,28 @@ def exercise(connect, php_command):
     after_removal = manager.call("sheet", history)
     assert after_removal["fingerprint"] == before_removal["fingerprint"]
     assert after_removal["calendar_days"] == before_removal["calendar_days"]
+
+    november = dict(catalog_scope, month="2025-11")
+    shift = {"start": "08:00", "end": "16:30", "break_mode": "account"}
+    updated = dict(model, id=model_id, effective_on="2025-11-01", week=[shift] * 5 + [None, None], reason="Celá směna")
+    preview = admin.call("work-model-change-preview", updated)
+    admin.call("work-model", dict(updated, preview_token=preview["token"]))
+    holiday = november_holiday["from"]
+    def full_day_rows(sheet, day):
+        return [(r["from"], r["to"], r["seconds"]) for r in sheet["rows"] if r["day"] == day]
+    assert full_day_rows(manager.call("sheet", november), holiday) == [("", "", 30600)]
+    admin.call("attendance-account", dict(account, break_rule=dict(break_rule, effective_on=holiday)))
+    day = "2025-11-18"
+    leave = {"employee": employee, "kind": "DOVOLENA", "from": day, "to": day}
+    assert manager.call("request-preview", dict(leave, vacation_side="end"))["seconds"] == 14400
+    leave_request = manager.call("request", leave)
+    manager.call("decide", dict(leave_request, status="approved"))
+    result = manager.call("sheet", november)
+    assert full_day_rows(result, holiday) == full_day_rows(result, day) == [("", "", 28800)]
+    assert [(p["from"][11:16], p["to"][11:16]) for p in result["planned_shifts"][day]] == [("08:00", "12:00"), ("12:30", "16:30")]
+    assert len(result["planned_shifts"]["2025-11-14"]) == 1
+    manager.call("save-work-row", dict(november, day=day, kind="PRACE", fingerprint=result["fingerprint"],
+        **{"from": "14:00", "to": "15:00", "reason": "Kontrola překryvu s dovolenou"}), 422)
 
     # Keep this historical fixture out of other payroll periods exercised by the Docker browser test.
     historical_person = next(person for person in admin.call("people") if person["id"] == employee)

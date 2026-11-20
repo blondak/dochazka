@@ -47,7 +47,7 @@ final class Timesheets
         $end = $to->modify('+1 day');
         $changes = [];
         $counts = $this->holidayEntries->fill($from, $end, true, $scope, details: $changes);
-        $token = hash('sha256', json_encode([$actor['id'], $input['from'], $input['to'], $scope, $changes], JSON_THROW_ON_ERROR));
+        $token = hash('sha256', json_encode([$actor['id'], $input['from'], $input['to'], $scope, $changes, $counts], JSON_THROW_ON_ERROR));
         if (!isset($input['token'])) return $counts + ['token' => $token];
         if ($token !== $input['token']) throw new Problem('Výsledek se změnil. Vytvořte nový náhled.', 409);
         $counts = $this->holidayEntries->fill($from, $end, false, $scope, $actor['id']);
@@ -364,6 +364,14 @@ final class Timesheets
         }
         foreach ($sheet['rows'] as $row) {
             if ($row['kind'] === 'PRACE' || ($row['generated_holiday'] ?? false)) continue;
+            if ($row['kind'] === 'DOVOLENA' && $row['seconds'] !== null && empty($row['partial_vacation']) && $row['from'] === '') {
+                foreach ($sheet['planned_shifts']->{$row['day']} ?? [] as $part) {
+                    if (new DateTimeImmutable($part['from']) < $end && new DateTimeImmutable($part['to']) > $start) {
+                        throw new Problem('Výsledný úsek zasahuje do schválené dovolené.');
+                    }
+                }
+                continue;
+            }
             $from = $row['from'] === '' ? WorkModels::day($row['day']) : new DateTimeImmutable($row['from']);
             $to = $row['to'] === '' ? $from->modify('+1 day') : new DateTimeImmutable($row['to']);
             if ($from < $end && $to > $start) {

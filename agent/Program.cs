@@ -3,8 +3,10 @@ using System.Diagnostics.Eventing.Reader;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.ServiceProcess;
 using System.Text.Json;
+using System.Threading.Channels;
 using System.Xml.Linq;
 using Microsoft.Data.Sqlite;
 
@@ -41,6 +43,10 @@ record Reply(Receipt[] Results);
 
 internal sealed class AttendanceService : ServiceBase
 {
+    private static readonly TimeSpan CollectionInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    private static readonly string AgentVersion = typeof(AttendanceService).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+', 2)[0];
     private readonly CancellationTokenSource stop = new();
     private readonly TaskCompletionSource<CancellationToken> shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task? worker;
@@ -92,6 +98,8 @@ internal sealed class AttendanceService : ServiceBase
             insert.ExecuteNonQuery();
             journal.Confirm(journal.Batch(), [new Receipt("1", "ignored")], null);
             if (journal.Batch().Count != 0 || journal.Warning() != null) throw new InvalidDataException("Ignored signal retained.");
+            VerifyBatchDelivery(journal, insert).GetAwaiter().GetResult();
+            VerifyServiceSessionConfirmation().GetAwaiter().GetResult();
             VerifyShutdownDelivery(journal, insert);
             return;
         }
@@ -224,17 +232,26 @@ internal sealed class AttendanceService : ServiceBase
         db.Open();
         var store = new Journal(db);
         store.Initialize();
+        var activity = Channel.CreateBounded<bool>(1);
+        using var desktopWatcher = WatchDesktopActivity(activity.Writer);
+        long? lastContact = null;
         while (!cancel.IsCancellationRequested)
         {
             var fault = CollectEvents(store, installed, cancel);
             try
             {
-                await SendBatch(store, http, uri, sendHeartbeat: true, cancel);
+                bool heartbeatDue = lastContact is null || Stopwatch.GetElapsedTime(lastContact.Value) >= HeartbeatInterval;
+                if (await SendBatch(store, http, uri, heartbeatDue, cancel))
+                    lastContact = Stopwatch.GetTimestamp();
             }
             catch (OperationCanceledException) when (cancel.IsCancellationRequested) { break; }
             catch (Exception e) { fault = e.Message; }
             if (fault != null) EventLog.WriteEntry("DochazkaAgent", fault, EventLogEntryType.Warning);
-            try { await Task.Delay(TimeSpan.FromSeconds(30), cancel); }
+
+            using var nextPoll = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+            nextPoll.CancelAfter(CollectionInterval);
+            try { await activity.Reader.ReadAsync(nextPoll.Token); }
+            catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { }
             catch (OperationCanceledException) { break; }
         }
 
@@ -249,6 +266,30 @@ internal sealed class AttendanceService : ServiceBase
                     deadline);
             }
             catch (OperationCanceledException) when (deadline.IsCancellationRequested) { }
+        }
+    }
+
+    private static EventLogWatcher? WatchDesktopActivity(ChannelWriter<bool> activity)
+    {
+        var query = new EventLogQuery("Security", PathType.LogName,
+            "*[System[EventID=4624 or EventID=4634] and EventData[Data[@Name='LogonType']='2' or Data[@Name='LogonType']='11']]");
+        var watcher = new EventLogWatcher(query, bookmark: null, readExistingEvents: false);
+        watcher.EventRecordWritten += (_, notification) =>
+        {
+            // Only wake the worker. The journal reads the events in order and owns the cursor.
+            using var record = notification.EventRecord;
+            if (record != null) activity.TryWrite(true);
+        };
+        try
+        {
+            watcher.Enabled = true;
+            return watcher;
+        }
+        catch (Exception error) when (error is EventLogException or UnauthorizedAccessException)
+        {
+            watcher.Dispose();
+            EventLog.WriteEntry("DochazkaAgent", "Sběr poběží v pravidelném cyklu: " + error.Message, EventLogEntryType.Warning);
+            return null;
         }
     }
 
@@ -268,18 +309,97 @@ internal sealed class AttendanceService : ServiceBase
         }
     }
 
-    private static async Task SendBatch(Journal store, HttpClient http, Uri uri, bool sendHeartbeat, CancellationToken cancel)
+    private static async Task<bool> SendBatch(Journal store, HttpClient http, Uri uri, bool sendHeartbeat, CancellationToken cancel)
     {
         cancel.ThrowIfCancellationRequested();
         var batch = store.Batch();
         var warning = store.Warning();
         var resolved = store.ResolvedWarning();
-        if (!sendHeartbeat && batch.Count == 0 && warning == null && resolved == null) return;
-        using var response = await http.PostAsJsonAsync(uri, new { events = batch, warning, resolved_warning = resolved }, cancel);
+        if (!sendHeartbeat && batch.Count == 0 && warning == null && resolved == null) return false;
+        using var response = await http.PostAsJsonAsync(uri, new { events = batch, agent_version = AgentVersion, warning, resolved_warning = resolved }, cancel);
         response.EnsureSuccessStatusCode();
         var reply = await response.Content.ReadFromJsonAsync<Reply>(cancel);
         if (reply?.Results is not { } receipts) throw new InvalidDataException("Chybí potvrzení přijaté dávky.");
         store.Confirm(batch, receipts, warning, resolved);
+        return true;
+    }
+
+    private static async Task VerifyBatchDelivery(Journal journal, SqliteCommand insert)
+    {
+        var handler = new DeliveryTestHandler();
+        using var http = new HttpClient(handler);
+        var uri = new Uri("https://example.test/api/v1/events");
+        if (await SendBatch(journal, http, uri, sendHeartbeat: false, CancellationToken.None) || handler.Requests != 0)
+            throw new InvalidDataException("An empty poll sent a request before the heartbeat was due.");
+        if (!await SendBatch(journal, http, uri, sendHeartbeat: true, CancellationToken.None) || handler.Requests != 1)
+            throw new InvalidDataException("A due heartbeat did not send an empty request.");
+
+        insert.ExecuteNonQuery();
+        handler.Status = HttpStatusCode.ServiceUnavailable;
+        try
+        {
+            await SendBatch(journal, http, uri, sendHeartbeat: false, CancellationToken.None);
+            throw new InvalidDataException("An unsuccessful delivery was not reported.");
+        }
+        catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.ServiceUnavailable) { }
+        if (handler.Requests != 2 || journal.Batch().Count != 1)
+            throw new InvalidDataException("An unconfirmed event was not retained for retry.");
+
+        handler.Status = HttpStatusCode.OK;
+        if (!await SendBatch(journal, http, uri, sendHeartbeat: false, CancellationToken.None)
+            || handler.Requests != 3 || journal.Batch().Count != 0)
+            throw new InvalidDataException("A queued event was not delivered independently of the heartbeat.");
+    }
+
+    private sealed class DeliveryTestHandler : HttpMessageHandler
+    {
+        public int Requests { get; private set; }
+        public HttpStatusCode Status { get; set; } = HttpStatusCode.OK;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests++;
+            return Task.FromResult(new HttpResponseMessage(Status)
+            {
+                Content = JsonContent.Create(new Reply([new Receipt("1", "accepted")]))
+            });
+        }
+    }
+
+    private static async Task VerifyServiceSessionConfirmation()
+    {
+        using var handler = new ServiceConfirmationTestHandler();
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://example.test/dochazka/") };
+        http.DefaultRequestHeaders.Add("X-Dochazka", "web");
+        char[] password = ['ž', '"', '\\', '\0', 'x'];
+        await ServiceSessionConfirmation.Verify(http, new string('a', 64), "správce", password);
+        handler.Status = HttpStatusCode.Forbidden;
+        try
+        {
+            await ServiceSessionConfirmation.Verify(http, new string('a', 64), "správce", password);
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+        throw new InvalidDataException("Denied service confirmation was treated as successful.");
+    }
+
+    private sealed class ServiceConfirmationTestHandler : HttpMessageHandler
+    {
+        public HttpStatusCode Status { get; set; } = HttpStatusCode.OK;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            var fields = body.RootElement;
+            if (request.Method != HttpMethod.Post || request.RequestUri?.AbsolutePath != "/dochazka/api/v1/service-session-verify"
+                || !request.Headers.GetValues("X-Dochazka").SequenceEqual(["web"])
+                || fields.GetProperty("code").GetString() != new string('a', 64)
+                || fields.GetProperty("login").GetString() != "správce" || fields.GetProperty("password").GetString() != "ž\"\\")
+                throw new InvalidDataException("Unexpected service confirmation request.");
+            return new HttpResponseMessage(Status) { Content = JsonContent.Create(new { ok = true }) };
+        }
     }
 
     private static void VerifyShutdownDelivery(Journal journal, SqliteCommand insert)

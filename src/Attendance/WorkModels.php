@@ -11,7 +11,7 @@ use Dochazka\Http\Problem;
 
 final class WorkModels
 {
-    public function __construct(private Connection $db, private AuditTrail $audit, private AttendanceCalendar $calendar) {}
+    public function __construct(private Connection $db, private AuditTrail $audit, private AttendanceCalendar $calendar, private Catalog $catalog) {}
 
     public static function day(string $input): Date
     {
@@ -28,9 +28,20 @@ final class WorkModels
             ->fetchAllAssociativeIndexed();
         $versions = $this->db->createQueryBuilder()->select('*')->from('work_model_version')
             ->orderBy('effective_on', 'DESC')->fetchAllAssociative();
+        $rules = $this->catalog->durationRules('break')['PRACE'] ?? [];
+        $today = (new Date('today', new DateTimeZone('Europe/Prague')))->format('Y-m-d');
+        // Use a neutral date for the nominal weekly fund, independent of DST transitions.
+        $nominalDay = new Date('2000-01-03', new DateTimeZone('UTC'));
         foreach ($versions as $version) {
+            $week = json_decode($version['week'], true, flags: JSON_THROW_ON_ERROR);
+            $rule = DurationRules::forDay($rules, max($today, $version['effective_on']));
+            $seconds = 0;
+            foreach ($week as $shift) {
+                if ($shift === null) continue;
+                foreach (self::shiftRanges($nominalDay, $shift, $rule) as [$from, $to]) $seconds += $to - $from;
+            }
             $models[$version['model']]['versions'][] = [
-                'effective_on' => $version['effective_on'], 'week' => json_decode($version['week'], true, flags: JSON_THROW_ON_ERROR),
+                'effective_on' => $version['effective_on'], 'week' => $week, 'weekly_seconds' => $seconds,
             ];
         }
         return array_map(static fn($id, $model) => ['id' => $id] + $model + ['versions' => []],
@@ -85,7 +96,11 @@ final class WorkModels
                 || ($breakStart !== null && !($start < $breakStart && $breakStart < $breakEnd && $breakEnd < $end))) {
                 throw new Problem('Přestávka musí celá ležet uvnitř směny a konec musí následovat po začátku.');
             }
-            $shift = ['start' => $start, 'end' => $end, 'break_start' => $breakStart, 'break_end' => $breakEnd];
+            $mode = $shift['break_mode'] ?? 'fixed';
+            if (!in_array($mode, ['account', 'fixed'], true) || ($mode === 'account' && $breakStart !== null)) {
+                throw new Problem('Zkontrolujte způsob určení přestávky.');
+            }
+            $shift = ['break_mode' => $mode, 'start' => $start, 'end' => $end, 'break_start' => $breakStart, 'break_end' => $breakEnd];
         }
         unset($shift);
         $effective = self::day($input['effective_on'] ?? '')->format('Y-m-d');
@@ -241,6 +256,7 @@ final class WorkModels
             ->orderBy('a.effective_on', 'DESC')->addOrderBy('v.effective_on', 'DESC')->fetchAllAssociative();
         if ($revisions || $includeUnassignedDays) $calendarDays = $this->calendar->days($from, $until);
         if (!$revisions) return compact('schedule', 'credits', 'calendarDays');
+        $rules = $this->catalog->durationRules('break')['PRACE'] ?? [];
         foreach ($revisions as &$revision) $revision['week'] = json_decode($revision['week'], true, flags: JSON_THROW_ON_ERROR);
         unset($revision);
         for ($date = $from->setTime(0, 0); $date < $until; $date = $date->modify('+1 day')) {
@@ -248,7 +264,7 @@ final class WorkModels
             foreach ($revisions as $revision) {
                 if ($revision['assignment'] > $key || $revision['effective_on'] > $key) continue;
                 $shift = $revision['week'][(int) $date->format('N') - 1];
-                $ranges = $shift ? self::shiftRanges($date, $shift) : [];
+                $ranges = $shift ? self::shiftRanges($date, $shift, DurationRules::forDay($rules, $key)) : [];
                 if (isset($calendarDays[$key])) {
                     $schedule[$key] = [];
                     if ($ranges) {
@@ -274,11 +290,21 @@ final class WorkModels
         return $ranges;
     }
 
-    public static function shiftRanges(Date $date, array $shift): array
+    public static function shiftRanges(Date $date, array $shift, ?array $rule = null): array
     {
         $time = static fn(string $clock) => $date->setTime((int) substr($clock, 0, 2), (int) substr($clock, 3))->getTimestamp();
         $start = $time($shift['start']);
         $end = $time($shift['end']);
+        if (($shift['break_mode'] ?? 'fixed') === 'account' && ($rule['enabled'] ?? false)) {
+            $breaks = DurationRules::proposeBreaks([[$start, $end]], [], $rule['minutes'] * 60, $rule['preferred'] * 60, $rule['deadline'] * 60);
+            $ranges = [];
+            foreach ($breaks as [$from, $to]) {
+                $ranges[] = [$start, $from];
+                $start = $to;
+            }
+            $ranges[] = [$start, $end];
+            return $ranges;
+        }
         return $shift['break_start'] === null ? [[$start, $end]]
             : [[$start, $time($shift['break_start'])], [$time($shift['break_end']), $end]];
     }

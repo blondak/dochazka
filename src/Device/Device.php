@@ -23,6 +23,9 @@ class Device
     #[ORM\Column(type: 'datetimetz_immutable', nullable: true)]
     public ?DateTimeImmutable $seen = null;
 
+    #[ORM\Column(name: 'agent_version', length: 64, nullable: true)]
+    public ?string $agentVersion = null;
+
     #[ORM\Column]
     public bool $revoked = false;
 

@@ -83,7 +83,7 @@ final class DailyAttendance
                 'break_exceptions' => $exception ? [$start->format('Y-m-d') => $exception] : []];
             $people[] = ['id' => (int) $person['id'], 'name' => $person['name']] + (
                 $person['sid'] === null
-                    ? ['status' => 'untracked', 'worked_seconds' => null]
+                    ? ['status' => 'untracked', 'worked_seconds' => null, 'from' => null, 'to' => null]
                     : self::summarize($bySid[$person['sid']] ?? [], $requests[$person['id']] ?? [], $start, $end, $limits, $accounts, $this->models->schedule($person['id'], $start, $end), $policy)
             );
         }
@@ -93,6 +93,8 @@ final class DailyAttendance
     private static function summarize(array $events, array $requests, DateTimeImmutable $start, DateTimeImmutable $end, array $limits, array $accounts, array $schedule, array $policy): array
     {
         $loggedIn = $present = $closed = $serviceRanges = [];
+        $firstLogin = $lastLogout = null;
+        $dayStart = $start->getTimestamp();
         foreach ($events as $event) {
             $key = $event['device'].'/'.$event['session_key'];
             if ($event['service_at'] !== null) {
@@ -103,6 +105,7 @@ final class DailyAttendance
             switch ($event['kind']) {
                 case 'login':
                     $loggedIn[$key] = true;
+                    $firstLogin ??= max($dayStart, strtotime($event['happened']));
                     // A login before midnight is included when this session has an event today.
                     if (!$event['revoked']) $present[$key] = true;
                     break;
@@ -113,11 +116,16 @@ final class DailyAttendance
                     unset($present[$key]);
                     break;
                 case 'logout':
-                    if (isset($loggedIn[$key]) && strtotime($event['happened']) >= $start->getTimestamp()) {
+                    $logout = strtotime($event['happened']);
+                    if (isset($loggedIn[$key]) && $logout >= $dayStart) {
                         $closed[$key] = true;
+                        $lastLogout = $logout;
                     }
-                    // Logout and gaps both end an observed presence.
+                    unset($loggedIn[$key], $present[$key]);
+                    break;
                 case 'gap':
+                    // The end of an interrupted session is unknown.
+                    if (isset($loggedIn[$key])) $lastLogout = null;
                     unset($loggedIn[$key], $present[$key]);
                     break;
             }
@@ -130,6 +138,8 @@ final class DailyAttendance
         return [
             'status' => $present ? 'present' : ($closed ? 'finished' : 'absent'),
             'worked_seconds' => $seconds,
+            'from' => $firstLogin === null ? null : $start->setTimestamp($firstLogin)->format(DATE_ATOM),
+            'to' => $lastLogout === null || $loggedIn ? null : $start->setTimestamp($lastLogout)->format(DATE_ATOM),
         ];
     }
 }

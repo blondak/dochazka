@@ -54,7 +54,7 @@ internal static class ServiceSessionPipe
         var status = new byte[1];
         await pipe.ReadExactlyAsync(status, stop);
         if (status[0] == '1') throw new InvalidOperationException("Relace ještě není v centrále. Zkuste to po další dávce docházky.");
-        if (status[0] != '0') throw new InvalidOperationException("Služba nemohla vytvořit odkaz v centrále.");
+        if (status[0] != '0') throw new InvalidOperationException("Služba nemohla získat kód pro označení relace.");
         var token = new byte[64];
         await pipe.ReadExactlyAsync(token, stop);
         var code = Encoding.ASCII.GetString(token);

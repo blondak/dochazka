@@ -7,13 +7,17 @@ interface ComputerSession {device:number;station:string;session:string;from:stri
 interface DailyAttendance {
     day:string
     updated:string
-    people:{id:number;name:string;status:'present'|'finished'|'absent'|'untracked';worked_seconds:number|null}[]
+    people:{id:number;name:string;status:'present'|'finished'|'absent'|'untracked';worked_seconds:number|null;from?:string|null;to?:string|null}[]
+}
+interface HolidayControlPreview {
+    token:string;added:number;changed:number;removed:number
+    skipped?:{missing_model:number;without_shift:number;occupied:number;unchanged:number}
 }
 interface RequestRow {needs_actual?:boolean;actual_from?:string|null;actual_to?:string|null;actual_returned?:boolean;vacation_seconds?:number;vacation_estimate?:{from:string;to:string}[];vacation_consent?:boolean;generated_holiday?:boolean;id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean;merged_work?:boolean;replaces_from?:string;replaces_to?:string;account_name?:string;behavior?:Behavior;requires_proof?:boolean;scheduled_seconds?:number|null}
 interface AttendanceInterval {day:string;from:string;to:string;source:string}
 interface Sheet {presence?:AttendanceInterval[];breaks?:AttendanceInterval[];missing_actual?:number;unresolved_breaks?:number;absence_conflict?:boolean;
     unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];vacation_conflict?:boolean;requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
-interface Device {id:number;name:string;seen:string|null;revoked:boolean;registered:boolean;warnings:string|null}
+interface Device {id:number;name:string;seen:string|null;agent_version:string|null;revoked:boolean;registered:boolean;warnings:string|null}
 interface Payroll {people:{id:number;name:string;approved:boolean}[];versions:{version:number;created:string}[];changed:boolean}
 interface Passkey {id:string;label:string;created:string}
 interface Confirmation {
@@ -41,16 +45,16 @@ interface AttendanceAccount {
     active:boolean; system?:boolean; payroll_versions?:{effective_on:string;payroll_code:string}[]
 }
 interface AccountTotal {internal_seconds?:number;code:string;name:string;seconds:number;legacy_days:number}
-interface Shift {start:string;end:string;break_start:string|null;break_end:string|null}
+interface Shift {break_mode?:'account'|'fixed';start:string;end:string;break_start:string|null;break_end:string|null}
 interface WorkModel {
-    id:number;name:string;versions:{effective_on:string;week:(Shift|null)[]}[];
+    id:number;name:string;versions:{effective_on:string;weekly_seconds?:number;week:(Shift|null)[]}[];
 }
 interface WorkAssignment {model:number;effective_on:string}
 interface ModelImpact {token:string;impact:{name:string;month:string;requests:{id:number;kind:string}[]}[]}
 const weekdays = ['Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota', 'Neděle']
 const behaviors:Record<Behavior,string> = {work:'Práce', timed_absence:'Časová nepřítomnost', shift_absence:'Celosměnová nepřítomnost', break:'Přestávka',calendar:'Svátek a den pracovního klidu'}
 const behaviorOptions = (['work','timed_absence','shift_absence','calendar'] as const).map(value => ({value,label:behaviors[value]}))
-const defaultShift = ():Shift => ({start:'08:00',end:'12:00',break_start:null,break_end:null})
+const defaultShift = ():Shift => ({break_mode:'account',start:'08:00',end:'12:00',break_start:null,break_end:null})
 type Editor = {kind:'unit'; id?:number} | {kind:'employee'; id?:number} | {kind:'device'} | {kind:'request'}
     | {kind:'account'; code?:string} | {kind:'model'; id?:number; version?:string}
     | {kind:'holiday-rule';id?:number} | {kind:'holiday-account'} | {kind:'calendar-day';day?:string}
@@ -128,7 +132,8 @@ export function setupAttendance() {
     const durationEdit = ref({value:'', maximum:0, from:'', to:'', reason:'', reset:false})
     const breakEdit = ref({day:'',from:'',to:'',reason:'',mode:'record',id:undefined as number|undefined})
     const actualEdit = ref({from:'',to:'',reason:'',photo:''})
-    const holidayControl = ref({from:'',to:'', token:'', added:0, removed:0, changed:0})
+    const holidayControl = ref<HolidayControlPreview & {from:string;to:string}>({from:'',to:'',token:'',added:0,removed:0,changed:0})
+    const holidayControlHasChanges = computed(() => holidayControl.value.added + holidayControl.value.changed + holidayControl.value.removed > 0)
     const roundingEdit = ref({change:false, mode:'down', minutes:30, effective_on:today})
     const breakRuleEdit = ref({change:false, enabled:true, minutes:30, preferred:240, deadline:360, effective_on:today})
     const workEdit = ref({kind:'PRACE', day:'', from:'', to:'', untilMidnight:false, reason:''})
@@ -145,6 +150,19 @@ export function setupAttendance() {
     const modelForm = ref<{id?:number;name:string;effective_on:string;week:(Shift|null)[];reason?:string}>({
         name:'',effective_on:today,week:[],
     })
+    const modelWeek = computed(() => modelForm.value.week.map((shift, index) => ({
+        shift, index, day:weekdays[index], next:(index + 1) % weekdays.length,
+    })))
+    const modelCopy = ref<{source:number;targets:number[]}|null>(null)
+    function copyModelDays(source:number, targets:number[]) {
+        const shift = modelForm.value.week[source]
+        for (const target of targets) modelForm.value.week[target] = shift ? {...shift} : null
+    }
+    function applyModelCopy() {
+        if (!modelCopy.value) return
+        copyModelDays(modelCopy.value.source, modelCopy.value.targets)
+        modelCopy.value = null
+    }
     const employeePanel = ref('general')
     const employeeModels = ref<WorkModel[]>([])
     const employeeAssignments = ref<WorkAssignment[]>([])
@@ -671,6 +689,7 @@ export function setupAttendance() {
         showArchived.value = next.showArchived
     }
     function showEditor(next: Editor | null) {
+        modelCopy.value = null
         if (next?.kind === 'employee' && hasRole('admin') && ['Zaměstnanci', 'Výkaz'].includes(tab.value)) {
             const {id} = next
             const data = people.value.find(p => p.id === id)
@@ -719,7 +738,7 @@ export function setupAttendance() {
             if ((next.id !== undefined && !existing) || (next.version && !version)) { editor.value = null; return }
             const week = (version ?? (existing && activeModelVersion(existing)))?.week ?? weekdays.map((_, index) => index < 5 ? defaultShift() : null)
             modelForm.value = {id:existing?.id,name:existing?.name ?? '',effective_on:version?.effective_on ?? today,
-                week:week.map(shift => shift ? {...shift} : null), reason:''}
+                week:week.map(shift => shift ? {...shift,break_mode:shift.break_mode ?? 'fixed'} : null), reason:''}
             pendingModelImpact.value = ''
         } else if (next?.kind === 'duration' && canReview.value) {
             const row = next.stale ? sheet.value?.unresolved_adjustments?.[next.row] : sheet.value?.rows[next.row]
@@ -835,6 +854,18 @@ export function setupAttendance() {
     function changeTab(t:string, employee?:number) {
         navigationVisible.value = false
         return navigate({tab:t, person:employee ?? person.value, unitFilter:null})
+    }
+    function openDailySheet(employee: number) {
+        const day = daily.value?.day
+        if (!day) return
+        const next = {...view(), tab:'Výkaz', person:employee, month:day.slice(0,7), unitFilter:null, editor:null}
+        return run(async () => {
+            if (!scopePeople.value.some(p => p.id === employee)) {
+                people.value = await api('people')
+                if (!scopePeople.value.some(p => p.id === employee)) throw new Error('Výkaz vybrané osoby už není dostupný.')
+            }
+            await renderView(next, true)
+        })
     }
     function setShowArchived(value: boolean) {
         showArchived.value = value
@@ -1153,8 +1184,8 @@ export function setupAttendance() {
             if (editor.value?.kind !== 'holiday-control') return
             const {from,to,token} = holidayControl.value
             const input = {employee:editor.value.employee,from,to}
-            if (token) await save('holiday-control', {...input,token}, 'Kontrolní běh byl dokončen.')
-            else Object.assign(holidayControl.value, await api('holiday-control', input))
+            if (token && holidayControlHasChanges.value) await save('holiday-control', {...input,token}, 'Kontrolní běh byl dokončen.')
+            else Object.assign(holidayControl.value, await api<HolidayControlPreview>('holiday-control', input))
         })
     }
     function vacationOptions() {
@@ -1317,16 +1348,17 @@ export function setupAttendance() {
         durationSeconds, durationEdit, submitDuration, breakEdit, submitBreak, actualEdit, submitActual, returnActual,
         actualProofRequired: computed(() => editor.value?.kind === 'actual' && !!sheet.value?.requests.find(
             request => editor.value?.kind === 'actual' && request.id === editor.value.id && request.requires_proof)),
-        holidayControl, submitHolidayControl, roundingEdit, breakRuleEdit, workBehaviors,
+        holidayControl, holidayControlHasChanges, submitHolidayControl, roundingEdit, breakRuleEdit, workBehaviors,
         tabIcons, time, moment, day, hours, requestPeriod, canUploadProof, scope, run, refresh, signIn, signOut, roleNames, hasRole,
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
-        daily, dailyStatuses,
+        daily, dailyStatuses, openDailySheet,
         gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
         monthDays, selectedDay, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,
         accounts, models, accountPanel, accountForm, modelForm, expandedModels, selectedModelVersions, displayModelVersion, activeModelVersion,
+        modelWeek, modelCopy, copyModelDays, applyModelCopy,
         employeePanel, employeeModels, employeeAssignments, employeeModelsLoading, employeeModelEdit, employeeAssignmentReason,
         editAssignment, submitEmployee, pendingModelImpact, today, behaviors, behaviorOptions,
         weekdays, modelSeconds, defaultShift, saveAttendanceAccount, saveWorkModel, accountName, fullShiftRequest, proofRequest,

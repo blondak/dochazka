@@ -13,8 +13,8 @@ Rozbalte archiv **central-deploy.tar.gz** z vydání centrály a ve stejném adr
 ~~~dotenv
 TRAEFIK_NETWORK=traefik
 DB_PASSWORD=sem-vlozte-vygenerovane-heslo
-APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.5
-WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.5
+APP_IMAGE=ghcr.io/blondak/dochazka:php-0.0.6
+WEB_IMAGE=ghcr.io/blondak/dochazka:web-0.0.6
 SETUP_TOKEN=sem-vlozte-vygenerovany-kod
 PASSKEY_ORIGIN=https://dochazka.example.cz
 ~~~
@@ -60,9 +60,13 @@ Nette DI konfiguruje **nettrine/dbal** a **nettrine/orm**. Entity jsou v jednotl
 
 ### Denní přehled a spojování úseků
 
+**Denní přehled** ukazuje první přihlášení v daném dni a po skončení přítomnosti poslední doložené odhlášení. Ikona kalendáře otevře výkaz daného zaměstnance za měsíc zobrazeného dne.
+
 **Výkaz** zobrazuje pracovní dny v době evidence zaměstnance a víkendy s evidovanými záznamy. Podrobnosti dne obsahují plán směny, pracovní úseky, žádosti se stavem a dostupné relace počítače. Ikony v měsíčním přehledu označují čekající a zamítnuté žádosti. Vedoucí žádost vyřídí v dialogu přímo z detailu dne.
 
-V **Nastavení → Pracovní modely** správce vytvoří týdenní rozvrh a přiřadí ho zaměstnanci od zvoleného dne. Každý den může mít vlastní směnu a neplacenou přestávku. Novou verzi společného modelu založte s datem, od kterého se má používat. Čerpání dovolené se zobrazuje v hodinách podle rozvrhu. Dříve uložená dovolená za dobu před přiřazením modelu se dál vykazuje v kalendářních dnech. Před novou žádostí o dovolenou musí mít zaměstnanec přiřazený model.
+V **Nastavení → Pracovní modely** správce vytvoří týdenní rozvrh a přiřadí ho zaměstnanci od zvoleného dne. U nové směny je předvolená přestávka **Podle pravidla konta**. Pro plán se použije pravidlo konta Práce účinné v daný den a doba se počítá od začátku plánované směny. Při vypnutém pravidle se do fondu započítá celá směna. Volba **Pevná přestávka od–do** umožňuje zadat vlastní časy. Dosavadní modely si ponechají původní nastavení. Novou verzi společného modelu založte s datem, od kterého se má používat.
+
+Svátek doplněný podle kalendáře i celodenní dovolená se ve výkazu a mzdovém exportu vykážou za každý den jednou, s čistou délkou směny a prázdnými časy od–do. Například za směnu 08:00–16:30 s půlhodinovou přestávkou se započte 8 hodin. Dříve uložená dovolená za dobu před přiřazením modelu se dál vykazuje v kalendářních dnech. Před novou žádostí o dovolenou musí mít zaměstnanec přiřazený model.
 
 V **Nastavení → Konta docházky** lze například založit školení jako pracovní konto s vlastním mzdovým kódem. Schválené školení se započte jednou do celkové přítomnosti a v souhrnu se ukáže také samostatně. Nové mzdové CSV používá účinné kódy kont a přidává sloupec `sekundy`. Již vydaná CSV si ponechají původní podobu.
 
@@ -90,9 +94,11 @@ Vedoucí může ve výkazu člena týmu zaškrtnout pracovní úseky jednoho dne
 
 Pro hromadné nasazení předá GPO instalačnímu skriptu adresu centrály a registrační brány. Stanice se ověří vlastním účtem počítače. Registraci mohou provést členové vybrané skupiny v AD. Přípravu brány, GPO, aktualizaci a odvolání přístupu popisuje [návod pro Samba AD](deploy/gpo.md).
 
-Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.5-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.5-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
+Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.6-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.6-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
 
-Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.5-single-file'` a pro balíček s DLL použijte `-Release '0.0.5'`.
+Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.6-single-file'` a pro balíček s DLL použijte `-Release '0.0.6'`.
+
+V **Nastavení → Zařízení** uvidíte poslední verzi nahlášenou běžící službou a čas posledního spojení. Agent hlásí verzi při pravidelném spojení s centrálou i bez nových událostí. U stanic, které verzi dosud nenahlásily, se zobrazuje pomlčka.
 
 ### Připojení přes proxy
 
@@ -110,21 +116,21 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 
 ### Ruční registrace stanice
 
-1. Rozbalte balíček **agent-v0.0.5-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
+1. Rozbalte balíček **agent-v0.0.6-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
 2. V centrále na kartě **Zařízení** zaregistrujte stanici. Kód uložte jako **JMENO-POCITACE.txt** do adresáře s registracemi. Na sdílení dejte každému počítačovému účtu právo číst jen jeho vlastní kód. Registraci proveďte během hodinové platnosti.
 3. Při pilotu spusťte příkaz níže jako správce. Pro nasazení přes Samba AD nastavte stejný příkaz jako spouštěcí PowerShell skript v konfiguraci počítače v doménové GPO. Při aktualizaci změňte **PackagePath** a **Release**. Služba si ponechá lokální frontu i registraci.
 4. V GPO povolte úspěšný audit přihlášení a odhlášení. Na pilotní stanici ověřte párování událostí 4624 a 4634 v protokolu Security a postup při práci bez připojení. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.5\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.5' -Release '0.0.5' -EnrollmentDirectory '\\server\dochazka-registrace'
+& '\\server\dochazka\agent-v0.0.6\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.6' -Release '0.0.6' -EnrollmentDirectory '\\server\dochazka-registrace'
 ~~~
 
 ## Vydání
 
 | Tag v repozitáři | Výstup |
 | --- | --- |
-| [agent-v0.0.5](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.5) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
-| [docker-v0.0.5](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.5) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.5`, `web-0.0.5` a `enroll-0.0.5` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
+| [agent-v0.0.6](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.6) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
+| [docker-v0.0.6](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.6) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.6`, `web-0.0.6` a `enroll-0.0.6` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
 
 Integrační test **tests/workflow.py** potřebuje PHP 8.4 a přístup k testovací PostgreSQL přes proměnné **PGHOST**, **PGPORT**, **PGDATABASE**, **PGUSER** a **PGPASSWORD**. Vytvoří vlastní dočasné schéma. Samostatný test výpočtu výkazu spustíte jako **php tests/timesheet.php**.
 

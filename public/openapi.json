@@ -1196,7 +1196,58 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Počet přidaných"
+                        "description": "Změny a důvody přeskočení svátků a firemního volna. Jeden den zaměstnance může mít více důvodů.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "added",
+                                        "changed",
+                                        "removed",
+                                        "skipped"
+                                    ],
+                                    "properties": {
+                                        "added": {
+                                            "type": "integer"
+                                        },
+                                        "changed": {
+                                            "type": "integer"
+                                        },
+                                        "removed": {
+                                            "type": "integer"
+                                        },
+                                        "token": {
+                                            "type": "string",
+                                            "description": "Otisk pro potvrzení náhledu"
+                                        },
+                                        "skipped": {
+                                            "type": "object",
+                                            "required": [
+                                                "missing_model",
+                                                "without_shift",
+                                                "occupied",
+                                                "unchanged"
+                                            ],
+                                            "properties": {
+                                                "missing_model": {
+                                                    "type": "integer"
+                                                },
+                                                "without_shift": {
+                                                    "type": "integer"
+                                                },
+                                                "occupied": {
+                                                    "type": "integer"
+                                                },
+                                                "unchanged": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3093,6 +3144,14 @@
                     "end": {
                         "type": "string"
                     },
+                    "break_mode": {
+                        "type": "string",
+                        "enum": [
+                            "account",
+                            "fixed"
+                        ],
+                        "description": "Podle účinného pravidla konta PRACE, nebo pevná přestávka. Při vynechání se zachová pevné nastavení."
+                    },
                     "break_start": {
                         "type": [
                             "string",
@@ -3110,6 +3169,11 @@
             "WorkModelVersion": {
                 "type": "object",
                 "properties": {
+                    "weekly_seconds": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "description": "Čistý týdenní fond podle aktuálního pravidla, u budoucí verze podle pravidla k datu účinnosti."
+                    },
                     "week": {
                         "type": "array",
                         "items": {
@@ -3305,10 +3369,12 @@
                         "description": "Stabilní kód konta docházky."
                     },
                     "from": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Začátek časového úseku. U dovolené a automaticky doplněného dne volna je prázdný."
                     },
                     "to": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Konec časového úseku. U dovolené a automaticky doplněného dne volna je prázdný."
                     },
                     "generated_holiday": {
                         "type": "boolean",
@@ -3478,7 +3544,9 @@
                                 "id",
                                 "name",
                                 "status",
-                                "worked_seconds"
+                                "worked_seconds",
+                                "from",
+                                "to"
                             ],
                             "properties": {
                                 "id": {
@@ -3502,6 +3570,22 @@
                                         "null"
                                     ],
                                     "minimum": 0
+                                },
+                                "from": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date-time",
+                                    "description": "První evidované přihlášení, u relace přes půlnoc nejdříve začátek dne."
+                                },
+                                "to": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "format": "date-time",
+                                    "description": "Poslední doložené odhlášení, pokud evidence ukazuje ukončenou přítomnost."
                                 }
                             }
                         }
@@ -3838,6 +3922,14 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "agent_version": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Poslední verze nahlášená běžícím agentem. Hodnota null znamená, že stanice verzi dosud nenahlásila.",
+                        "example": "0.0.6"
                     },
                     "revoked": {
                         "type": "boolean"
@@ -4920,6 +5012,12 @@
                                         "$ref": "#/components/schemas/Signal"
                                     }
                                 },
+                                "agent_version": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+                                    "description": "Verze běžícího agenta, posílá se i s prázdnou dávkou. Chybějící nebo neplatná hodnota se ignoruje."
+                                },
                                 "resolved_warning": {
                                     "type": [
                                         "string",
@@ -4939,6 +5037,7 @@
                             ]
                         },
                         "example": {
+                            "agent_version": "0.0.6",
                             "events": [
                                 {
                                     "id": "pc1.103",

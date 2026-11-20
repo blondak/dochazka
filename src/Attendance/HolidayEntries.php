@@ -8,6 +8,11 @@ use Doctrine\DBAL\Connection;
 
 final class HolidayEntries
 {
+    private const EMPTY_RESULT = [
+        'added' => 0, 'changed' => 0, 'removed' => 0,
+        'skipped' => ['missing_model' => 0, 'without_shift' => 0, 'occupied' => 0, 'unchanged' => 0],
+    ];
+
     public function __construct(private Connection $db, private WorkModels $models) {}
 
     /** Return only stored entries still matching the employee's current plan and actual evidence. */
@@ -17,7 +22,7 @@ final class HolidayEntries
         $saved = $this->stored($employee, $from, $until);
         $possible = array_intersect_key($candidates, $saved);
         $visible = [];
-        foreach ($this->emptyDays($employee, $sid, $possible) as $day => $entry) {
+        foreach (array_diff_key($possible, $this->occupiedDays($employee, $sid, array_keys($possible))) as $day => $entry) {
             if ($saved[$day]['account'] === $entry['account'] && $saved[$day]['ranges'] === $entry['ranges']) {
                 $visible[$day] = $saved[$day];
             }
@@ -53,10 +58,24 @@ final class HolidayEntries
         }
     }
 
+    public function reconcileBreakRule(string $effective, int $actor): void
+    {
+        $next = $this->db->createQueryBuilder()->select('min(effective_on)')->from('attendance_account_break')
+            ->where("account = 'PRACE'", 'effective_on > :effective')->setParameter('effective', $effective)->fetchOne();
+        $entries = $this->db->createQueryBuilder()->select('employee', 'day')->from('generated_holiday_entry')
+            ->where('day >= :effective')->setParameter('effective', $effective);
+        if ($next) $entries->andWhere('day < :next')->setParameter('next', $next);
+        $details = null;
+        foreach ($entries->fetchAllAssociative() as $entry) {
+            $day = WorkModels::day($entry['day']);
+            $this->reconcile($entry['employee'], $day, $day->modify('+1 day'), false, $actor, $details);
+        }
+    }
+
     /** Reconcile each employee in one transaction per month, using the same lock as API writers. */
     public function fill(Date $from, Date $until, bool $dryRun, ?array $scope = null, ?int $actor = null, ?array &$details = null): array
     {
-        $counts = ['added' => 0, 'changed' => 0, 'removed' => 0];
+        $counts = self::EMPTY_RESULT;
         if ($scope === []) return $counts;
         for ($first = $from; $first < $until; $first = $end) {
             $end = min($first->modify('first day of next month'), $until);
@@ -72,7 +91,8 @@ final class HolidayEntries
                     $this->db->executeStatement('SELECT pg_advisory_xact_lock(718312)');
                     return $this->reconcile((int) $id, $first, $end, $dryRun, $actor, $details);
                 });
-                foreach ($counts as $key => $value) $counts[$key] += $changes[$key];
+                foreach (['added', 'changed', 'removed'] as $key) $counts[$key] += $changes[$key];
+                foreach ($changes['skipped'] as $key => $value) $counts['skipped'][$key] += $value;
             }
         }
         return $counts;
@@ -82,19 +102,27 @@ final class HolidayEntries
     {
         $person = $this->db->createQueryBuilder()->select('attendance_enabled', 'starts', 'LEAST(ends, archived_on) AS last_day', 'sid')
             ->from('employee')->where('id = :id')->setParameter('id', $employee)->fetchAssociative();
+        $counts = self::EMPTY_RESULT;
         $wanted = [];
         if ($person && $person['attendance_enabled']) {
             $start = max($from, WorkModels::day($person['starts']));
             $end = $person['last_day'] ? min($until, WorkModels::day($person['last_day'])->modify('+1 day')) : $until;
-            $plan = $this->models->plan($employee, $start, $end, includeUnassignedDays: false);
-            $wanted = $this->emptyDays($employee, $person['sid'], $plan['credits']);
+            $plan = $this->models->plan($employee, $start, $end);
+            $occupied = $this->occupiedDays($employee, $person['sid'], array_keys($plan['calendarDays']));
+            $wanted = array_diff_key($plan['credits'], $occupied);
+            $withoutCredit = array_diff_key($plan['calendarDays'], $plan['credits']);
+            $counts['skipped']['missing_model'] = count(array_diff_key($withoutCredit, $plan['schedule']));
+            $counts['skipped']['without_shift'] = count(array_intersect_key($withoutCredit, $plan['schedule']));
+            $counts['skipped']['occupied'] = count($occupied);
         }
         $saved = $this->stored($employee, $from, $until);
-        $counts = ['added' => 0, 'changed' => 0, 'removed' => 0];
         foreach (array_unique(array_merge(array_keys($saved), array_keys($wanted))) as $day) {
             $before = $saved[$day] ?? null;
             $after = $wanted[$day] ?? null;
-            if ($before && $after && $before['account'] === $after['account'] && $before['ranges'] === $after['ranges']) continue;
+            if ($before && $after && $before['account'] === $after['account'] && $before['ranges'] === $after['ranges']) {
+                $counts['skipped']['unchanged']++;
+                continue;
+            }
             $key = ['employee' => $employee, 'day' => $day];
             $change = $after === null ? 'removed' : ($before === null ? 'added' : 'changed');
             $counts[$change]++;
@@ -142,10 +170,10 @@ final class HolidayEntries
         return $entries;
     }
 
-    private function emptyDays(int $employee, ?string $sid, array $candidates): array
+    private function occupiedDays(int $employee, ?string $sid, array $days): array
     {
-        if (!$candidates) return [];
-        // Compare only scheduled holidays. A shift absence already skips these dates.
+        if (!$days) return [];
+        // A shift absence already skips holidays.
         $occupied = $this->db->executeQuery(<<<'SQL'
             WITH days AS (SELECT value::date AS day FROM jsonb_array_elements_text(CAST(:days AS jsonb)))
             SELECT day FROM days d WHERE EXISTS (
@@ -156,8 +184,8 @@ final class HolidayEntries
                 SELECT FROM signal_session s WHERE s.sid = :sid AND s.service_at IS NULL
                 AND tstzrange(s.first_event, s.last_event, '[]') && tstzrange(d.day::timestamptz, (d.day + 1)::timestamptz, '[)')
             )
-            SQL, ['days' => json_encode(array_keys($candidates), JSON_THROW_ON_ERROR), 'employee' => $employee, 'sid' => $sid])
+            SQL, ['days' => json_encode($days, JSON_THROW_ON_ERROR), 'employee' => $employee, 'sid' => $sid])
             ->fetchFirstColumn();
-        return array_diff_key($candidates, array_flip($occupied));
+        return array_flip($occupied);
     }
 }

@@ -160,15 +160,12 @@ p, small {
     border-top: 1px solid var(--p-content-border-color);
 }
 
-.page-heading, .record {
+.record {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
-}
-
-.page-heading {
-    margin-block: .5rem;
+    padding-block: .85rem;
 }
 
 .month-controls .p-datepicker {
@@ -181,10 +178,6 @@ p, small {
 
 .reload-button {
     justify-self: start;
-}
-
-.record {
-    padding-block: .85rem;
 }
 
 .record + .record {
@@ -224,20 +217,46 @@ p, small {
     margin-bottom: .75rem;
 }
 
-.sheet-toolbar, .sheet-toolbar .p-toolbar-start, .sheet-toolbar .p-toolbar-end {
+.daily-toolbar time {
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.toolbar-card {
+    --p-card-body-padding: .75rem 1rem;
+}
+
+.toolbar-card .p-toolbar {
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.toolbar-card :is(.p-toolbar, .p-toolbar-start, .p-toolbar-end) {
     flex-wrap: wrap;
     gap: .6rem;
 }
 
-.sheet-toolbar .p-toolbar-start {
-    align-items: center;
+.toolbar-card :is(.p-toolbar-start, .p-toolbar-end) {
     min-width: 0;
     max-width: 100%;
 }
 
-.sheet-toolbar .p-toolbar-end {
+.toolbar-card .p-toolbar-start {
+    align-items: center;
+}
+
+.toolbar-card .p-toolbar-end {
     margin-inline-start: auto;
     justify-content: flex-end;
+}
+
+.toolbar-card .p-toolbar > :empty {
+    display: none;
+}
+
+.toolbar-card + :is(.table-region, .p-datatable, .p-treetable) {
+    margin-block-start: .75rem;
 }
 
 .period-selector, .period-selector .field {
@@ -523,7 +542,7 @@ code {
 }
 
 @media (max-width: 640px) {
-    .page-heading, .record {
+    .record {
         align-items: flex-start;
         flex-direction: column;
     }
@@ -536,10 +555,6 @@ code {
     .identity {
         width: 100%;
         justify-content: space-between;
-    }
-
-    .page-heading .fields {
-        width: 100%;
     }
 
     .fields .field {
@@ -565,8 +580,46 @@ code {
     margin-block: .5rem;
 }
 
-.scope-heading {
-    justify-content: flex-end;
+.model-editor-dialog {
+    width: min(940px, 94vw);
+}
+
+.model-details, .model-copy-targets {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+    gap: .45rem .65rem;
+}
+
+.model-week :is(th, td) {
+    white-space: nowrap;
+}
+
+.model-week .p-inputtext {
+    width: 100%;
+    min-width: 5.5rem;
+}
+
+.model-break {
+    display: flex;
+    gap: .25rem;
+    align-items: center;
+}
+
+.model-break input.p-inputtext {
+    width: 6.8rem;
+}
+
+.model-day-actions {
+    display: flex;
+    gap: .15rem;
+}
+
+.model-copy-targets {
+    margin: .35rem 0;
+    padding: .45rem .65rem;
+    min-width: 0;
+    border: 1px solid var(--p-content-border-color);
+    border-radius: .35rem;
 }
 
 .weekly-model {

@@ -69,6 +69,10 @@ final class Devices
         $device = $this->em->getRepository(Device::class)->findOneBy(['id' => $deviceId, 'revoked' => false]);
         if (!$device) throw new Problem('Přístup zařízení odebrán.', 401);
         $device->seen = new DateTimeImmutable();
+        $version = $input['agent_version'] ?? null;
+        if (is_string($version) && strlen($version) <= 64 && preg_match('/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/D', $version)) {
+            $device->agentVersion = $version;
+        }
         $warning = $input['warning'] ?? null;
         if (is_string($warning) && $warning !== '') {
             $this->db->executeStatement('INSERT INTO device_warning(device,message) VALUES(?,?) ON CONFLICT(device,message) DO UPDATE SET received=now(),acknowledged=NULL',[$device->id,mb_substr($warning,0,500)]);
@@ -114,7 +118,7 @@ final class Devices
     public function listing(): array
     {
         $this->accounts->actor('admin');
-        return $this->db->fetchAllAssociative('SELECT id,name,seen,revoked,expires,credential IS NOT NULL AS registered, (SELECT string_agg(message,chr(10) ORDER BY received) FROM device_warning WHERE device=device_table.id AND acknowledged IS NULL) AS warnings FROM device device_table ORDER BY id');
+        return $this->db->fetchAllAssociative('SELECT id,name,seen,agent_version,revoked,expires,credential IS NOT NULL AS registered, (SELECT string_agg(message,chr(10) ORDER BY received) FROM device_warning WHERE device=device_table.id AND acknowledged IS NULL) AS warnings FROM device device_table ORDER BY id');
     }
 
     public function register(array $i): array

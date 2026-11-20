@@ -341,6 +341,16 @@ final class Timesheet
             }
             $rows[] = ['day' => $day, 'kind' => 'DOVOLENA', 'from' => '', 'to' => '', 'seconds' => $duration, 'partial_vacation' => true];
         }
+        // Keep the intervals for overlap checks, then publish one duration per full day.
+        $daily = [];
+        foreach ($rows as $index => $row) {
+            if ($row['from'] === '' || ($row['kind'] !== 'DOVOLENA' && empty($row['generated_holiday']))) continue;
+            $key = $row['day'].'/'.$row['kind'];
+            $daily[$key] ??= array_replace($row, ['from' => '', 'to' => '', 'seconds' => 0]);
+            $daily[$key]['seconds'] += strtotime($row['to']) - strtotime($row['from']);
+            unset($rows[$index]);
+        }
+        array_push($rows, ...array_values($daily));
         usort($rows, static function (array $a, array $b): int {
             $day = $a['day'] <=> $b['day'];
             if ($day !== 0 || $a['from'] === '' || $b['from'] === '') {
