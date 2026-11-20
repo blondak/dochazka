@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -49,8 +50,11 @@ internal sealed class AttendanceService : ServiceBase
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+', 2)[0];
     private readonly CancellationTokenSource stop = new();
     private readonly TaskCompletionSource<CancellationToken> shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Channel<DesktopChange> desktopChanges = Channel.CreateUnbounded<DesktopChange>(new UnboundedChannelOptions { SingleReader = true });
     private Task? worker;
     private Task? serviceSessions;
+
+    private record DesktopChange(int SessionId, string At, bool IsLogon, Journal.DesktopAccount? Account);
 
     [STAThread]
     public static void Main(string[] args)
@@ -62,7 +66,7 @@ internal sealed class AttendanceService : ServiceBase
         }
         if (args.SequenceEqual(new[] { "--self-test" }))
         {
-            if (ServiceSessionPipe.FormatLogon(0, 0x1b) != "0x1b" || ServiceSessionPipe.FormatLogon(1, 0) != "0x100000000")
+            if (WindowsSessions.FormatLogon(0, 0x1b) != "0x1b" || WindowsSessions.FormatLogon(1, 0) != "0x100000000")
                 throw new InvalidDataException("Unexpected Windows logon ID format.");
             using var systemHandler = new Settings("", "").CreateHandler();
             using var directHandler = new Settings("", "", "Direct").CreateHandler();
@@ -80,6 +84,7 @@ internal sealed class AttendanceService : ServiceBase
             if (journal.Warning() != null) throw new InvalidDataException("SQLite confirmation failed.");
             var signal = new Signal("1", "login", "2026-01-05T08:00:00Z", "S-1-5-21-1-2-3-44", "boot.1");
             VerifyDesktopLogons();
+            VerifyWindowsSessionNotifications();
             using var insert = db.CreateCommand();
             insert.CommandText = "INSERT INTO queue(id,payload) VALUES('1',$payload)";
             insert.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(signal));
@@ -103,7 +108,7 @@ internal sealed class AttendanceService : ServiceBase
             VerifyShutdownDelivery(journal, insert);
             return;
         }
-        Run(new AttendanceService { ServiceName = "DochazkaAgent", CanShutdown = true });
+        Run(new AttendanceService { ServiceName = "DochazkaAgent", CanShutdown = true, CanHandleSessionChangeEvent = true });
     }
 
     private static void VerifyDesktopLogons()
@@ -174,6 +179,68 @@ internal sealed class AttendanceService : ServiceBase
             throw new InvalidDataException("An ordinary desktop session did not produce a login and logoff.");
     }
 
+    private static void VerifyWindowsSessionNotifications()
+    {
+        const string boot = "123";
+        const string sid = "S-1-5-21-1-2-3-44";
+        const string at = "2026-01-05T08:00:00.0000000Z";
+        const string later = "2026-01-05T08:01:00.0000000Z";
+        const string end = "2026-01-05T16:00:00.0000000Z";
+        using var db = new SqliteConnection("Data Source=:memory:");
+        db.Open();
+        var journal = new Journal(db);
+        journal.Initialize();
+
+        void Audit(int eventId, Journal.DesktopAccount account, string recordId, string time)
+        {
+            using var tx = db.BeginTransaction();
+            journal.RecordSecurity(eventId, account, boot, recordId, time, tx);
+            tx.Commit();
+        }
+
+        var desktop = new Journal.DesktopAccount(sid, "0xa1", "0xa2", false);
+        var elevated = new Journal.DesktopAccount(sid, "0xa2", "0xa1", true);
+        journal.RecordWindowsLogon(1, desktop, boot, at);
+        Audit(4624, elevated, "audit-elevated", at);
+        Audit(4624, desktop, "audit-desktop", at);
+        Audit(4634, elevated, "audit-elevated-logoff", later);
+        if (journal.Batch().Count != 1)
+            throw new InvalidDataException("The audit log duplicated a WTS login or ended it prematurely.");
+
+        // The Windows ID mapping survives a service restart and works without a matching 4634.
+        journal = new Journal(db);
+        journal.Initialize();
+        journal.RecordWindowsLogoff(1, "456", end);
+        journal.RecordWindowsLogoff(1, boot, end);
+        journal.RecordWindowsLogoff(1, boot, end);
+        Audit(4634, desktop, "audit-desktop-logoff", end);
+        if (!journal.Batch().SequenceEqual(new[] {
+            new Signal("wts.login.123.0xa1", "login", at, sid, "123.0xa1"),
+            new Signal("wts.logout.123.0xa1", "logout", end, sid, "123.0xa1") }))
+            throw new InvalidDataException("A desktop notification did not close its original session exactly once.");
+
+        Audit(4624, elevated with { LogonId = "0xb2", LinkedLogonId = null }, "audit-first", at);
+        var second = desktop with { LogonId = "0xb1", LinkedLogonId = "0xb2" };
+        journal.RecordWindowsLogon(2, second, boot, later);
+        Audit(4634, second, "audit-fallback", end);
+        journal.RecordWindowsLogoff(2, boot, end);
+        if (!journal.Batch().Skip(2).SequenceEqual(new[] {
+            new Signal("audit-first", "login", at, sid, "123.0xb2"),
+            new Signal("audit-fallback", "logout", end, sid, "123.0xb2") }))
+            throw new InvalidDataException("Security fallback did not retain the first session key.");
+
+        var previouslyOpen = desktop with { LogonId = "0xc1", LinkedLogonId = null };
+        Audit(4624, previouslyOpen, "before-upgrade", at);
+        journal.RecordWindowsLogon(3, previouslyOpen, boot, later, observed: false);
+        journal.RecordWindowsLogoff(3, boot, at);
+        journal.RecordWindowsLogoff(3, boot, end);
+        journal.RecordWindowsLogon(4, previouslyOpen with { LogonId = "0xd1" }, boot, end, observed: false);
+        if (!journal.Batch().Skip(4).SequenceEqual(new[] {
+            new Signal("before-upgrade", "login", at, sid, "123.0xc1"),
+            new Signal("wts.logout.123.0xc1", "logout", end, sid, "123.0xc1") }))
+            throw new InvalidDataException("Startup association invented a login or accepted a stale logoff.");
+    }
+
     protected override void OnStart(string[] args)
     {
         worker = Task.Run(() => Loop(stop.Token));
@@ -205,6 +272,17 @@ internal sealed class AttendanceService : ServiceBase
         StopAndWait(deadline.Token);
     }
 
+    protected override void OnSessionChange(SessionChangeDescription change)
+    {
+        if (change.SessionId <= 0 || change.Reason is not (SessionChangeReason.SessionLogon or SessionChangeReason.SessionLogoff))
+            return;
+        string at = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        bool isLogon = change.Reason == SessionChangeReason.SessionLogon;
+        // Capture the logon token while it exists; the delivery loop may be waiting for HTTPS.
+        var account = isLogon ? WindowsSessions.ReadConsoleUser(change.SessionId) : null;
+        desktopChanges.Writer.TryWrite(new(change.SessionId, at, isLogon, account));
+    }
+
     private void StopAndWait(CancellationToken deadline)
     {
         _ = stop.CancelAsync();
@@ -232,12 +310,57 @@ internal sealed class AttendanceService : ServiceBase
         db.Open();
         var store = new Journal(db);
         store.Initialize();
-        var activity = Channel.CreateBounded<bool>(1);
-        using var desktopWatcher = WatchDesktopActivity(activity.Writer);
+        var pending = new Queue<DesktopChange>();
+        string? boot = null;
+        bool bound = false;
+        long? lastPoll = null;
+
+        string? Collect(CancellationToken token, bool history)
+        {
+            while (desktopChanges.Reader.TryRead(out var change)) pending.Enqueue(change);
+            if (boot == null)
+            {
+                try
+                {
+                    string marker = Journal.Boot(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+                    if (marker != "unknown") boot = marker;
+                }
+                catch (Exception error) when (error is EventLogException or UnauthorizedAccessException)
+                {
+                    // The historical collector reports the read failure. Keep notifications for the next pass.
+                }
+            }
+            if (boot != null)
+            {
+                while (pending.TryDequeue(out var notice))
+                {
+                    if (notice.IsLogon) store.RecordWindowsLogon(notice.SessionId, notice.Account, boot, notice.At);
+                    else store.RecordWindowsLogoff(notice.SessionId, boot, notice.At);
+                }
+            }
+            if (!history) return null;
+
+            string? fault = CollectEvents(store, installed, token);
+            if (boot != null && !bound && !token.IsCancellationRequested && WindowsSessions.SessionIds() is { } sessions)
+            {
+                // An upgrade or restart can happen while users are logged on.
+                string observedAt = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+                foreach (int sessionId in sessions)
+                {
+                    if (WindowsSessions.ReadConsoleUser(sessionId) is { } account)
+                        store.RecordWindowsLogon(sessionId, account, boot, observedAt, observed: false);
+                }
+                bound = fault == null;
+            }
+            return fault;
+        }
+
         long? lastContact = null;
         while (!cancel.IsCancellationRequested)
         {
-            var fault = CollectEvents(store, installed, cancel);
+            bool historyDue = lastPoll is null || Stopwatch.GetElapsedTime(lastPoll.Value) >= CollectionInterval;
+            if (historyDue) lastPoll = Stopwatch.GetTimestamp();
+            var fault = Collect(cancel, historyDue);
             try
             {
                 bool heartbeatDue = lastContact is null || Stopwatch.GetElapsedTime(lastContact.Value) >= HeartbeatInterval;
@@ -246,11 +369,21 @@ internal sealed class AttendanceService : ServiceBase
             }
             catch (OperationCanceledException) when (cancel.IsCancellationRequested) { break; }
             catch (Exception e) { fault = e.Message; }
-            if (fault != null) EventLog.WriteEntry("DochazkaAgent", fault, EventLogEntryType.Warning);
+            if (fault != null)
+            {
+                try { EventLog.WriteEntry(ServiceName, fault, EventLogEntryType.Warning); }
+                catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException
+                    or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    // The event log service can also be unavailable when recording the warning.
+                }
+            }
 
             using var nextPoll = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-            nextPoll.CancelAfter(CollectionInterval);
-            try { await activity.Reader.ReadAsync(nextPoll.Token); }
+            var untilPoll = CollectionInterval - Stopwatch.GetElapsedTime(lastPoll!.Value);
+            if (untilPoll <= TimeSpan.Zero) continue;
+            nextPoll.CancelAfter(untilPoll);
+            try { await desktopChanges.Reader.WaitToReadAsync(nextPoll.Token); }
             catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { }
             catch (OperationCanceledException) { break; }
         }
@@ -261,36 +394,13 @@ internal sealed class AttendanceService : ServiceBase
             try
             {
                 await ShutdownDelivery.Run(
-                    token => CollectEvents(store, installed, token),
+                    token => Collect(token, history: true),
                     token => SendBatch(store, http, uri, sendHeartbeat: false, token),
                     deadline);
             }
             catch (OperationCanceledException) when (deadline.IsCancellationRequested) { }
         }
-    }
-
-    private static EventLogWatcher? WatchDesktopActivity(ChannelWriter<bool> activity)
-    {
-        var query = new EventLogQuery("Security", PathType.LogName,
-            "*[System[EventID=4624 or EventID=4634] and EventData[Data[@Name='LogonType']='2' or Data[@Name='LogonType']='11']]");
-        var watcher = new EventLogWatcher(query, bookmark: null, readExistingEvents: false);
-        watcher.EventRecordWritten += (_, notification) =>
-        {
-            // Only wake the worker. The journal reads the events in order and owns the cursor.
-            using var record = notification.EventRecord;
-            if (record != null) activity.TryWrite(true);
-        };
-        try
-        {
-            watcher.Enabled = true;
-            return watcher;
-        }
-        catch (Exception error) when (error is EventLogException or UnauthorizedAccessException)
-        {
-            watcher.Dispose();
-            EventLog.WriteEntry("DochazkaAgent", "Sběr poběží v pravidelném cyklu: " + error.Message, EventLogEntryType.Warning);
-            return null;
-        }
+        else Collect(cancel, history: false);
     }
 
     private static string? CollectEvents(Journal store, DateTime installed, CancellationToken cancel)

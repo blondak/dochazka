@@ -3,12 +3,10 @@ using System.IO.Pipes;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
 using Microsoft.Data.Sqlite;
-using Microsoft.Win32.SafeHandles;
 
 namespace Dochazka.Agent;
 
@@ -70,9 +68,7 @@ internal static class ServiceSessionPipe
             {
                 using var identity = WindowsIdentity.GetCurrent(ifImpersonating: true);
                 sid = identity?.User?.Value;
-                if (identity == null || !GetTokenInformation(identity.AccessToken, 10, out var data,
-                    Marshal.SizeOf<TokenStatistics>(), out _)) return;
-                logon = FormatLogon(data.AuthenticationId.High, data.AuthenticationId.Low);
+                if (identity != null) logon = WindowsSessions.ReadLogonId(identity.AccessToken);
             });
             if (sid == null || logon == null || !sid.StartsWith("S-1-5-21-", StringComparison.Ordinal)) return "2";
             var boot = Journal.Boot(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
@@ -103,29 +99,5 @@ internal static class ServiceSessionPipe
     }
 
     private static bool IsCode(string code) => code.Length == 64 && code.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
-    internal static string FormatLogon(int high, uint low) => "0x" + (unchecked((ulong)(uint)high << 32) | low).ToString("x", CultureInfo.InvariantCulture);
-
     private record SessionLink(string Code);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Luid
-    {
-        public uint Low;
-        public int High;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct TokenStatistics
-    {
-        public Luid TokenId, AuthenticationId;
-        public long Expiration;
-        public int Type, ImpersonationLevel;
-        public uint DynamicCharged, DynamicAvailable, GroupCount, PrivilegeCount;
-        public Luid ModifiedId;
-    }
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetTokenInformation(SafeAccessTokenHandle token, int informationClass,
-        out TokenStatistics value, int size, out int required);
 }

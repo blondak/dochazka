@@ -119,7 +119,7 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 1. Rozbalte balíček **agent-v0.0.6-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
 2. V centrále na kartě **Zařízení** zaregistrujte stanici. Kód uložte jako **JMENO-POCITACE.txt** do adresáře s registracemi. Na sdílení dejte každému počítačovému účtu právo číst jen jeho vlastní kód. Registraci proveďte během hodinové platnosti.
 3. Při pilotu spusťte příkaz níže jako správce. Pro nasazení přes Samba AD nastavte stejný příkaz jako spouštěcí PowerShell skript v konfiguraci počítače v doménové GPO. Při aktualizaci změňte **PackagePath** a **Release**. Služba si ponechá lokální frontu i registraci.
-4. V GPO povolte úspěšný audit přihlášení a odhlášení. Na pilotní stanici ověřte párování událostí 4624 a 4634 v protokolu Security a postup při práci bez připojení. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
+4. V GPO povolte úspěšný audit přihlášení a odhlášení pro dočtení z protokolu Security. Na pilotní stanici ověřte přímá oznámení Windows a doručení po výpadku sítě. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
 
 ~~~powershell
 & '\\server\dochazka\agent-v0.0.6\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.6' -Release '0.0.6' -EnrollmentDirectory '\\server\dochazka-registrace'

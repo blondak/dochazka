@@ -26,6 +26,9 @@ internal sealed class Journal(SqliteConnection db)
             CREATE TABLE IF NOT EXISTS desktop_logon(
                 k TEXT PRIMARY KEY, sid TEXT NOT NULL, session_key TEXT NOT NULL, closes_session INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS desktop_logon_session ON desktop_logon(session_key);
+            CREATE TABLE IF NOT EXISTS windows_session(
+                boot TEXT NOT NULL, id INTEGER NOT NULL, sid TEXT NOT NULL, session_key TEXT NOT NULL, observed_at TEXT NOT NULL,
+                PRIMARY KEY(boot,id));
             CREATE TABLE IF NOT EXISTS health(message TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS deferred(event_id TEXT PRIMARY KEY, sid TEXT, first_seen INTEGER, retry_at INTEGER);
             CREATE INDEX IF NOT EXISTS deferred_sid ON deferred(sid);
@@ -176,17 +179,24 @@ internal sealed class Journal(SqliteConnection db)
         }
         if (eventId == 4634)
         {
-            string sessionKey = ResolveSessionKey(key, sid, tx);
-            using var close = Command("""
-                UPDATE sessions SET finish=$p1 WHERE k=$p0 AND sid=$p2 AND finish IS NULL
-                AND NOT EXISTS(SELECT 1 FROM desktop_logon WHERE k=$p3 AND sid=$p2 AND closes_session=0)
-                """, tx, sessionKey, at, sid, key);
-            if (close.ExecuteNonQuery() > 0) Enqueue(new Signal(id, "logout", at, sid, sessionKey), tx);
+            using var secondary = Command("SELECT 1 FROM desktop_logon WHERE k=$p0 AND sid=$p1 AND closes_session=0", tx, key, sid);
+            if (secondary.ExecuteScalar() == null)
+                CloseSession(ResolveSessionKey(key, sid, tx), sid, id, at, tx);
             return;
         }
 
         string existingKey = ResolveSessionKey(key, sid, tx);
-        if (HasSession(existingKey, sid, tx)) return;
+        if (HasSession(existingKey, sid, tx))
+        {
+            // A later audit record can identify the second token of an already known session.
+            if (account.LinkedLogonId is { } otherLogon && otherLogon != account.LogonId)
+            {
+                string companionKey = boot + "." + otherLogon;
+                if (!HasSession(companionKey, sid, tx))
+                    RememberDesktopPair(account, key, companionKey, existingKey, tx);
+            }
+            return;
+        }
         if (account.LinkedLogonId is { } linked && linked != account.LogonId)
         {
             string linkedKey = boot + "." + linked;
@@ -210,14 +220,70 @@ internal sealed class Journal(SqliteConnection db)
         using var open = Command("INSERT OR IGNORE INTO sessions(k,sid,begin) VALUES($p0,$p1,$p2)", tx, key, sid, at);
         if (open.ExecuteNonQuery() == 0) return;
         if (account.LinkedLogonId is { } companion && companion != account.LogonId)
-        {
-            using var first = Command("INSERT INTO desktop_logon VALUES($p0,$p1,$p0,$p2)", tx, key, sid, account.Elevated ? 0 : 1);
-            first.ExecuteNonQuery();
-            using var alias = Command("INSERT OR IGNORE INTO desktop_logon VALUES($p0,$p1,$p2,$p3)",
-                tx, boot + "." + companion, sid, key, account.Elevated ? 1 : 0);
-            alias.ExecuteNonQuery();
-        }
+            RememberDesktopPair(account, key, boot + "." + companion, key, tx);
         Enqueue(new Signal(id, "login", at, sid, key), tx);
+    }
+
+    private void RememberDesktopPair(DesktopAccount account, string key, string companion, string sessionKey, SqliteTransaction tx)
+    {
+        using var aliases = Command("INSERT OR IGNORE INTO desktop_logon VALUES($p0,$p1,$p2,$p3),($p4,$p1,$p2,$p5)",
+            tx, key, account.Sid, sessionKey, account.Elevated ? 0 : 1, companion, account.Elevated ? 1 : 0);
+        aliases.ExecuteNonQuery();
+    }
+
+    internal void RecordWindowsLogon(int windowsId, DesktopAccount? account, string boot, string at, bool observed = true)
+    {
+        using var tx = db.BeginTransaction();
+        if (account == null)
+        {
+            // Windows may reuse the session number for another user.
+            using var forget = Command("DELETE FROM windows_session WHERE boot=$p0 AND id=$p1 AND observed_at<=$p2",
+                tx, boot, windowsId, at);
+            forget.ExecuteNonQuery();
+        }
+        else
+        {
+            string key = boot + "." + account.LogonId;
+            if (observed)
+                RecordSecurity(4624, account, boot, "wts.login." + key, at, tx);
+            else if (!HasSession(ResolveSessionKey(key, account.Sid, tx), account.Sid, tx) && account.LinkedLogonId is { } linked)
+                key = boot + "." + linked;
+
+            string sessionKey = ResolveSessionKey(key, account.Sid, tx);
+            using var remember = Command("""
+                INSERT INTO windows_session (boot,id,sid,session_key,observed_at)
+                SELECT $p0,$p1,sid,k,$p2 FROM sessions WHERE k=$p3 AND sid=$p4 AND finish IS NULL
+                ON CONFLICT(boot,id) DO UPDATE SET sid=excluded.sid, session_key=excluded.session_key, observed_at=excluded.observed_at
+                WHERE windows_session.observed_at <= excluded.observed_at
+                """, tx, boot, windowsId, at, sessionKey, account.Sid);
+            remember.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
+    internal void RecordWindowsLogoff(int windowsId, string boot, string at)
+    {
+        using var tx = db.BeginTransaction();
+        string? sessionKey = null, sid = null;
+        using (var lookup = Command("SELECT session_key,sid FROM windows_session WHERE boot=$p0 AND id=$p1 AND observed_at<=$p2",
+            tx, boot, windowsId, at))
+        using (var reader = lookup.ExecuteReader())
+        {
+            if (reader.Read()) { sessionKey = reader.GetString(0); sid = reader.GetString(1); }
+        }
+        if (sessionKey != null && sid != null)
+            CloseSession(sessionKey, sid, "wts.logout." + sessionKey, at, tx);
+        tx.Commit();
+    }
+
+    private void CloseSession(string sessionKey, string sid, string id, string at, SqliteTransaction tx)
+    {
+        using var close = Command("UPDATE sessions SET finish=$p0 WHERE k=$p1 AND sid=$p2 AND finish IS NULL AND begin<=$p0",
+            tx, at, sessionKey, sid);
+        if (close.ExecuteNonQuery() == 0) return;
+        Enqueue(new Signal(id, "logout", at, sid, sessionKey), tx);
+        using var forget = Command("DELETE FROM windows_session WHERE session_key=$p0 AND sid=$p1", tx, sessionKey, sid);
+        forget.ExecuteNonQuery();
     }
 
     private bool HasSession(string key, string sid, SqliteTransaction tx)
