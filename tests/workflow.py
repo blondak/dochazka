@@ -742,7 +742,8 @@ def exercise(connect, php_command):
     manager.call("save-work-row", dict(november, day=day, kind="PRACE", fingerprint=result["fingerprint"],
         **{"from": "14:00", "to": "15:00", "reason": "Kontrola překryvu s dovolenou"}), 422)
 
-    # Keep this historical fixture out of other payroll periods exercised by the Docker browser test.
+    # Keep this historical employee and break rule out of the Docker browser test period.
+    admin.call("attendance-account", dict(account, break_rule=dict(break_rule, effective_on="2025-12-01", enabled=False)))
     historical_person = next(person for person in admin.call("people") if person["id"] == employee)
     admin.call("employee", dict(historical_person, ends="2025-12-31"))
 
