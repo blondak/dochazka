@@ -177,13 +177,33 @@
                     <PvDataTable :value="overview.tasks.filter(t => t.owner === waitingFor)" size="small">
                         <PvColumn field="name" header="Zaměstnanec" sortable />
                         <PvColumn header="Den"><template #body="{data}">{{ day(data.day) }}</template></PvColumn>
-                        <PvColumn field="reason" header="Úkol" />
+                        <PvColumn field="reason" header="Úkol"><template #body="{data}">{{ data.reason }}
+                            <small v-if="data.substitute" class="muted-block">Zastupuje {{ data.substitute }}</small>
+                        </template></PvColumn>
                         <PvColumn><template #body="{data}"><PvButton icon="pi pi-arrow-right" text
                             :aria-label="'Otevřít · ' + data.name + ' · ' + data.reason" v-tooltip.top="'Otevřít detail'"
                             @click="openOverviewDay(data.employee,data.day,data.request)" /></template></PvColumn>
                         <template #empty>Žádné úkoly k vyřízení.</template>
                     </PvDataTable>
                 </template>
+            </PvCard>
+            <PvCard v-if="tab === 'Můj tým' && overview">
+                <template #content><details><summary>Zastupování vedoucích</summary>
+                    <div v-for="entry in overview.covers" :key="entry.id" class="record-actions">
+                        {{ entry.manager_name }} → {{ entry.substitute_name }} · {{ day(entry.starts) }} – {{ day(entry.ends) }}
+                        {{ entry.active ? ' · Aktivní' : '' }}
+                        <PvButton v-if="entry.manager === user.id" label="Odvolat zástup" text
+                            @click="submit('manager-cover',{revoke:entry.id},'Zástup byl odvolán.')" />
+                    </div>
+                    <p v-if="!overview.reviewers?.length">Ve vaší nebo nadřazené jednotce není další aktivovaný vedoucí.</p>
+                    <form v-else class="fields" @submit.prevent="submit('manager-cover',cover,'Zástup byl uložen.')">
+                        <div class="field"><label for="cover-person">Zastupující vedoucí</label>
+                            <PvSelect input-id="cover-person" v-model="cover.substitute" :options="overview.reviewers" option-value="id" option-label="name" /></div>
+                        <label class="field">Od<PvInputText type="date" v-model="cover.starts" :min="today" required /></label>
+                        <label class="field">Do včetně<PvInputText type="date" v-model="cover.ends" :min="cover.starts" required /></label>
+                        <PvButton type="submit" label="Uložit zástup" :disabled="busy || !cover.substitute" />
+                    </form>
+                </details></template>
             </PvCard>
             <PvCard v-if="tab === 'Fond pracovní doby'">
                 <template #content><details><summary>Import zůstatků dovolené</summary>
@@ -690,6 +710,7 @@
             <PvCard>
                 <template #content>
                     <h2>Žádosti za období</h2>
+                    <p v-if="sheet.reviewers">Schvaluje {{ sheet.reviewers.map(r => r.name).join(', ') || '· chybí aktivní vedoucí' }}</p>
                     <label class="check-field">
                         <PvCheckbox :model-value="pendingOnly" binary @update:model-value="setPendingOnly" />
                         Čeká na schválení ({{ sheet.pending }})

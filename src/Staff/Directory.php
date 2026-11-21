@@ -27,6 +27,56 @@ final class Directory
         return $p->summary() + ['managed' => $managed, 'org_unit_path' => $this->units->path($p->orgUnit->id), 'starts' => $p->starts->format('Y-m-d'), 'ends' => $p->attendanceEnd()?->format('Y-m-d')];
     }
 
+    public function reviewers(array $person, string $first, string $last): array
+    {
+        return $this->em->getConnection()->fetchAllAssociative(<<<'SQL'
+            SELECT m.id,m.name FROM org_unit_tree u JOIN employee m ON m.org_unit_id=ANY(u.ancestors)
+            WHERE u.id=? AND m.id<>? AND m.roles @> '["manager"]' AND m.credentials_ready AND m.archived_on IS NULL
+                AND m.starts <= ? AND (m.ends IS NULL OR m.ends >= ?) ORDER BY m.name,m.id
+            SQL, [$person['org_unit_id'],$person['id'],$first,$last]);
+    }
+
+    public function covers(array $actor): array
+    {
+        return $this->em->getConnection()->fetchAllAssociative(<<<'SQL'
+            SELECT c.id,c.starts,c.ends,c.manager,c.substitute,m.name AS manager_name,s.name AS substitute_name,
+                c.starts <= CURRENT_DATE AND s.org_unit_id=ANY(u.ancestors)
+                AND m.roles @> '["manager"]' AND s.roles @> '["manager"]'
+                AND m.archived_on IS NULL AND s.archived_on IS NULL AND m.starts <= CURRENT_DATE AND s.starts <= CURRENT_DATE
+                AND (m.ends IS NULL OR m.ends >= CURRENT_DATE) AND (s.ends IS NULL OR s.ends >= CURRENT_DATE) AS active,
+                m.org_unit_id
+            FROM manager_cover c JOIN employee m ON m.id=c.manager JOIN employee s ON s.id=c.substitute
+            JOIN org_unit_tree u ON u.id=m.org_unit_id
+            WHERE (c.manager=? OR c.substitute=?) AND NOT c.revoked AND c.ends >= CURRENT_DATE ORDER BY c.starts,c.id
+            SQL, [$actor['id'],$actor['id']]);
+    }
+
+    public function setCover(array $input): array
+    {
+        $actor = $this->accounts->actor('manager');
+        $db = $this->em->getConnection();
+        if (isset($input['revoke'])) {
+            if (!$db->executeStatement('UPDATE manager_cover SET revoked=true WHERE id=? AND manager=? AND NOT revoked',
+                [(int)$input['revoke'],$actor['id']])) throw new Problem('Zástup není dostupný.',404);
+            $this->audit->audit($actor['id'], 'cover-revoked', ['id'=>(int)$input['revoke']]);
+            return ['ok'=>true];
+        }
+        $first = self::date($input['starts'] ?? '')->format('Y-m-d');
+        $last = self::date($input['ends'] ?? '')->format('Y-m-d');
+        if ($first < date('Y-m-d') || $last < $first) throw new Problem('Zadejte dnešní nebo budoucí období zástupu.');
+        $substitute = $input['substitute'] ?? null;
+        if (!in_array($substitute, array_column($this->reviewers($actor,$first,$last),'id'), true)) {
+            throw new Problem('Zvolte aktivního vedoucího své nebo nadřazené jednotky.',403);
+        }
+        if ($db->fetchOne('SELECT 1 FROM manager_cover WHERE NOT revoked AND starts <= ? AND ends >= ?
+            AND (manager IN (?,?) OR substitute=?)', [$last,$first,$actor['id'],$substitute,$actor['id']])) {
+            throw new Problem('V období je již domluven kolidující zástup.',409);
+        }
+        $db->insert('manager_cover',['manager'=>$actor['id'],'substitute'=>$substitute,'starts'=>$first,'ends'=>$last]);
+        $this->audit->audit($actor['id'],'cover-assigned', compact('substitute','first','last'));
+        return ['ok'=>true];
+    }
+
     public function managedUnits(array $actor): array
     {
         return array_keys($this->units->managed($actor));

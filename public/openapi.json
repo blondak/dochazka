@@ -1511,6 +1511,66 @@
                 }
             }
         },
+        "/api/v1/manager-cover": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Naplánovat nebo odvolat zástup vedoucího",
+                "operationId": "managerCover",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "substitute": {
+                                        "type": "integer"
+                                    },
+                                    "starts": {
+                                        "type": "string"
+                                    },
+                                    "ends": {
+                                        "type": "string"
+                                    },
+                                    "revoke": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Naplánovat nebo odvolat zástup vedoucího",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
         "/api/v1/me": {
             "post": {
                 "tags": [

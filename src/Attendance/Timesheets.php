@@ -385,7 +385,21 @@ final class Timesheets
                     'reason'=>$fund['review'] ? 'Prověřit odchylky výkazu' : 'Zkontrolovat výkaz'];
             }
         }
-        return compact('people','tasks');
+        if (!$team) return compact('people','tasks');
+        $covers = $this->directory->covers($actor);
+        $reviewers = $this->directory->reviewers($actor,date('Y-m-d'),date('Y-m-d'));
+        $memberUnits = array_column($this->directory->people(), 'org_unit_id', 'id');
+        foreach ($covers as $cover) {
+            if (!$cover['active']) continue;
+            $branch = $this->directory->managedUnits(['roles'=>['manager'],'org_unit_id'=>$cover['org_unit_id']]);
+            foreach ($tasks as &$task) {
+                if ($task['owner'] !== 'manager' || $task['employee'] === $cover['manager'] ||
+                    !in_array($memberUnits[$task['employee']] ?? null, $branch,true)) continue;
+                $task['substitute'] = $cover['substitute_name'];
+            }
+            unset($task);
+        }
+        return compact('people','tasks','covers','reviewers');
     }
 
     public function view(array $i): array
@@ -396,6 +410,7 @@ final class Timesheets
             throw new Problem('Tomuto účtu se docházka nezpracovává.', 403);
         }
         $sheet = $this->sheet($person, $i['month'] ?? date('Y-m'));
+        $sheet['reviewers'] = $this->directory->reviewers($person,date('Y-m-d'),date('Y-m-d'));
         foreach ($sheet['requests'] as $index => $request) {
             foreach (['begins', 'ends', 'decided', 'replaces_from', 'replaces_to', 'actual_from', 'actual_to'] as $field) {
                 if (isset($request[$field])) {

@@ -17,7 +17,7 @@ interface RequestRow {needs_actual?:boolean;actual_from?:string|null;actual_to?:
 interface AttendanceInterval {day:string;from:string;to:string;source:string}
 interface DayIssue {status:'missing'|'review';reasons:string[]}
 interface FundDay {planned:number|null;work:number;absence:number;difference:number|null}
-interface Sheet {fund?:FundDay & {days:Record<string,FundDay>;review:Record<string,number>};
+interface Sheet {reviewers?:Reviewer[];fund?:FundDay & {days:Record<string,FundDay>;review:Record<string,number>};
     approval_tasks?:{code:string;reason:string;owner:string}[];approval_blockers:string[];approval_note_required:boolean;presence?:AttendanceInterval[];breaks?:AttendanceInterval[];
     day_issues?:Record<string,DayIssue>;unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
 interface Device {id:number;name:string;seen:string|null;agent_version:string|null;revoked:boolean;registered:boolean;warnings:string|null}
@@ -25,8 +25,10 @@ interface VacationBalance {year:number;date?:string;requested:number;available:n
 interface VacationEstimate {seconds:number;days:string[];intervals?:{from:string;to:string}[];balances?:VacationBalance[]}
 interface ExportPart {from:string;to:string;seconds:number|null}
 interface ExportChange {employee:number|null;name:string|null;number:string;day:string;code:string;before:ExportPart[];after:ExportPart[]}
-interface TeamTask {employee:number;name:string;reason:string;day:string;request?:number;owner:'manager'|'employee'}
-interface Overview {people:(FundDay & {employee:number;name:string;approved:boolean;days:string[]})[];tasks:TeamTask[]}
+interface Reviewer {id:number;name:string}
+interface Cover {id:number;manager:number;substitute:number;manager_name:string;substitute_name:string;starts:string;ends:string;active:boolean}
+interface TeamTask {substitute?:string;employee:number;name:string;reason:string;day:string;request?:number;owner:'manager'|'employee'}
+interface Overview {reviewers?:Reviewer[];covers?:Cover[];people:(FundDay & {employee:number;name:string;approved:boolean;days:string[]})[];tasks:TeamTask[]}
 interface Payroll {people:{id:number;name:string;approved:boolean}[];versions:{version:number;created:string}[];changed:boolean}
 interface Passkey {id:string;label:string;created:string}
 interface Confirmation {
@@ -200,6 +202,7 @@ export function setupAttendance() {
         return span + (part.seconds === null ? 'kalendářní den' : hours(part.seconds) + (part.seconds % 60 ? ' + ' + part.seconds % 60 + ' s' : ''))
     }
     const overview = ref<Overview|null>(null)
+    const cover = ref({substitute:null as number|null, starts:today.value, ends:today.value})
     const waitingFor = ref<'manager'|'employee'>('manager')
     async function openOverviewDay(employee:number, key:string, request?:number) {
         await navigate({tab:request ? 'Žádosti' : 'Výkaz', person:employee, month:key.slice(0,7), pendingOnly:false})
@@ -1550,7 +1553,7 @@ export function setupAttendance() {
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
-        balanceText, balanceDate, balanceFile, balanceFileInput, importBalances, exportComparison, compareExport, exportPart, overview, waitingFor, openOverviewDay, signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
+        balanceText, balanceDate, balanceFile, balanceFileInput, importBalances, exportComparison, compareExport, exportPart, overview, cover, waitingFor, openOverviewDay, signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
         mobileLayout, dayChooserOpen, toggleDayChooser, monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromTask, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,

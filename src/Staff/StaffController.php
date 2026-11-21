@@ -106,4 +106,29 @@ NEON)]
     {
         return $this->json->respond($request, $response, fn(array $input) => $this->service->invite($input));
     }
+    #[Path('/manager-cover'), Method('POST'), LoggedIn, Role('manager')]
+    #[OpenApi(<<<'NEON'
+operationId: managerCover
+summary: "Naplánovat nebo odvolat zástup vedoucího"
+tags: [Evidence]
+security: [{session: []}]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+requestBody:
+    content:
+        application/json:
+            schema: {type: object, properties: {substitute: {type: integer}, starts: {type: string}, ends: {type: string}, revoke: {type: integer}}}
+responses:
+    '200':
+        description: "Naplánovat nebo odvolat zástup vedoucího"
+        content:
+            application/json:
+                schema: {type: object}
+    '403': {$ref: '#/components/responses/Error403'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    public function managerCover(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, fn(array $input) => $this->service->setCover($input));
+    }
+
 }
