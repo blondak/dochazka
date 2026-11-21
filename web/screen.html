@@ -122,7 +122,7 @@
                     :can-show-all-people="canShowAllPeople" :show-all-people="showAllPeople" @show-all-people="setShowAllPeople"
                     @select-person="selectPerson" @edit-person="editPerson(selectedPerson)" @select-month="selectMonth" @move-month="moveMonth" />
                 <div v-if="tab === 'Výkaz' && sheet && canReview" class="sheet-actions">
-                    <PvButton icon="pi pi-plus" aria-label="Přidat konto" title="Přidat konto" v-tooltip.focus.bottom="'Přidat konto'"
+                    <PvButton icon="pi pi-plus" aria-label="Přidat záznam do výkazu" title="Přidat záznam do výkazu" v-tooltip.focus.bottom="'Přidat záznam do výkazu'"
                         size="small" :disabled="busy" @click="editWork()" />
                     <PvButton icon="pi pi-list-check" aria-label="Kontrolní chod" title="Kontrolní chod" v-tooltip.focus.bottom="'Kontrolní chod'"
                         size="small" severity="secondary" outlined :disabled="busy" @click="openEditor({kind:'holiday-control',employee:person})" />
@@ -1183,7 +1183,7 @@
 </PvDialog>
 
 <PvDialog :visible="editor?.kind === 'work'" @update:visible="dismissEditor" modal
-    :header="editor?.row === undefined ? 'Přidat konto' : 'Upravit pracovní úsek'"
+    :header="editor?.row === undefined ? 'Přidat záznam do výkazu' : 'Upravit pracovní úsek'"
     class="editor-dialog" :closable="!busy" :close-on-escape="!busy">
     <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
     <form class="stack" @submit.prevent="submitWorkCorrection">

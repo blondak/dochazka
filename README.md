@@ -84,7 +84,7 @@ V místním testovacím prostředí spusťte `bash bin/test-environment.sh fill-
 15 3 * * * cd /cesta/k/centrale && docker compose exec -T app php bin/console attendance:fill-holidays
 ```
 
-Při otevření aktuálního měsíce výkaz vybere dnešek, pokud spadá do období evidence. **Přidat konto** v liště nad dny a detailem umožní vedoucímu zapsat například přítomnost, lékaře či celou směnu dovolené. Před zápisem dovolené ukáže výkaz čerpání podle pracovního modelu. Zápis vedoucího se rovnou započítá. U pracovního úseku může vedoucí později upravit začátek a konec. Uvede důvod a úprava se objeví v **Žádostech**. Audit ukládá autora, důvod a původní i nový čas. Windows relace zůstávají dostupné podle oprávnění. Uznaná doba vstupuje do výkazu a exportu a upravený výkaz vyžaduje nové schválení.
+Při otevření aktuálního měsíce výkaz vybere dnešek, pokud spadá do období evidence. **Přidat záznam do výkazu** v liště nad dny a detailem umožní vedoucímu zapsat například přítomnost, lékaře či celou směnu dovolené. Před zápisem dovolené ukáže výkaz čerpání podle pracovního modelu. Zápis vedoucího se rovnou započítá. U pracovního úseku může vedoucí později upravit začátek a konec. Uvede důvod a úprava se objeví v **Žádostech**. Audit ukládá autora, důvod a původní i nový čas. Windows relace zůstávají dostupné podle oprávnění. Uznaná doba vstupuje do výkazu a exportu a upravený výkaz vyžaduje nové schválení.
 
 Vedoucí v **Denním přehledu** vidí stav členů vlastní jednotky a všech podřízených jednotek podle dnešních událostí Windows a součet uzavřených pracovních relací. Servisní přihlášení do součtu ani do stavu přítomnosti nevstupuje.
 
