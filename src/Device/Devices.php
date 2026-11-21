@@ -63,23 +63,34 @@ final class Devices
         return ['token' => $secret];
     }
 
-    public function accept(int $deviceId, array $input): array
+    public function accept(int $deviceId, #[\SensitiveParameter] string $authorization, array $input): array
     {
-        // Revocation may have committed while this request waited for the transaction lock.
-        $device = $this->em->getRepository(Device::class)->findOneBy(['id' => $deviceId, 'revoked' => false]);
-        if (!$device) throw new Problem('Přístup zařízení odebrán.', 401);
-        $device->seen = new DateTimeImmutable();
-        $version = $input['agent_version'] ?? null;
-        if (is_string($version) && strlen($version) <= 64 && preg_match('/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/D', $version)) {
-            $device->agentVersion = $version;
-        }
+        return $this->db->transactional(function () use ($deviceId, $authorization, $input): array {
+            // Coordinate with directory changes, while allowing other stations to ingest concurrently.
+            $this->db->executeStatement('SELECT pg_advisory_xact_lock_shared(718312)');
+            $version = $input['agent_version'] ?? null;
+            if (!is_string($version) || strlen($version) > 64 || !preg_match('/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/D', $version)) {
+                $version = null;
+            }
+            // Lock just this station and recheck its token after any concurrent rotation or revocation.
+            $updated = $this->db->executeStatement(
+                'UPDATE device SET seen=CURRENT_TIMESTAMP(0), agent_version=COALESCE(?,agent_version) WHERE id=? AND NOT revoked AND credential=?',
+                [$version, $deviceId, hash('sha256', substr($authorization, strlen('Bearer ')))],
+            );
+            if (!$updated) throw new Problem('Přístup zařízení odebrán.', 401);
+            return $this->recordBatch($deviceId, $input);
+        });
+    }
+
+    private function recordBatch(int $deviceId, array $input): array
+    {
         $warning = $input['warning'] ?? null;
         if (is_string($warning) && $warning !== '') {
-            $this->db->executeStatement('INSERT INTO device_warning(device,message) VALUES(?,?) ON CONFLICT(device,message) DO UPDATE SET received=now(),acknowledged=NULL',[$device->id,mb_substr($warning,0,500)]);
+            $this->db->executeStatement('INSERT INTO device_warning(device,message) VALUES(?,?) ON CONFLICT(device,message) DO UPDATE SET received=now(),acknowledged=NULL',[$deviceId,mb_substr($warning,0,500)]);
         }
         $resolved = $input['resolved_warning'] ?? null;
         if (is_string($resolved) && $resolved !== '' && $resolved !== $warning) {
-            $this->db->executeStatement('UPDATE device_warning SET acknowledged=now() WHERE device=? AND message=? AND acknowledged IS NULL', [$device->id, mb_substr($resolved, 0, 500)]);
+            $this->db->executeStatement('UPDATE device_warning SET acknowledged=now() WHERE device=? AND message=? AND acknowledged IS NULL', [$deviceId, mb_substr($resolved, 0, 500)]);
         }
         $events = $input['events'] ?? null;
         if (!is_array($events) || !array_is_list($events) || count($events)>250) throw new Problem('Očekávána dávka do 250 událostí.');
@@ -104,7 +115,7 @@ final class Devices
                 } else {
                     // This insert preserves subsecond timestamps and handles retransmissions atomically.
                     $at = $happened->format('Y-m-d H:i:s.uP');
-                    $args = [$device->id,$id,$e['kind'],$at,$sid,$e['session']];
+                    $args = [$deviceId,$id,$e['kind'],$at,$sid,$e['session']];
                     $inserted = $this->db->executeStatement('INSERT INTO signal(device,event_id,kind,happened,sid,session_key) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING',$args);
                     $status = $inserted ? 'accepted' : 'duplicate';
                     if (!$inserted && !$this->db->fetchOne('SELECT 1 FROM signal WHERE device=? AND event_id=? AND kind=? AND happened=? AND sid=? AND session_key=?',$args)) $status='conflict';

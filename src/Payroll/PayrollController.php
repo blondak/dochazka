@@ -54,7 +54,7 @@ NEON)]
     #[LoggedIn, Role('payroll')]
     public function close(ApiRequest $request,ApiResponse $response): ApiResponse
     {
-        return $this->json->respond($request, $response, fn(array $input) => $this->service->close($input));
+        return $this->json->respond($request, $response, fn(array $input) => $this->service->close($input), transaction: false);
     }
 
     #[Path('/download'), Method('POST')]

@@ -82,7 +82,7 @@ NEON)]
     #[LoggedIn, Role('admin')]
     public function devices(ApiRequest $request,ApiResponse $response): ApiResponse
     {
-        return $this->json->respond($request, $response, fn(array $input) => $this->service->listing());
+        return $this->json->respond($request, $response, fn() => $this->service->listing(), readOnly: true);
     }
 
     #[Path('/enroll'), Method('POST')]
@@ -180,6 +180,8 @@ NEON)]
     #[DeviceToken]
     public function events(ApiRequest $request,ApiResponse $response): ApiResponse
     {
-        return $this->json->respond($request, $response, fn(array $input) => $this->service->accept($request->getAttribute(ApiAccessMiddleware::DEVICE_ID), $input));
+        return $this->json->respond($request, $response, fn(array $input) => $this->service->accept(
+            $request->getAttribute(ApiAccessMiddleware::DEVICE_ID), $request->getHeaderLine('Authorization'), $input,
+        ), transaction: false);
     }
 }

@@ -1,4 +1,5 @@
 """Exercise the actual HTTP endpoints against an isolated schema in a test PostgreSQL database."""
+from contextlib import contextmanager
 import http.client
 import json
 import os
@@ -20,6 +21,20 @@ pw = secrets.token_hex(12)
 
 def sql(statement):
     subprocess.run(["psql", "-X", "-v", "ON_ERROR_STOP=1", "-c", statement], env=env, check=True, stdout=subprocess.DEVNULL)
+
+@contextmanager
+def hold_database_locks(statement):
+    with subprocess.Popen(["psql", "-XqAt", "-v", "ON_ERROR_STOP=1"], env=env, stdin=subprocess.PIPE,
+                          stdout=subprocess.PIPE, text=True) as db:
+        try:
+            db.stdin.write("BEGIN;\n" + statement + "\n\\echo ready\n")
+            db.stdin.flush()
+            while (line := db.stdout.readline()) and line.strip() != "ready":
+                pass
+            assert line, "Lock transaction failed"
+            yield
+        finally:
+            db.stdin.close()  # Closing this connection releases its transaction locks.
 
 def php(*args, data=None):
     subprocess.run([PHP, *args], input=data, cwd=ROOT, env=env, text=True, check=True)
@@ -49,7 +64,7 @@ class Client:
         assert response.status == status, (op, response.status, raw[:1000])
         return json.loads(raw)
 
-def exercise(connect, php_command):
+def exercise(connect, php_command, check_locks=False):
     def fill(first, last, *options):
         return subprocess.check_output([*php_command, "bin/console", "attendance:fill-holidays",
                                         "--from=" + first, "--to=" + last, *options], cwd=ROOT, env=env, text=True)
@@ -105,6 +120,10 @@ def exercise(connect, php_command):
     anonymous.call("enroll", registration, 401, web=False)
     anonymous.call("sheet", scope, 401, token=token)
     assert admin.call("devices")[0]["agent_version"] is None
+    if check_locks:
+        with hold_database_locks("LOCK TABLE export IN SHARE ROW EXCLUSIVE MODE; SELECT pg_advisory_xact_lock_shared(718312);"):
+            assert anonymous.call("events", {"events":[]}, token=token, web=False)["results"] == []
+            assert admin.call("devices")
     emp.call("devices", status=403)
     events = [{"id":str(i),"session":"boot.1","sid":sid,"kind":kind,
                "at":datetime.fromisoformat(month+"-03T"+hour+":00").replace(tzinfo=zone).isoformat()}
@@ -265,6 +284,10 @@ def exercise(connect, php_command):
     assert all("note" not in r and "reason" not in r for r in payroll.call("sheet", scope)["requests"])
     manager.call("approve",dict(scope,fingerprint=sheet["fingerprint"]))
     version=payroll.call("close",scope)["versions"][0]["version"]
+    if check_locks:
+        with hold_database_locks("SELECT pg_advisory_xact_lock(718312);"):
+            assert payroll.call("close", scope)["versions"][0]["version"] == version
+
     csv=payroll.call("download",dict(scope,version=version))["csv"]
     assert "T" in payroll.call("payroll", scope)["versions"][0]["created"]
     assert "LEKAR" in csv and len(csv.splitlines())==4
@@ -928,7 +951,7 @@ def exercise_development():
                     return http.client.HTTPConnection("127.0.0.1", port, timeout=10)
 
                 exercise_setup(connect, token)
-                exercise(connect, [PHP])
+                exercise(connect, [PHP], check_locks=True)
                 sql("""DO $$ BEGIN
                     IF NOT EXISTS (SELECT 1 FROM audit a JOIN employee e ON e.id = a.actor
                         WHERE a.action='attendance-correction' AND e.login='managerA'

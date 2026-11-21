@@ -91,8 +91,13 @@ final class Exports
 
     public function close(array $i): array
     {
-        $who=$this->accounts->actor('payroll')['id'];
-        return $this->payroll($i['month'] ?? date('Y-m'),$who);
+        return $this->em->wrapInTransaction(function () use ($i): array {
+            $this->db->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            // Serialize export versions before the first snapshot is taken. Later arrivals belong to the next version.
+            $this->db->executeStatement('LOCK TABLE export IN SHARE ROW EXCLUSIVE MODE');
+            $who = $this->accounts->actor('payroll')['id'];
+            return $this->payroll($i['month'] ?? date('Y-m'), $who);
+        });
     }
 
     public function download(array $i): array
