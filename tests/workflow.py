@@ -287,7 +287,7 @@ def exercise(connect, php_command, check_locks=False):
     assert sheet["missing_proofs"] == 0
     assert next(r for r in sheet["requests"] if r["id"] == req["id"])["note"] == visit["note"]
     assert all("note" not in r and "reason" not in r for r in payroll.call("sheet", scope)["requests"])
-    manager.call("approve",dict(scope,fingerprint=sheet["fingerprint"]))
+    manager.call("approve",dict(scope,fingerprint=sheet["fingerprint"],note="Zkontrolovány plánované směny."))
     version=payroll.call("close",scope)["versions"][0]["version"]
     if check_locks:
         with hold_database_locks("SELECT pg_advisory_xact_lock(718312);"):
@@ -303,7 +303,7 @@ def exercise(connect, php_command, check_locks=False):
     assert payroll.call("payroll",scope)["changed"]
     payroll.call("close",scope,409)
     sheet=manager.call("sheet",scope)
-    manager.call("approve",dict(scope,fingerprint=sheet["fingerprint"]))
+    manager.call("approve",dict(scope,fingerprint=sheet["fingerprint"],note="Zkontrolovány plánované směny."))
     assert len(payroll.call("close",scope)["versions"])==2
     assert payroll.call("download",dict(scope,version=version))["csv"]==csv
     assert len(payroll.call("close", scope)["versions"]) == 2
@@ -389,7 +389,7 @@ def exercise(connect, php_command, check_locks=False):
 
     manager.call("login", {"login": "managerA", "password": pw})
     manager.call("attendance-merge-settings", status=403)
-    assert admin.call("attendance-merge-settings") == {"gap_minutes": 0}
+    assert admin.call("attendance-merge-settings") == {"gap_minutes": 0, "fund_tolerance": 15}
     admin.call("attendance-merge-limit", {"gap_minutes": -1}, 422)
     merge_day = day_start.date().isoformat()
     current_scope = {"employee": uid, "month": merge_day[:7]}
@@ -517,7 +517,7 @@ def exercise(connect, php_command, check_locks=False):
     subject_login.call("request-proof-upload", dict(claim, photo=photo))
     payroll.call("request-proof", claim, 404)
     catalog_sheet = manager.call("sheet", catalog_scope)
-    manager.call("approve", dict(catalog_scope, fingerprint=catalog_sheet["fingerprint"]))
+    manager.call("approve", dict(catalog_scope, fingerprint=catalog_sheet["fingerprint"], note="Prověřen fond."))
     version = payroll.call("close", catalog_scope)["versions"][0]["version"]
     export = payroll.call("download", dict(catalog_scope, version=version))["csv"]
     assert export.splitlines()[0].endswith(";sekundy")
@@ -664,8 +664,8 @@ def exercise(connect, php_command, check_locks=False):
     payroll.call("request-proof", aid, 404)
     result = manager.call("sheet", march)
     assert result["missing_proofs"] == 0 and proof_day not in result.get("day_issues", {})
-    assert result["approval_blockers"] == [] and not result["approval_note_required"]
-    manager.call("approve", dict(march, fingerprint=result["fingerprint"]))
+    assert result["approval_blockers"] == [] and result["approval_note_required"] == bool(result["fund"]["review"])
+    manager.call("approve", dict(march, fingerprint=result["fingerprint"], note="Prověřen fond."))
     v = payroll.call("close", march)["versions"][0]["version"]
     original = payroll.call("download", dict(march, version=v))["csv"]
     assert f"CATALOG;{leave_day};DOVOLENA;" in original and f"CATALOG;{proof_day};LEKAR;" in original

@@ -106,6 +106,8 @@ try {
     await expect(attachment).toBeHidden()
     await navigate(manager, 'Výkaz')
     await manager.getByRole('button', {name:'Schválit výkaz'}).click()
+    const reason = manager.getByLabel('Jak jste vyřešili nesrovnalosti?')
+    if (await reason.isVisible()) await reason.fill('Prověřeny odchylky od rozvrhu.')
     await manager.getByRole('dialog', {name:'Schválit výkaz'}).getByRole('button', {name:'Potvrdit schválení'}).click()
     await expect(manager.getByRole('status')).toContainText('Výkaz byl schválen.')
 

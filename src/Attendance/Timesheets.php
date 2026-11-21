@@ -220,6 +220,14 @@ final class Timesheets
             }
         }
         unset($request);
+        $fund = WorkingFund::calculate($plan, $sheet['rows'], $accounts, $start, $end,
+            (new DateTimeImmutable('today', $start->getTimezone()))->format('Y-m-d'), $this->mergePolicy->fundTolerance());
+        foreach ($fund['review'] as $day => $difference) {
+            $minutes = intdiv(-$difference, 60);
+            $sheet['day_issues'][$day] ??= ['status' => 'review', 'reasons' => []];
+            $sheet['day_issues'][$day]['reasons'][] = sprintf('Do fondu směny chybí %d:%02d.', intdiv($minutes, 60), $minutes % 60);
+        }
+        $previousReview = isset($approval['reviewed_days']) ? json_decode($approval['reviewed_days'], true, flags: JSON_THROW_ON_ERROR) : null;
         $sheet['missing_proofs'] = $missingProofs;
         $tasks = self::approvalTasks($sheet);
         return $sheet + [
@@ -233,10 +241,12 @@ final class Timesheets
             'internal_by_day' => (object) $internal,
             'approval_blockers' => array_column($tasks, 'reason'),
             'approval_tasks' => $tasks,
-            'approval_note_required' => $sheet['issues'] !== [],
+            'fund' => $fund,
+            'approval_note_required' => $sheet['issues'] !== [] || $fund['review'] !== [],
             'fingerprint' => $hash,
             'approval' => $approval,
-            'approved' => !$tasks && $approval && $approval['fingerprint'] === $hash,
+            'approved' => !$tasks && $approval && $approval['fingerprint'] === $hash
+                && ($previousReview === null || !array_diff_assoc($fund['review'], $previousReview)),
         ];
     }
 
@@ -270,6 +280,7 @@ final class Timesheets
             $approval = new Approval($this->em->getReference(Employee::class, $person['id']), $input['month']);
             $this->em->persist($approval);
         }
+        $approval->reviewedDays = $sheet['fund']['review'];
         $approval->confirm($this->em->getReference(Employee::class, $actor['id']), $sheet['fingerprint'], $note);
         $this->audit->audit($actor['id'],'approve',['employee'=>$person['id'],'month'=>$input['month'],'fingerprint'=>$sheet['fingerprint'],'note'=>$note]);
     }

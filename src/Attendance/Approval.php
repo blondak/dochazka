@@ -24,6 +24,9 @@ class Approval
     #[ORM\Column(type: 'datetimetz_immutable')]
     public DateTimeImmutable $approved;
 
+    #[ORM\Column(name: 'reviewed_days', type: 'jsonb', nullable: true)]
+    public ?array $reviewedDays = null;
+
     public function __construct(
         #[ORM\Id, ORM\ManyToOne, ORM\JoinColumn(name: 'employee', nullable: false)]
         public Employee $employee,

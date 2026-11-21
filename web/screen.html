@@ -141,7 +141,9 @@
                         size="small" outlined severity="warn" :aria-expanded="showApprovalTasks" aria-controls="approval-tasks"
                         @click="showApprovalTasks = !showApprovalTasks" />
                     <template v-else>
-                        <PvTag value="Připraven ke schválení" severity="info" />
+                        <PvButton v-if="sheet.fund && Object.keys(sheet.fund.review).length" :label="'K prověření · ' + Object.keys(sheet.fund.review).length"
+                            severity="warn" outlined size="small" :aria-expanded="showApprovalTasks" @click="showApprovalTasks = !showApprovalTasks" />
+                        <PvTag v-else value="Připraven ke schválení" severity="info" />
                         <PvButton v-if="canReview" label="Schválit výkaz" icon="pi pi-check" size="small" :disabled="busy" @click="approveSheet" />
                     </template>
                 </template>
@@ -340,6 +342,9 @@
                     <PvInputText id="merge-gap" v-model="gapMinutes" type="number" min="0" max="1439" step="1"
                         required aria-describedby="merge-gap-help" />
                     <p id="merge-gap-help">Úseky na stejném počítači se mohou spojit v rámci jednoho dne. Nula spojování vypne. Změna platí od dneška.</p>
+                    <label v-if="fundTolerance !== null" class="field">Tolerance schodku směny (minuty)
+                        <PvInputText v-model="fundTolerance" type="number" min="0" max="1439" step="1" required />
+                    </label>
                     <PvButton type="submit" label="Uložit limit" :loading="busy" />
                 </form>
             </template>
@@ -377,9 +382,9 @@
             Žádná osoba k zobrazení.
         </PvMessage>
         <template v-if="tab === 'Výkaz' && sheet">
-            <section v-if="!sheet.approved && approvalBlockers.length" v-show="showApprovalTasks" id="approval-tasks" aria-label="Co brání schválení">
+            <section v-if="!sheet.approved && (approvalBlockers.length || Object.keys(sheet.fund?.review ?? {}).length)" v-show="showApprovalTasks" id="approval-tasks" aria-label="Co brání schválení">
                 <PvCard>
-                    <template #title><h2>Co brání schválení</h2></template>
+                    <template #title><h2>{{ approvalBlockers.length ? 'Co brání schválení' : 'Vysvětlete odchylky při schválení' }}</h2></template>
                     <template #content>
                         <ul v-if="sheet.approval_tasks">
                             <li v-for="task in sheet.approval_tasks" :key="task.code"><strong>{{ task.owner }}</strong> · {{ task.reason }}</li>
@@ -603,6 +608,9 @@
             <PvCard>
                 <template #title><h2 id="month-summary-title">Souhrn za měsíc</h2></template>
                 <template #content>
+                    <p v-if="sheet.fund">Plánovaný fond {{ sheet.fund.planned === null ? '· chybí model' : hours(sheet.fund.planned) }}
+                        · Práce {{ hours(sheet.fund.work) }} · Absence a svátky {{ hours(sheet.fund.absence) }}
+                        · Rozdíl {{ sheet.fund.difference === null ? '—' : signedHours(sheet.fund.difference) }}</p>
                     <PvDataTable :value="sheet.account_totals ? sheet.account_totals.map(account => ({
                         label:account.code === 'PRACE' ? account.name + ' (uznaná doba)' : account.name,
                         value:account.legacy_days ? hours(account.seconds) + ' + ' + account.legacy_days + ' kalendářních dnů' : hours(account.seconds),

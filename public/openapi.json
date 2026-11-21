@@ -3532,6 +3532,11 @@
                     "gap_minutes"
                 ],
                 "properties": {
+                    "fund_tolerance": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1439
+                    },
                     "gap_minutes": {
                         "type": "integer",
                         "minimum": 0,
@@ -3775,6 +3780,10 @@
                                 }
                             }
                         }
+                    },
+                    "fund": {
+                        "type": "object",
+                        "description": "Plán, práce, absence, rozdíl a denní rozpad v sekundách. Chybějící model má nulovou hodnotu JSON null."
                     },
                     "approval_note_required": {
                         "type": "boolean",

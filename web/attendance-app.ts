@@ -16,7 +16,8 @@ interface HolidayControlPreview {
 interface RequestRow {needs_actual?:boolean;actual_from?:string|null;actual_to?:string|null;actual_returned?:boolean;vacation_seconds?:number;vacation_estimate?:{from:string;to:string}[];vacation_consent?:boolean;generated_holiday?:boolean;id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean;merged_work?:boolean;replaces_from?:string;replaces_to?:string;account_name?:string;behavior?:Behavior;requires_proof?:boolean;scheduled_seconds?:number|null}
 interface AttendanceInterval {day:string;from:string;to:string;source:string}
 interface DayIssue {status:'missing'|'review';reasons:string[]}
-interface Sheet {
+interface FundDay {planned:number|null;work:number;absence:number;difference:number|null}
+interface Sheet {fund?:FundDay & {days:Record<string,FundDay>;review:Record<string,number>};
     approval_tasks?:{code:string;reason:string;owner:string}[];approval_blockers:string[];approval_note_required:boolean;presence?:AttendanceInterval[];breaks?:AttendanceInterval[];
     day_issues?:Record<string,DayIssue>;unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
 interface Device {id:number;name:string;seen:string|null;agent_version:string|null;revoked:boolean;registered:boolean;warnings:string|null}
@@ -156,6 +157,7 @@ export function setupAttendance() {
     const daily = ref<DailyAttendance|null>(null)
     const dailyDay = ref<string|null>(null)
     const selectedDailyDay = computed(() => dailyDay.value ?? today.value)
+    const fundTolerance = ref<number|null>(null)
     const gapMinutes = ref<string|null>(null)
     const mergeRows = ref<number[]>([])
     const durationEdit = ref({value:'', maximum:0, from:'', to:'', reason:'', reset:false})
@@ -498,6 +500,7 @@ export function setupAttendance() {
         const minutes = Math.floor(seconds / 60)
         return Math.floor(minutes / 60) + ':' + String(minutes % 60).padStart(2, '0')
     }
+    const signedHours = (seconds:number) => (seconds < 0 ? '−' : seconds > 0 ? '+' : '') + hours(Math.abs(seconds))
     const time=(s:string)=>s?new Intl.DateTimeFormat('cs-CZ',{timeZone:'Europe/Prague',hour:'2-digit',minute:'2-digit'}).format(date(s)):''
     const moment=(s:string|null)=>s?date(s).toLocaleString('cs-CZ',{timeZone:'Europe/Prague'}):'—'
     const day=(s:string)=>new Date(s+'T12:00:00').toLocaleDateString('cs-CZ')
@@ -550,7 +553,9 @@ export function setupAttendance() {
                 daily.value = await api('daily-attendance', dailyDay.value ? {day:dailyDay.value} : {})
             }
             else if(tab.value==='Nastavení docházky') {
-                gapMinutes.value = String((await api<{gap_minutes:number}>('attendance-merge-settings')).gap_minutes)
+                const settings = await api<{gap_minutes:number;fund_tolerance?:number}>('attendance-merge-settings')
+                gapMinutes.value = String(settings.gap_minutes)
+                fundTolerance.value = settings.fund_tolerance ?? null
             }
             else if(tab.value==='Uzávěrka') payroll.value=await api('payroll',scope())
             else if(tab.value==='Zaměstnanci' || tab.value==='Organizační struktura') await loadDirectory()
@@ -1134,7 +1139,7 @@ export function setupAttendance() {
     function saveMergeLimit() {return run(async()=>{
         const value = gapMinutes.value ?? ''
         if (!/^\d+$/.test(value)) throw new Error('Zadejte limit v celých minutách.')
-        const {gap_minutes} = await api<{gap_minutes:number}>('attendance-merge-limit', {gap_minutes:Number(value)})
+        const {gap_minutes} = await api<{gap_minutes:number}>('attendance-merge-limit', {gap_minutes:Number(value), ...(fundTolerance.value === null ? {} : {fund_tolerance:Number(fundTolerance.value)})})
         gapMinutes.value = String(gap_minutes)
         notice.value = 'Limit automatického spojování byl uložen.'
     })}
@@ -1476,7 +1481,7 @@ export function setupAttendance() {
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
-        gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
+        signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
         mobileLayout, dayChooserOpen, toggleDayChooser, monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromTask, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,
