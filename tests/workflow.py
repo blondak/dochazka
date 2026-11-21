@@ -771,11 +771,15 @@ def exercise(connect, php_command, check_locks=False):
     colleague = hr.call("employee", {"name":"Test pokrytí", "org_unit_id":warehouse, "attendance_enabled":True,
         "number":"COVER-FIXTURE","starts":half_day, "ends":half_day})
     hr.call("employee-work-model", {"model":model_id, "employee":colleague["id"], "effective_on":half_day})
-    manager.call("request", {"employee":colleague["id"],"kind":"LEKAR","from":half_day+"T13:00",
+    colleague_visit = manager.call("request", {"employee":colleague["id"],"kind":"LEKAR","from":half_day+"T13:00",
         "to":half_day+"T14:30", "note":"Soukromá poznámka"})
     covered = next(p for p in manager.call("team-coverage",half_request) if p["name"] == "Test pokrytí")
     assert covered == {"name":"Test pokrytí","planned":8100,"absences":[{
         "status":"pending","from":half_day+"T13:00:00+02:00","to":half_day+"T14:00:00+02:00","whole_day":False}]}, covered
+    manager.call("decide", dict(colleague_visit,status="approved"))
+    manager.call("request-actual", dict(colleague_visit, reason="Doložený návrat", **{"from":half_day+"T09:00","to":half_day+"T09:30"}))
+    early_return = next(p for p in manager.call("team-coverage",half_request) if p["name"] == "Test pokrytí")
+    assert early_return["absences"] == [] and early_return["planned"] == 8100, early_return
     colleague_info = next(p for p in hr.call("people") if p["id"] == colleague["id"])
     hr.call("employee", dict(colleague_info,attendance_enabled=False))
     manager.call("decide", dict(half_request, status="approved"), 409)
