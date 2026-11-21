@@ -161,6 +161,20 @@ export function setupAttendance() {
     const breakRuleEdit = ref({change:false, enabled:true, minutes:30, preferred:240, deadline:360, effective_on:today.value})
     const workEdit = ref({kind:'PRACE', day:'', from:'', to:'', untilMidnight:false, reason:''})
     const chosenDay = ref('')
+    const compactLayout = window.matchMedia('(max-width: 760px)')
+    const mobileLayout = ref(compactLayout.matches)
+    const dayChooserOpen = ref(false)
+    function updateLayout() {
+        mobileLayout.value = compactLayout.matches
+        dayChooserOpen.value = false
+    }
+    async function toggleDayChooser() {
+        dayChooserOpen.value = !dayChooserOpen.value
+        if (dayChooserOpen.value) {
+            await nextTick()
+            document.querySelector<HTMLButtonElement>('#month-picker [aria-pressed="true"]')?.focus()
+        }
+    }
     const dayHeading = ref<HTMLElement|null>(null)
     const accounts = ref<AttendanceAccount[]>([])
     const models = ref<WorkModel[]>([])
@@ -328,7 +342,8 @@ export function setupAttendance() {
     async function selectDay(key:string) {
         if (key !== selectedDay.value?.key) mergeRows.value = []
         chosenDay.value = key
-        if (window.matchMedia('(max-width: 760px)').matches) {
+        if (mobileLayout.value) {
+            dayChooserOpen.value = false
             await nextTick()
             dayHeading.value?.focus({preventScroll:true})
             dayHeading.value?.scrollIntoView({block:'nearest'})
@@ -694,6 +709,7 @@ export function setupAttendance() {
         mergeRows.value = []
         showApprovalTasks.value = false
         chosenDay.value = ''
+        dayChooserOpen.value = false
     }
     function view(): AttendanceView {
         return {
@@ -1396,6 +1412,7 @@ export function setupAttendance() {
     }
 
     onMounted(async()=>{
+        compactLayout.addEventListener('change', updateLayout)
         window.addEventListener('popstate', restoreView)
         document.addEventListener('visibilitychange', updateDate)
         dailyTimer = window.setInterval(() => {
@@ -1427,6 +1444,7 @@ export function setupAttendance() {
     })
     onUnmounted(() => {
         document.removeEventListener('visibilitychange', updateDate)
+        compactLayout.removeEventListener('change', updateLayout)
         window.removeEventListener('popstate', restoreView)
         window.clearInterval(dailyTimer)
     })
@@ -1448,7 +1466,7 @@ export function setupAttendance() {
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
         gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
-        monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromTask, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
+        mobileLayout, dayChooserOpen, toggleDayChooser, monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromTask, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,
         accounts, models, accountPanel, accountForm, modelForm, expandedModels, selectedModelVersions, displayModelVersion, activeModelVersion,

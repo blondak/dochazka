@@ -181,9 +181,15 @@
                 <template #content>
                     <p>Stav podle evidence Windows. Aktualizováno v {{ time(daily.updated) }}.</p>
                     <div class="table-region" role="region" aria-labelledby="team-attendance" tabindex="0">
-                        <PvDataTable :value="daily.people" data-key="id" size="small" striped-rows :table-props="{'aria-labelledby':'team-attendance'}">
+                        <PvDataTable :value="daily.people" data-key="id" size="small" striped-rows :table-props="{'aria-labelledby':'team-attendance', class:'daily-table'}">
                             <PvColumn field="name" header="Zaměstnanec">
-                                <template #body="{data}">{{ data.name }}
+                                <template #body="{data}">
+                                    <PvButton :label="data.name" :aria-label="'Otevřít výkaz · ' + data.name" class="daily-name"
+                                        text size="small" :disabled="busy" @click="openDailySheet(data.id)" />
+                                    <template v-if="mobileLayout">
+                                        <small class="muted-block">Od–do · {{ data.from ? time(data.from) : '—' }} – {{ data.to ? time(data.to) : '—' }}</small>
+                                        <small class="muted-block">Z uzavřených relací · {{ data.worked_seconds === null ? '—' : hours(data.worked_seconds) }}</small>
+                                    </template>
                                     <small v-if="data.approved_absences?.length" class="muted-block">Schválená žádost · {{ data.approved_absences.join(', ') }}</small>
                                 </template>
                             </PvColumn>
@@ -192,20 +198,14 @@
                                     :value="data.status === 'present' && daily.day !== today ? 'Otevřená relace' : dailyStatuses[data.status].label"
                                     :severity="dailyStatuses[data.status].severity" /></template>
                             </PvColumn>
-                            <PvColumn header="Od">
+                            <PvColumn v-if="!mobileLayout" header="Od">
                                 <template #body="{ data }"><time v-if="data.from" :datetime="data.from">{{ time(data.from) }}</time><span v-else>—</span></template>
                             </PvColumn>
-                            <PvColumn header="Do">
+                            <PvColumn v-if="!mobileLayout" header="Do">
                                 <template #body="{ data }"><time v-if="data.to" :datetime="data.to">{{ time(data.to) }}</time><span v-else>—</span></template>
                             </PvColumn>
-                            <PvColumn header="Odpracováno z uzavřených relací">
+                            <PvColumn v-if="!mobileLayout" header="Odpracováno z uzavřených relací">
                                 <template #body="{ data }">{{ data.worked_seconds === null ? '—' : hours(data.worked_seconds) }}</template>
-                            </PvColumn>
-                            <PvColumn header="Akce">
-                                <template #body="{ data }">
-                                    <PvButton icon="pi pi-calendar" v-tooltip.top="'Otevřít výkaz'" :aria-label="'Otevřít výkaz · ' + data.name"
-                                        size="small" text :disabled="busy" @click="openDailySheet(data.id)" />
-                                </template>
                             </PvColumn>
                             <template #empty>V týmu zatím není žádný zaměstnanec v evidenci.</template>
                         </PvDataTable>
@@ -400,7 +400,9 @@
             <PvCard>
                 <template #content>
                     <div class="month-layout">
-                        <div>
+                        <PvButton v-if="mobileLayout && monthDays.length" :label="dayChooserOpen ? 'Zavřít výběr dne' : 'Vybrat jiný den'"
+                            icon="pi pi-calendar" outlined size="small" :aria-expanded="dayChooserOpen" aria-controls="month-picker" @click="toggleDayChooser" />
+                        <div id="month-picker" v-show="!mobileLayout || dayChooserOpen || !monthDays.length">
                             <h2 id="month-days-title">Dny v měsíci</h2>
                             <div class="month-days" @click.capture="selectDayFromRow">
                                 <PvDataTable :value="monthDays" data-key="key" size="small" striped-rows

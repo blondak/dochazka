@@ -411,7 +411,27 @@ p, small {
     font-variant-numeric: tabular-nums;
 }
 
+.daily-table .daily-name {
+    padding-inline: 0;
+    text-align: start;
+    overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
+    .daily-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    .daily-table :is(th, td, .p-tag) {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .month-layout > .p-button {
+        justify-self: start;
+    }
+
     .month-layout {
         grid-template-columns: minmax(0, 1fr);
         gap: 1rem;
