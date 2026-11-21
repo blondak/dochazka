@@ -21,23 +21,8 @@ final class Exports
         private Timesheets $sheets,
         private AuditTrail $audit,
         private Accounts $accounts,
+        private \Dochazka\Staff\Directory $directory,
     ) {}
-
-    private function roster(string $month): array
-    {
-        $start = Timesheet::month($month);
-        $end = $start->modify('+1 month');
-        $effectiveEnd = 'LEAST(e.ends, e.archived_on)';
-        return $this->db->createQueryBuilder()
-            ->select('e.id', 'e.name', 'e.number', 'e.sid', 'e.starts', "$effectiveEnd AS ends")
-            ->from('employee', 'e')
-            ->where('e.attendance_enabled', 'e.starts < :end')
-            ->andWhere("$effectiveEnd IS NULL OR $effectiveEnd >= GREATEST(:start, e.starts)")
-            ->setParameter('start', $start->format('Y-m-d'))
-            ->setParameter('end', $end->format('Y-m-d'))
-            ->orderBy('e.number')
-            ->fetchAllAssociative();
-    }
 
     private function payroll(string $month, ?int $closeBy=null): array
     {
@@ -50,7 +35,7 @@ final class Exports
         if ($csv !== null) {
             fputcsv($csv, ['osobni_cislo','datum','druh','od','do','sekundy'], ';', '"', '', "\r\n");
         }
-        foreach ($this->roster($month) as $person) {
+        foreach ($this->directory->roster($month) as $person) {
             $s = $this->sheets->sheet($person,$month);
             $people[] = ['id'=>$person['id'],'name'=>$person['name'],'approved'=>$s['approved']];
             $hashes[] = [$person['id'],$s['fingerprint']];

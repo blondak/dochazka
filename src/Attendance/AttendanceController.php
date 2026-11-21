@@ -306,4 +306,29 @@ NEON)]
     {
         return $this->json->respond($request, $response, fn(array $input) => $this->service->confirm($input));
     }
+    #[Path('/attendance-overview'), Method('POST'), LoggedIn, Role('hr', 'payroll', 'admin', 'manager')]
+    #[OpenApi(<<<'NEON'
+operationId: attendanceOverview
+summary: "Fond pracovní doby a týmové úkoly"
+tags: [Evidence]
+security: [{session: []}]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+requestBody:
+    content:
+        application/json:
+            schema: {type: object, properties: {month: {type: string}, team: {type: boolean}}}
+responses:
+    '200':
+        description: "Fond pracovní doby a týmové úkoly"
+        content:
+            application/json:
+                schema: {type: object}
+    '403': {$ref: '#/components/responses/Error403'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    public function attendanceOverview(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, fn(array $input) => $this->service->overview($input), readOnly: true);
+    }
+
 }

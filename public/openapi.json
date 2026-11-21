@@ -369,6 +369,60 @@
                 }
             }
         },
+        "/api/v1/attendance-overview": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Fond pracovní doby a týmové úkoly",
+                "operationId": "attendanceOverview",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "month": {
+                                        "type": "string"
+                                    },
+                                    "team": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Fond pracovní doby a týmové úkoly",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
         "/api/v1/calendar-day": {
             "post": {
                 "tags": [

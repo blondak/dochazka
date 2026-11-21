@@ -114,11 +114,11 @@
             </nav>
         </PvDrawer>
 
-        <ToolbarCard v-if="['Výkaz', 'Žádosti', 'Uzávěrka'].includes(tab)"
+        <ToolbarCard v-if="['Výkaz', 'Žádosti', 'Uzávěrka','Můj tým','Fond pracovní doby'].includes(tab)"
             :label="tab === 'Výkaz' ? 'Nástroje výkazu' : tab === 'Žádosti' ? 'Nástroje žádostí' : 'Nástroje uzávěrky'" toolbar-class="sheet-toolbar">
             <template #start>
                 <PeriodSelector :person="person" :month="month" :people="selectablePeople" :selected-name="selectedPerson?.name"
-                    :show-person="tab !== 'Uzávěrka'" :editable-person="tab === 'Výkaz' && (hasRole('admin') || hasRole('hr'))" :busy="busy"
+                    :show-person="['Výkaz','Žádosti'].includes(tab)" :editable-person="tab === 'Výkaz' && (hasRole('admin') || hasRole('hr'))" :busy="busy"
                     :can-show-all-people="canShowAllPeople" :show-all-people="showAllPeople" @show-all-people="setShowAllPeople"
                     @select-person="selectPerson" @edit-person="editPerson(selectedPerson)" @select-month="selectMonth" @move-month="moveMonth" />
                 <div v-if="tab === 'Výkaz' && sheet && canReview" class="sheet-actions">
@@ -162,6 +162,46 @@
         <PvButton v-if="error && !inActionDialog && !busy && (['Výkaz', 'Žádosti'].includes(tab) && !sheet || tab === 'Uzávěrka' && !payroll)"
             class="reload-button" label="Načíst znovu" icon="pi pi-refresh" outlined @click="run(refresh)" />
 
+        <template v-if="['Můj tým','Fond pracovní doby'].includes(tab)">
+            <p v-if="busy && !overview" role="status">Načítám přehled…</p>
+            <PvButton v-if="error && !busy" label="Načíst znovu" outlined @click="run(refresh)" />
+            <PvCard v-if="tab === 'Můj tým' && overview">
+                <template #title><h2>K vyřízení</h2></template>
+                <template #content>
+                    <div class="record-actions">
+                        <PvButton v-for="owner in ['manager','employee']" :key="owner" size="small" :outlined="waitingFor !== owner"
+                            :aria-pressed="waitingFor === owner" @click="waitingFor = owner"
+                            :label="(owner === 'manager' ? 'Čeká na mě' : 'Čeká na zaměstnance') + ' (' + overview.tasks.filter(t => t.owner === owner).length + ')'" />
+                    </div>
+                    <p>Čekající žádosti ze všech období a výkazy za vybraný měsíc.</p>
+                    <PvDataTable :value="overview.tasks.filter(t => t.owner === waitingFor)" size="small">
+                        <PvColumn field="name" header="Zaměstnanec" sortable />
+                        <PvColumn header="Den"><template #body="{data}">{{ day(data.day) }}</template></PvColumn>
+                        <PvColumn field="reason" header="Úkol" />
+                        <PvColumn><template #body="{data}"><PvButton icon="pi pi-arrow-right" text
+                            :aria-label="'Otevřít · ' + data.name + ' · ' + data.reason" v-tooltip.top="'Otevřít detail'"
+                            @click="openOverviewDay(data.employee,data.day,data.request)" /></template></PvColumn>
+                        <template #empty>Žádné úkoly k vyřízení.</template>
+                    </PvDataTable>
+                </template>
+            </PvCard>
+            <PvCard v-if="overview">
+                <template #title><h2>Fond za měsíc</h2></template>
+                <template #content>
+                    <PvDataTable :value="overview.people" size="small" striped-rows>
+                        <PvColumn field="name" header="Zaměstnanec" sortable />
+                        <PvColumn header="Plán"><template #body="{data}">{{ data.planned === null ? 'Chybí model' : hours(data.planned) }}</template></PvColumn>
+                        <PvColumn header="Práce"><template #body="{data}">{{ hours(data.work) }}</template></PvColumn>
+                        <PvColumn header="Absence a svátky"><template #body="{data}">{{ hours(data.absence) }}</template></PvColumn>
+                        <PvColumn header="Rozdíl"><template #body="{data}">
+                            <PvButton text :label="data.difference === null ? 'Chybí model' : signedHours(data.difference)"
+                                :aria-label="'Rozdíl ve výkazu · ' + data.name" @click="openOverviewDay(data.employee, data.days[0] ?? month + '-01')" />
+                        </template></PvColumn>
+                        <template #empty>Za toto období nejsou evidovaní zaměstnanci.</template>
+                    </PvDataTable>
+                </template>
+            </PvCard>
+        </template>
         <template v-if="tab === 'Denní přehled'">
             <ToolbarCard label="Nástroje denního přehledu">
                 <template #start>
@@ -647,7 +687,7 @@
                     <p v-if="hasRole('manager') && ownSheet && sheet.requests.some(r => r.status === 'pending')">
                         Vaše žádosti může vyřídit jiný vedoucí ve vaší nebo nadřazené jednotce.
                     </p>
-                    <article v-for="request in visibleRequests" :key="request.id" class="record"
+                    <article :id="'request-' + request.id" tabindex="-1" v-for="request in visibleRequests" :key="request.id" class="record"
                         :aria-label="requestTitle(request) + ' · ' + requestPeriod(request)">
                         <div class="record-info">
                             <div class="record-title">

@@ -27,6 +27,30 @@ final class Directory
         return $p->summary() + ['managed' => $managed, 'org_unit_path' => $this->units->path($p->orgUnit->id), 'starts' => $p->starts->format('Y-m-d'), 'ends' => $p->attendanceEnd()?->format('Y-m-d')];
     }
 
+    public function managedUnits(array $actor): array
+    {
+        return array_keys($this->units->managed($actor));
+    }
+
+    public function roster(string $month, ?array $units = null): array
+    {
+        $start = \Dochazka\Attendance\Timesheet::month($month);
+        $end = $start->modify('+1 month');
+        $effectiveEnd = 'LEAST(e.ends, e.archived_on)';
+        $query = $this->em->getConnection()->createQueryBuilder()
+            ->select('e.org_unit_id', 'e.id', 'e.name', 'e.number', 'e.sid', 'e.starts', "$effectiveEnd AS ends")
+            ->from('employee', 'e')
+            ->where('e.attendance_enabled', 'e.starts < :end')
+            ->andWhere("$effectiveEnd IS NULL OR $effectiveEnd >= GREATEST(:start, e.starts)")
+            ->setParameter('start', $start->format('Y-m-d'))
+            ->setParameter('end', $end->format('Y-m-d'))
+            ->orderBy('e.number');
+        if ($units !== null) {
+            $query->andWhere('e.org_unit_id IN (:units)')->setParameter('units', $units, \Doctrine\DBAL\ArrayParameterType::INTEGER);
+        }
+        return $query->fetchAllAssociative();
+    }
+
     public function people(): array
     {
         $actor=$this->accounts->actor();

@@ -285,6 +285,51 @@ final class Timesheets
         $this->audit->audit($actor['id'],'approve',['employee'=>$person['id'],'month'=>$input['month'],'fingerprint'=>$sheet['fingerprint'],'note'=>$note]);
     }
 
+    public function overview(array $input): array
+    {
+        $team = ($input['team'] ?? true) === true;
+        $actor = $this->accounts->actor($team ? 'manager' : ['hr', 'payroll', 'admin']);
+        $month = $input['month'] ?? date('Y-m');
+        $units = $team ? $this->directory->managedUnits($actor) : null;
+        $people = $tasks = [];
+        if ($team) {
+            $tasks = $this->db->createQueryBuilder()->select('e.id AS employee', 'e.name', 'r.id AS request',
+                'a.name AS reason', 'r.begins::date AS day', "'manager' AS owner")
+                ->from('request', 'r')->innerJoin('r', 'employee', 'e', 'e.id=r.employee')
+                ->innerJoin('r', 'attendance_account', 'a', 'a.code=r.kind')
+                ->where("r.status='pending'", 'e.attendance_enabled', 'e.id <> :self', 'e.org_unit_id IN (:units)')
+                ->setParameter('self', $actor['id'])->setParameter('units', $units, \Doctrine\DBAL\ArrayParameterType::INTEGER)
+                ->orderBy('r.begins')->addOrderBy('r.id')->fetchAllAssociative();
+        }
+        foreach ($this->directory->roster($month, $units) as $person) {
+            $s = $this->sheet($person, $month);
+            $fund = $s['fund'];
+            $days = array_filter($fund['days'], static fn($d) => $d['difference'] !== 0);
+            $people[] = ['employee'=>$person['id'], 'name'=>$person['name'], 'approved'=>$s['approved'],
+                'planned'=>$fund['planned'], 'work'=>$fund['work'], 'absence'=>$fund['absence'], 'difference'=>$fund['difference'],
+                'days'=>array_keys($days)];
+            if (!$team || $person['id'] === $actor['id'] || $s['approved']) continue;
+            foreach ($s['requests'] as $r) {
+                if ($r['status'] !== 'approved') continue;
+                if ((!$r['requires_proof'] || $r['has_proof']) && (empty($r['needs_actual']) || (!empty($r['actual_to']) && empty($r['actual_returned'])))) continue;
+                if (empty($r['actual_to']) && strtotime($r['ends']) > time()) continue;
+                $tasks[] = ['employee'=>$person['id'], 'name'=>$person['name'], 'day'=>substr($r['begins'],0,10),
+                    'request'=>$r['id'], 'owner'=>'employee', 'reason'=>'Doplnit skutečnost nebo doklad · '.$r['account_name']];
+            }
+            foreach ($s['approval_tasks'] as $task) {
+                if (in_array($task['code'], ['pending','missing_proofs'], true)) continue;
+                $tasks[] = ['employee'=>$person['id'], 'name'=>$person['name'], 'owner'=>'manager',
+                    'day'=>$month.'-01', 'reason'=>$task['reason']];
+            }
+            if (!$s['approval_tasks'] && $month <= date('Y-m')) {
+                $tasks[] = ['employee'=>$person['id'], 'name'=>$person['name'], 'owner'=>'manager',
+                    'day'=>array_key_first($fund['review']) ?? $month.'-01',
+                    'reason'=>$fund['review'] ? 'Prověřit odchylky výkazu' : 'Zkontrolovat výkaz'];
+            }
+        }
+        return compact('people','tasks');
+    }
+
     public function view(array $i): array
     {
         $actor=$this->accounts->actor();

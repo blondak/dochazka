@@ -21,6 +21,8 @@ interface Sheet {fund?:FundDay & {days:Record<string,FundDay>;review:Record<stri
     approval_tasks?:{code:string;reason:string;owner:string}[];approval_blockers:string[];approval_note_required:boolean;presence?:AttendanceInterval[];breaks?:AttendanceInterval[];
     day_issues?:Record<string,DayIssue>;unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
 interface Device {id:number;name:string;seen:string|null;agent_version:string|null;revoked:boolean;registered:boolean;warnings:string|null}
+interface TeamTask {employee:number;name:string;reason:string;day:string;request?:number;owner:'manager'|'employee'}
+interface Overview {people:(FundDay & {employee:number;name:string;approved:boolean;days:string[]})[];tasks:TeamTask[]}
 interface Payroll {people:{id:number;name:string;approved:boolean}[];versions:{version:number;created:string}[];changed:boolean}
 interface Passkey {id:string;label:string;created:string}
 interface Confirmation {
@@ -95,16 +97,16 @@ const freshRequest = () => ({kind:'LEKAR',from:'',to:'',fromTime:'',toTime:'',no
 const tabIcons: Record<string, string> = {
     'Organizační struktura': 'pi pi-sitemap', 'Zaměstnanci': 'pi pi-users', 'Zařízení': 'pi pi-desktop', 'První kroky': 'pi pi-list-check',
     'Výkaz': 'pi pi-calendar', 'Žádosti': 'pi pi-file-edit', 'Uzávěrka': 'pi pi-check-square',
-    'Denní přehled': 'pi pi-calendar-clock',
+    'Denní přehled': 'pi pi-calendar-clock', 'Můj tým':'pi pi-users', 'Fond pracovní doby':'pi pi-table',
     'Svátky a dny volna':'pi pi-calendar', 'Nastavení docházky': 'pi pi-sliders-h', 'Konta docházky':'pi pi-list', 'Pracovní modely':'pi pi-calendar-clock',
 }
 const tabSlugs: Record<string, string> = {
     'Organizační struktura': 'organizace', 'Zaměstnanci': 'zamestnanci', 'Zařízení': 'zarizeni', 'První kroky': 'prvni-kroky',
     'Výkaz': 'vykaz', 'Žádosti': 'zadosti', 'Uzávěrka': 'uzaverka',
-    'Denní přehled': 'denni-prehled',
+    'Denní přehled': 'denni-prehled', 'Můj tým':'muj-tym', 'Fond pracovní doby':'fond',
     'Svátky a dny volna':'svatky', 'Nastavení docházky': 'nastaveni-dochazky', 'Konta docházky':'konta-dochazky', 'Pracovní modely':'pracovni-modely',
 }
-const monthlyTabs = ['Výkaz', 'Žádosti', 'Uzávěrka']
+const monthlyTabs = ['Výkaz', 'Žádosti', 'Uzávěrka', 'Můj tým', 'Fond pracovní doby']
 const requestSeverities: Record<string, string> = {pending:'warn', approved:'success', rejected:'danger'}
 const pendingDayReason = 'Čekající žádost'
 const dayIssueStyles = {
@@ -157,6 +159,15 @@ export function setupAttendance() {
     const daily = ref<DailyAttendance|null>(null)
     const dailyDay = ref<string|null>(null)
     const selectedDailyDay = computed(() => dailyDay.value ?? today.value)
+    const overview = ref<Overview|null>(null)
+    const waitingFor = ref<'manager'|'employee'>('manager')
+    async function openOverviewDay(employee:number, key:string, request?:number) {
+        await navigate({tab:request ? 'Žádosti' : 'Výkaz', person:employee, month:key.slice(0,7), pendingOnly:false})
+        if (request) {
+            await nextTick()
+            document.getElementById('request-' + request)?.focus()
+        } else await selectDayFromTask(key)
+    }
     const fundTolerance = ref<number|null>(null)
     const gapMinutes = ref<string|null>(null)
     const mergeRows = ref<number[]>([])
@@ -493,7 +504,8 @@ export function setupAttendance() {
         ...(hasRole('payroll') ? ['Uzávěrka'] : []),
         ...(hasRole('payroll') || hasRole('hr') || hasRole('admin') || hasRole('manager') || (hasRole('employee') && user.value?.attendance_enabled)
             ? ['Výkaz', 'Žádosti'] : []),
-        ...(hasRole('manager') ? ['Denní přehled'] : []),
+        ...(hasRole('manager') ? ['Denní přehled', 'Můj tým'] : []),
+        ...(hasRole('hr') || hasRole('admin') || hasRole('payroll') ? ['Fond pracovní doby'] : []),
     ])
     const tabs = computed(() => [...(hasRole('admin') ? adminTabs : []), ...mainTabs.value])
     const hours = (seconds:number) => {
@@ -545,7 +557,11 @@ export function setupAttendance() {
         today.value = pragueToday()
         if(!user.value)return
         try {
-            if (tab.value === 'Konta docházky') accounts.value = await api('attendance-accounts')
+            if (['Můj tým','Fond pracovní doby'].includes(tab.value)) {
+                overview.value = null
+                overview.value = await api('attendance-overview', {month:month.value, team:tab.value === 'Můj tým'})
+            }
+            else if (tab.value === 'Konta docházky') accounts.value = await api('attendance-accounts')
             else if (tab.value === 'Svátky a dny volna') calendar.value = await api('calendar-settings')
             else if (tab.value === 'Pracovní modely') models.value = await api('work-models')
             else if(tab.value==='Zařízení')devices.value=await api('devices')
@@ -724,6 +740,7 @@ export function setupAttendance() {
         daily.value = null
         mergeRows.value = []
         showApprovalTasks.value = false
+        overview.value = null
         chosenDay.value = ''
         dayChooserOpen.value = false
     }
@@ -1481,7 +1498,7 @@ export function setupAttendance() {
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
-        signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
+        overview, waitingFor, openOverviewDay, signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
         mobileLayout, dayChooserOpen, toggleDayChooser, monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromTask, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,
