@@ -120,9 +120,11 @@ Vedoucí může ve výkazu člena týmu zaškrtnout pracovní úseky jednoho dne
 
 Pro hromadné nasazení předá GPO instalačnímu skriptu adresu centrály a registrační brány. Stanice se ověří vlastním účtem počítače. Registraci mohou provést členové vybrané skupiny v AD. Přípravu brány, GPO, aktualizaci a odvolání přístupu popisuje [návod pro Samba AD](deploy/gpo.md).
 
-Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.6-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.6-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
+Agent 0.0.7 ihned ukládá oznámení Windows o přihlášení a odhlášení do SQLite. Pokud zatím nedokáže přiřadit událost ke spuštění počítače, vrátí se k ní i po restartu služby.
 
-Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.6-single-file'` a pro balíček s DLL použijte `-Release '0.0.6'`.
+Vyberte jeden z balíčků pro Windows x64. **`agent-v0.0.7-win-x64-single-file.zip`** obsahuje agenta jako jediný `Dochazka.Agent.exe`. **`agent-v0.0.7-win-x64.zip`** obsahuje EXE a knihovny v samostatných souborech. Oba balíčky obsahují .NET runtime a `Install-Agent.ps1` pro GPO.
+
+Každý balíček rozbalte do vlastní složky. Při přechodu mezi variantami stejné verze změňte `-PackagePath` i `-Release`. Pro single-file balíček použijte `-Release '0.0.7-single-file'` a pro balíček s DLL použijte `-Release '0.0.7'`.
 
 V **Nastavení → Zařízení** uvidíte poslední verzi nahlášenou běžící službou a čas posledního spojení. Agent hlásí verzi při pravidelném spojení s centrálou i bez nových událostí. U stanic, které verzi dosud nenahlásily, se zobrazuje pomlčka.
 
@@ -142,20 +144,20 @@ Pokud proxy podporuje integrované ověření Windows, přidejte `-ProxyUseDefau
 
 ### Ruční registrace stanice
 
-1. Rozbalte balíček **agent-v0.0.6-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
+1. Rozbalte balíček **agent-v0.0.7-win-x64.zip** do složky, kterou mohou číst počítačové účty. Zápis vyhraďte správcům distribuce.
 2. V centrále na kartě **Zařízení** zaregistrujte stanici. Kód uložte jako **JMENO-POCITACE.txt** do adresáře s registracemi. Na sdílení dejte každému počítačovému účtu právo číst jen jeho vlastní kód. Registraci proveďte během hodinové platnosti.
 3. Při pilotu spusťte příkaz níže jako správce. Pro nasazení přes Samba AD nastavte stejný příkaz jako spouštěcí PowerShell skript v konfiguraci počítače v doménové GPO. Při aktualizaci změňte **PackagePath** a **Release**. Služba si ponechá lokální frontu i registraci.
 4. V GPO povolte úspěšný audit přihlášení a odhlášení pro dočtení z protokolu Security. Na pilotní stanici ověřte přímá oznámení Windows a doručení po výpadku sítě. SID přihlášeného zaměstnance zjistíte příkazem **whoami /user**.
 
 ~~~powershell
-& '\\server\dochazka\agent-v0.0.6\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.6' -Release '0.0.6' -EnrollmentDirectory '\\server\dochazka-registrace'
+& '\\server\dochazka\agent-v0.0.7\Install-Agent.ps1' -Server 'https://dochazka.example.cz' -PackagePath '\\server\dochazka\agent-v0.0.7' -Release '0.0.7' -EnrollmentDirectory '\\server\dochazka-registrace'
 ~~~
 
 ## Vydání
 
 | Tag v repozitáři | Výstup |
 | --- | --- |
-| [agent-v0.0.6](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.6) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
+| [agent-v0.0.7](https://github.com/blondak/dochazka/releases/tag/agent-v0.0.7) | Dva balíčky Windows x64 a kontrolní součty SHA256. CI ověřuje self-test i skutečné spuštění služby pro oba balíčky. |
 | [docker-v0.0.7](https://github.com/blondak/dochazka/releases/tag/docker-v0.0.7) | Nasazovací archiv `central-deploy.tar.gz` a obrazy `php-0.0.7`, `web-0.0.7` a `enroll-0.0.7` v GitHub Container Registry. Archiv obsahuje i instalátor brány na Debianu. |
 
 Integrační test **tests/workflow.py** potřebuje PHP 8.4 a přístup k testovací PostgreSQL přes proměnné **PGHOST**, **PGPORT**, **PGDATABASE**, **PGUSER** a **PGPASSWORD**. Vytvoří vlastní dočasné schéma. Samostatný test výpočtu výkazu spustíte jako **php tests/timesheet.php**.

@@ -94,7 +94,7 @@ Pro vlastní sestavení ze zdrojového kódu použijte ve stejném projektu `doc
 ~~~powershell
 $ErrorActionPreference = 'Stop'
 
-$package = '\\server\dochazka\agent-v0.0.6'
+$package = '\\server\dochazka\agent-v0.0.7'
 $logDirectory = Join-Path $env:ProgramFiles 'DochazkaAgent\Logs'
 $log = Join-Path $logDirectory 'startup.log'
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
@@ -104,7 +104,7 @@ $installParams = @{
     Server           = 'https://dochazka.example.cz'
     EnrollmentServer = 'https://enroll.example.cz'
     PackagePath      = $package
-    Release          = '0.0.6'
+    Release          = '0.0.7'
 }
 
 try {
