@@ -93,7 +93,7 @@ responses:
         description: "Porovnat verzi exportu s podklady nebo další verzí"
         content:
             application/json:
-                schema: {type: array, items: {type: object}}
+                schema: {type: array, items: {$ref: '#/components/schemas/ExportChange'}}
     '403': {$ref: '#/components/responses/Error403'}
     '422': {$ref: '#/components/responses/Error422'}
 NEON)]

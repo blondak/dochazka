@@ -409,7 +409,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object"
+                                    "$ref": "#/components/schemas/AttendanceOverview"
                                 }
                             }
                         }
@@ -1232,7 +1232,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "type": "object"
+                                        "$ref": "#/components/schemas/ExportChange"
                                     }
                                 }
                             }
@@ -3206,7 +3206,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "type": "object"
+                                        "$ref": "#/components/schemas/TeamCoverage"
                                     }
                                 }
                             }
@@ -3382,6 +3382,280 @@
     },
     "components": {
         "schemas": {
+            "Reviewer": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    }
+                }
+            },
+            "FundAmounts": {
+                "type": "object",
+                "description": "Hodnoty v sekundách. Plán a rozdíl mají hodnotu null, pokud chybí pracovní model.",
+                "properties": {
+                    "planned": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "work": {
+                        "type": "integer"
+                    },
+                    "absence": {
+                        "type": "integer"
+                    },
+                    "difference": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "VacationBalance": {
+                "type": "object",
+                "description": "Roční zůstatek v sekundách před žádostí a po jejím schválení.",
+                "properties": {
+                    "year": {
+                        "type": "integer"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "requested": {
+                        "type": "integer"
+                    },
+                    "available": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "after": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "AttendanceOverview": {
+                "type": "object",
+                "required": [
+                    "people",
+                    "tasks"
+                ],
+                "properties": {
+                    "people": {
+                        "type": "array",
+                        "items": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/FundAmounts"
+                                }
+                            ],
+                            "properties": {
+                                "employee": {
+                                    "type": "integer"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "approved": {
+                                    "type": "boolean"
+                                },
+                                "days": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "format": "date"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "tasks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "owner": {
+                                    "enum": [
+                                        "employee",
+                                        "hr",
+                                        "manager",
+                                        "substitute"
+                                    ]
+                                },
+                                "employee": {
+                                    "type": "integer"
+                                },
+                                "request": {
+                                    "type": "integer"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "day": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "reason": {
+                                    "type": "string"
+                                },
+                                "substitute": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "reviewers": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Reviewer"
+                        }
+                    },
+                    "covers": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "manager": {
+                                    "type": "integer"
+                                },
+                                "substitute": {
+                                    "type": "integer"
+                                },
+                                "manager_name": {
+                                    "type": "string"
+                                },
+                                "substitute_name": {
+                                    "type": "string"
+                                },
+                                "org_unit_id": {
+                                    "type": "integer"
+                                },
+                                "starts": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "ends": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "active": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "TeamCoverage": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "planned": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Plánované sekundy v posuzovaném termínu."
+                    },
+                    "absences": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "enum": [
+                                        "pending",
+                                        "approved"
+                                    ]
+                                },
+                                "from": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "to": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "whole_day": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "ExportPart": {
+                "type": "object",
+                "properties": {
+                    "from": {
+                        "type": "string"
+                    },
+                    "to": {
+                        "type": "string"
+                    },
+                    "seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "ExportChange": {
+                "type": "object",
+                "properties": {
+                    "employee": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "number": {
+                        "type": "string"
+                    },
+                    "day": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "code": {
+                        "type": "string"
+                    },
+                    "before": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ExportPart"
+                        }
+                    },
+                    "after": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ExportPart"
+                        }
+                    }
+                }
+            },
             "AttendanceAccount": {
                 "type": "object",
                 "properties": {
@@ -4075,9 +4349,48 @@
                             }
                         }
                     },
+                    "reviewers": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Reviewer"
+                        }
+                    },
                     "fund": {
-                        "type": "object",
-                        "description": "Plán, práce, absence, rozdíl a denní rozpad v sekundách. Chybějící model má nulovou hodnotu JSON null."
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/FundAmounts"
+                            }
+                        ],
+                        "properties": {
+                            "days": {
+                                "oneOf": [
+                                    {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "$ref": "#/components/schemas/FundAmounts"
+                                        }
+                                    },
+                                    {
+                                        "type": "array",
+                                        "maxItems": 0
+                                    }
+                                ]
+                            },
+                            "review": {
+                                "oneOf": [
+                                    {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    {
+                                        "type": "array",
+                                        "maxItems": 0
+                                    }
+                                ]
+                            }
+                        }
                     },
                     "approval_note_required": {
                         "type": "boolean",
@@ -4609,6 +4922,12 @@
                         "schema": {
                             "type": "object",
                             "properties": {
+                                "balances": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/VacationBalance"
+                                    }
+                                },
                                 "seconds": {
                                     "type": "integer"
                                 },
@@ -5340,11 +5659,10 @@
                                     ]
                                 }
                             },
+                            "description": "Správce zadává také login a roles. Personalista zakládá zaměstnance s rolí employee a bez aktivovaného přihlášení.",
                             "required": [
                                 "name",
                                 "org_unit_id",
-                                "login",
-                                "roles",
                                 "attendance_enabled",
                                 "starts"
                             ],

@@ -322,7 +322,7 @@ responses:
         description: "Fond pracovní doby a týmové úkoly"
         content:
             application/json:
-                schema: {type: object}
+                schema: {$ref: '#/components/schemas/AttendanceOverview'}
     '403': {$ref: '#/components/responses/Error403'}
     '422': {$ref: '#/components/responses/Error422'}
 NEON)]
@@ -347,7 +347,7 @@ responses:
         description: "Plánované směny a souběžné absence při rozhodování žádosti"
         content:
             application/json:
-                schema: {type: array, items: {type: object}}
+                schema: {type: array, items: {$ref: '#/components/schemas/TeamCoverage'}}
     '403': {$ref: '#/components/responses/Error403'}
     '422': {$ref: '#/components/responses/Error422'}
 NEON)]

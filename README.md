@@ -46,6 +46,8 @@ V sekci **Organizační struktura** správce vytvoří jednotky a určí jejich 
 
 Správce v adresáři založí zaměstnance a nastaví uživatelské jméno, organizační jednotku, jednu či více rolí a Windows SID. Kombinace rolí **Vedoucí** a **Mzdová účetní** zpřístupní uzávěrku i schvalování vlastního týmu. Vedoucí může zobrazit propustky členů své organizační větve i své vlastní.
 
+Role **Personalista** (`hr`) zpřístupňuje zaměstnance, pracovní modely a fond pracovní doby celé organizace. Personalista může založit personální záznam, upravit údaje zaměstnance a přiřadit mu rozvrh. U nového záznamu správce doplní přihlašovací jméno, případný Windows SID a vydá pozvánku. Správce také přiděluje role, přesouvá vedoucí a archivuje účty. Ke schvalování a k propustkám členů týmu opravňuje role **Vedoucí** v odpovídající organizační větvi.
+
 Volba **Zpracovávat docházku** určuje, zda centrála pro účet přijímá nové docházkové události a zahrnuje jeho výkaz do uzávěrek. Při zapnutí je povinné osobní číslo pro mzdový export. Technický účet s vypnutou volbou se může přihlašovat a používat přidělené role i bez osobního čísla. Archivace ihned ukončí přístup k účtu a uzavře období evidence nejpozději k datu archivace. Žádosti, výkazy a vydané exporty zůstávají uložené. Správce může účet zobrazit volbou **Zobrazit archivované** a zrušit archivaci.
 
 Tlačítko **Pozvánka** vytvoří jednorázový kód s platností 48 hodin. Zaměstnanec zvolí **Mám pozvánku**, nastaví heslo a přihlásí se. Při zapomenutí hesla může správce vydat novou pozvánku.
@@ -57,6 +59,22 @@ V **Nastavení účtu** může zaměstnanec změnit heslo nebo po jeho ověřen�
 Apitte po rozpoznání routy spouští **ApiAccessMiddleware**. Web používá serverovou relaci a hlavičku **X-Dochazka: web**. Atributy Nepada **#[LoggedIn]** a **#[Role(...)]** deklarují požadavky metody. Služby zohledňují vlastníka záznamu a tým. Windows agent používá token stanice v hlavičce **Authorization: Bearer**. Centrála páruje Windows události se zaměstnancem podle SID.
 
 Nette DI konfiguruje **nettrine/dbal** a **nettrine/orm**. Entity jsou v jednotlivých doménách pod **src/**. DBAL obsluhuje například idempotentní příjem událostí a sestavování výkazů s přesností uložených časů. Schéma spravují SQL migrace v **migrations/**.
+
+### Tým, fond pracovní doby a uzávěrka
+
+Ve stránce **Můj tým** vidí vedoucí čekající žádosti ze všech měsíců a nedořešené výkazy za vybraný měsíc. Úkol otevře příslušnou žádost nebo den výkazu. Při schvalování absence vidí vedoucí plánované hodiny kolegů ve stejném termínu a souběh s čekajícím nebo schváleným volnem. U doložené časové absence se použije skutečný interval. Zaměstnanec na stránce **Žádosti** vidí jména vedoucích, kteří mohou rozhodnout.
+
+V části **Zastupování vedoucích** si vedoucí zvolí aktivovaného vedoucího ze své nebo nadřazené jednotky a zadá první a poslední den zástupu. Po dobu zástupu najde předané úkoly pod **Předáno zástupci**. Zástupce je uvidí mezi svými úkoly. Zastupování vychází ze stávajícího přístupu obou vedoucích a lze je předčasně odvolat. Vlastní žádost nebo výkaz dál vyřizuje jiný oprávněný vedoucí.
+
+**Fond pracovní doby** ukazuje personalistovi, účtárně a správci měsíční plán, uznanou práci, absence včetně svátků a rozdíl. Vedoucí najde stejný přehled za svou větev v **Můj tým**. Rozdíl se počítá z přesných uznaných dob. Kliknutím na rozdíl otevřete odpovídající výkaz. Při neúplném rozvrhu se zobrazí **Chybí model**.
+
+U již skončené plánované směny vyžaduje schválení výkazu poznámku, pokud je směna zcela nepokrytá nebo schodek překročil toleranci. Výchozí tolerance je 15 minut a správce ji změní v **Nastavení docházky → Tolerance schodku směny**. Ze soupisu dnů k prověření lze otevřít detail. Starší schválení zůstává platné, dokud se nezmění jeho dosavadní podklady.
+
+V části **Fond pracovní doby → Import zůstatků dovolené** lze načíst CSV v UTF-8. První řádek je `osobni_cislo;hodiny`, například druhý řádek `A012;72,5`. Vybrané datum určuje zůstatek **na začátku dne**, včetně přiděleného nároku pro daný rok. Zůstatek má zahrnovat čerpání do předchozího dne. Aplikace sama odečte schválené hodiny od zvoleného dne včetně budoucích rezervací do konce roku. Nový import stejné osoby a data původní hodnotu nahradí. Pokud je kterýkoliv řádek chybný, odmítne se celý soubor.
+
+Při podání i schvalování dovolené se pro každý dotčený rok zobrazí dostupné hodiny, délka žádosti a očekávaný zůstatek. Chybějící zůstatek aplikace označí. Záporný výsledek slouží jako informace pro rozhodnutí vedoucího.
+
+V **Uzávěrce** tlačítko **Změny od posledního exportu** porovná vydané CSV s aktuálními podklady. V historii lze porovnat také dvě po sobě vydané verze. Přehled ukáže původní a nové hodnoty podle osobního čísla, dne a mzdového kódu, včetně změny času při stejné délce práce.
 
 ### Denní přehled a spojování úseků
 
