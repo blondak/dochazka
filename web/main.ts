@@ -116,3 +116,11 @@ app.component('PvTabPanel', defineAsyncComponent(() => import('primevue/tabpanel
 app.component('PvToolbar', defineAsyncComponent(() => import('primevue/toolbar')))
 app.directive('tooltip', Tooltip)
 app.mount('#app')
+
+if (import.meta.env.PROD && window.isSecureContext && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js', {updateViaCache:'none'}).catch(error => {
+            console.warn('Offline stránku docházky se nepodařilo připravit.', error)
+        })
+    }, {once:true})
+}

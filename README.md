@@ -38,6 +38,12 @@ Z kořene repozitáře spusťte **bash bin/test-environment.sh up** a otevřete 
 
 Pro vývoj Vue spusťte z kořene repozitáře `npm ci --prefix web` a `npm run dev --prefix web` (alias `npm run watch --prefix web`). Otevřete **http://localhost:5173**. Vite načítá změny přímo z pracovního adresáře a předává požadavky na API lokální centrále na portu 8080. Jiný backend nastavíte proměnnou `DOCHAZKA_DEV_BACKEND`. Pro test passkeys z vývojové adresy spusťte centrálu pomocí `PASSKEY_ORIGIN=http://localhost:5173 bash bin/test-environment.sh up`.
 
+### Instalace Docházky na telefon a počítač (PWA)
+
+Otevřete HTTPS adresu centrály. V Chrome nebo Edge použijte nabídku instalace v adresním řádku nebo v menu prohlížeče. Na iPhonu v Safari zvolte **Sdílet → Přidat na plochu** a zapněte **Otevřít jako webovou aplikaci**, pokud se tato volba zobrazí. Z ikony **Docházka** se pak aplikace otevře ve vlastním okně. [Návod pro instalaci webových aplikací](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable)
+
+Výkazy, žádosti a propustky se načítají z centrály a jejich odeslání vyžaduje připojení. Po prvním otevření online se při dalším spuštění bez spojení zobrazí stránka **Docházka bez připojení**. Po obnově sítě vás tlačítko **Zkusit znovu** vrátí na původní adresu. Service worker se registruje v produkční sestavě. Lokálně jej lze vyzkoušet také na localhostu.
+
 ## Webové účty a API
 
 Boční **Menu** zpřístupňuje výkaz, žádosti a další sekce podle role. **Nastavení** sdružuje správu zaměstnanců, organizační struktury, zařízení a pravidel docházky.

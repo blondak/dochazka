@@ -1516,7 +1516,13 @@ export function setupAttendance() {
         if (['Výkaz', 'Žádosti'].includes(tab.value)) void run(refresh)
     }
 
+    const offline = ref(!navigator.onLine)
+    function updateConnection() {
+        offline.value = !navigator.onLine
+    }
     onMounted(async()=>{
+        window.addEventListener('online', updateConnection)
+        window.addEventListener('offline', updateConnection)
         compactLayout.addEventListener('change', updateLayout)
         window.addEventListener('popstate', restoreView)
         document.addEventListener('visibilitychange', updateDate)
@@ -1548,13 +1554,15 @@ export function setupAttendance() {
         }
     })
     onUnmounted(() => {
+        window.removeEventListener('online', updateConnection)
+        window.removeEventListener('offline', updateConnection)
         document.removeEventListener('visibilitychange', updateDate)
         compactLayout.removeEventListener('change', updateLayout)
         window.removeEventListener('popstate', restoreView)
         window.clearInterval(dailyTimer)
     })
     return {
-        starting, setupAvailable, initial, createAdmin, submitRequest, submitProof, showProof, preview, proofVisible,
+        offline, starting, setupAvailable, initial, createAdmin, submitRequest, submitProof, showProof, preview, proofVisible,
         accountMenuOpen, settingsVisible, passwords, changePassword, showSettings, clearSettings, signInWithPasskey,
         passkeyAvailable, passkeyList, newPasskey, addPasskey, removePasskey,
         photoVisible, photoPreview, adjusted, scanMessage, cameraInput, mobileCamera, selectProof, openCamera,

@@ -26,6 +26,7 @@
     </div>
 </header>
 <main class="app-content">
+    <PvMessage v-if="offline" severity="warn">Jste bez připojení. Změny můžete odeslat po obnovení spojení.</PvMessage>
     <PvMessage v-if="error && !inActionDialog" severity="error">{{ error }}</PvMessage>
     <PvMessage v-if="notice && !inActionDialog" severity="success" :pt="{root: {role:'status', 'aria-live':'polite'}}">{{ notice }}</PvMessage>
     <p v-if="starting" role="status">Načítám docházku…</p>
