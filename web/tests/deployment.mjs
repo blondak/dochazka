@@ -81,7 +81,7 @@ try {
 
     await navigate(employee, 'Výkaz')
     await openRequests(employee)
-    await employee.getByRole('button', {name:'Doplnit skutečnost'}).click()
+    await employee.getByRole('button', {name:'Doplnit čas a propustku'}).click()
     const actual = employee.getByRole('dialog', {name:'Doplnit skutečnost'})
     await expect(actual.getByLabel('Skutečný odchod')).toHaveValue(visitDate + 'T09:15')
     const chooseFile = employee.waitForEvent('filechooser')
@@ -94,7 +94,7 @@ try {
     expect((await worker).headers()['content-security-policy']).toContain("'unsafe-eval'")
     await expect(preview.getByRole('button', {name:'Použít celý snímek'})).toBeVisible({timeout:15000})
     await preview.getByRole('button', {name:'Uložit propustku'}).click()
-    await actual.getByRole('button', {name:'Uložit skutečný čas'}).click()
+    await actual.getByRole('button', {name:'Uložit čas a doklad'}).click()
     await expect(employee.getByText('Propustka doložena')).toBeVisible()
 
     await openRequests(manager)

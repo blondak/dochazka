@@ -369,8 +369,8 @@
             Žádná osoba k zobrazení.
         </PvMessage>
         <template v-if="tab === 'Výkaz' && sheet">
-            <PvMessage v-if="sheet.missing_proofs" severity="warn">
-                Doklady k doložení: {{ sheet.missing_proofs }}.
+            <PvMessage v-if="dueProofCount" severity="warn">
+                Doklady k doložení: {{ dueProofCount }}.
                 <PvButton v-if="tabs.includes('Žádosti') && canSubmitRequest" label="Otevřít žádosti" size="small" text @click="changeTab('Žádosti')" />
             </PvMessage>
             <PvCard>
@@ -506,7 +506,7 @@
                                             <div v-if="data.scheduled_seconds != null">{{ hours(data.scheduled_seconds) }}</div>
                                             <small v-if="data.vacation_estimate?.length">Odhad {{ data.vacation_estimate.map(part => time(part.from) + '–' + time(part.to)).join(' · ') }}</small>
                                             <small v-if="data.needs_actual && data.status === 'approved'">
-                                                {{ data.actual_returned ? 'Vráceno k doplnění' : data.actual_from ? 'Skutečnost ' + moment(data.actual_from) + ' – ' + moment(data.actual_to) : 'Čeká na skutečný čas' }}
+                                                {{ beforeReturn(data) ? afterReturnHint(data) : data.actual_returned ? 'Vráceno k doplnění' : data.actual_from ? 'Skutečnost ' + moment(data.actual_from) + ' – ' + moment(data.actual_to) : 'Čeká na skutečný čas' }}
                                             </small>
                                         </template></PvColumn>
                                         <PvColumn header="Stav"><template #body="{data}">
@@ -515,8 +515,8 @@
                                         <PvColumn v-if="canReview || ownSheet" header="Akce">
                                             <template #body="{data}">
                                                 <div class="record-actions">
-                                                    <PvButton v-if="data.needs_actual && data.status === 'approved' && (ownSheet || canReview)" icon="pi pi-clock" text size="small"
-                                                        aria-label="Doplnit skutečnost" v-tooltip.top="'Doplnit skutečnost'" @click="openEditor({kind:'actual',id:data.id})" />
+                                                    <PvButton v-if="actualAction(data)" icon="pi pi-clock" text size="small"
+                                                        :aria-label="actualAction(data)" v-tooltip.top="actualAction(data)" @click="openEditor({kind:'actual',id:data.id})" />
                                                     <PvButton v-if="data.actual_from && !data.actual_returned && data.status === 'approved' && canReview" icon="pi pi-replay" text size="small"
                                                         aria-label="Vrátit skutečnost" v-tooltip.top="'Vrátit skutečnost'" @click="returnActual(data)" />
                                                     <PvButton v-if="ownSheet && data.vacation_seconds && !data.vacation_consent && data.status === 'pending'" icon="pi pi-check" text size="small"
@@ -621,13 +621,13 @@
                             <div class="record-title">
                                 <strong>{{ requestTitle(request) }}</strong>
                                 <PvTag :severity="requestSeverities[request.status]" :value="labels[request.status]" />
-                                <PvTag v-if="(request.requires_proof ?? request.kind === 'LEKAR') && request.status === 'approved'"
+                                <PvTag v-if="(request.requires_proof ?? request.kind === 'LEKAR') && request.status === 'approved' && !beforeReturn(request)"
                                     :severity="request.has_proof ? 'success' : 'warn'"
                                     :value="request.kind === 'LEKAR' ? (request.has_proof ? 'Propustka doložena' : 'Čeká na propustku') : (request.has_proof ? 'Doklad doložen' : 'Čeká na doklad')" />
                             </div>
                             <div>{{ requestPeriod(request) }} <span v-if="request.scheduled_seconds != null"> · {{ hours(request.scheduled_seconds) }}</span></div>
                             <p v-if="request.needs_actual && request.status === 'approved'">
-                                {{ request.actual_returned ? 'Vráceno k doplnění' : request.actual_from ? 'Skutečnost ' + moment(request.actual_from) + ' – ' + moment(request.actual_to) : 'Čeká na skutečný čas' }}
+                                {{ beforeReturn(request) ? afterReturnHint(request) : request.actual_returned ? 'Vráceno k doplnění' : request.actual_from ? 'Skutečnost ' + moment(request.actual_from) + ' – ' + moment(request.actual_to) : 'Čeká na skutečný čas' }}
                                 <span v-if="request.actual_from && !request.actual_returned && (!request.requires_proof || request.has_proof)">
                                     · {{ sheet.approved ? 'Potvrzeno ve výkazu' : 'K potvrzení ve výkazu' }}
                                 </span>
@@ -646,8 +646,8 @@
                             </div>
                         </div>
                         <div class="record-actions">
-                            <PvButton v-if="request.needs_actual && request.status === 'approved' && (ownSheet || canReview)"
-                                label="Doplnit skutečnost" icon="pi pi-clock" size="small" outlined @click="openEditor({kind:'actual',id:request.id})" />
+                            <PvButton v-if="actualAction(request)"
+                                :label="actualAction(request)" icon="pi pi-clock" size="small" outlined @click="openEditor({kind:'actual',id:request.id})" />
                             <PvButton v-if="request.actual_from && !request.actual_returned && request.status === 'approved' && canReview"
                                 label="Vrátit skutečnost" icon="pi pi-replay" size="small" text @click="returnActual(request)" />
                             <PvButton v-if="ownSheet && request.vacation_seconds && !request.vacation_consent && request.status === 'pending'"
@@ -1144,7 +1144,7 @@
             <PvButton v-if="mobileCamera" type="button" label="Vyfotit propustku" icon="pi pi-camera" outlined @click="openCamera(editor.id)" />
             <span v-if="actualEdit.photo" role="status">Propustka připravena k uložení</span>
         </div>
-        <PvButton type="submit" label="Uložit skutečný čas" :loading="busy" />
+        <PvButton type="submit" :label="actualEdit.photo ? 'Uložit čas a doklad' : 'Uložit skutečný čas'" :loading="busy" />
     </form>
 </PvDialog>
 

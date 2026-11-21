@@ -153,6 +153,20 @@ test('one-day vacation remains one day when the API timestamps are in UTC', asyn
     })
 })
 
+test('approved visits offer actions only when the employee can complete them', async ({page}) => {
+    const visit = {...pending, status:'approved', needs_actual:true, requires_proof:true}
+    const requests = [visit,
+        {...visit, id:51, begins:'2026-11-17T11:00:00+01:00', ends:'2026-11-17T13:00:00+01:00'},
+        {...visit, id:52, begins:'2026-11-24T09:00:00+01:00', ends:'2026-11-24T10:00:00+01:00'}]
+    await openApp(page, employee, {sheet:() => sheet({requests,missing_proofs:3})}, '/?sekce=zadosti')
+    const articles = page.getByRole('article')
+    await expect(articles.nth(2)).toContainText('po návratu')
+    await expect(articles.nth(2).getByRole('button')).toHaveCount(0)
+    await expect(articles.first().getByRole('button', {name:'Doplnit čas a propustku'})).toBeVisible()
+    await articles.nth(1).getByRole('button', {name:'Už jsem zpět'}).click()
+    await expect(page.getByLabel('Skutečný návrat')).toHaveValue('2026-11-17T12:00')
+})
+
 test.describe('mobile proof capture', () => {
     test.use({hasTouch:true, isMobile:true, viewport:{width:320,height:720}})
 

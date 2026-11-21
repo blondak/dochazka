@@ -138,6 +138,7 @@ async function api<T>(op:string,data:object={}):Promise<T>{
 }
 export function setupAttendance() {
     const today = ref(pragueToday())
+    const now = ref(Date.now())
     const freshPerson=()=>({id:0,name:'',number:'',login:'',roles:['employee'],attendance_enabled:true,org_unit_id:null,sid:'',starts:today.value,ends:''})
     const user=ref<Person|null>(null), people=ref<Person[]>([]), devices=ref<Device[]>([]), payroll=ref<Payroll|null>(null)
     const person=ref(0), month=ref(today.value.slice(0,7)),sheet=ref<Sheet|null>(null),tab=ref('Výkaz')
@@ -480,9 +481,26 @@ export function setupAttendance() {
         }
         return moment(request.begins) + ' – ' + moment(request.ends)
     }
-    function canUploadProof(request: RequestRow) {
-        return ownSheet.value && selectedPerson.value?.attendance_enabled && (request.requires_proof ?? request.kind === 'LEKAR') && request.status === 'approved'
-            && !request.has_proof && date(request.actual_to ?? request.ends).getTime() <= Date.now()
+    const needsProof = (r:RequestRow) => r.requires_proof ?? r.kind === 'LEKAR'
+    const beforeReturn = (r:RequestRow) => !r.actual_to && date(r.ends).getTime() > now.value
+    const missingProofDue = (r:RequestRow) => r.status === 'approved' && needsProof(r) && !r.has_proof && !beforeReturn(r)
+    const dueProofCount = computed(() => sheet.value?.requests.filter(missingProofDue).length ?? 0)
+    function actualAction(r:RequestRow) {
+        if (!r.needs_actual || r.status !== 'approved' || !(ownSheet.value || canReview.value)) return ''
+        if (beforeReturn(r)) return ownSheet.value && date(r.begins).getTime() <= now.value ? 'Už jsem zpět' : ''
+        if (r.actual_from && !r.actual_returned) return 'Upravit skutečný čas'
+        if (ownSheet.value && needsProof(r) && (!r.has_proof || r.actual_returned)) {
+            return r.kind === 'LEKAR' ? 'Doplnit čas a propustku' : 'Doplnit čas a doklad'
+        }
+        return 'Doplnit skutečný čas'
+    }
+    function afterReturnHint(r:RequestRow) {
+        if (!needsProof(r)) return 'Skutečný čas se doplňuje po návratu.'
+        return r.kind === 'LEKAR' ? 'Čas a propustka se doplňují po návratu.' : 'Čas a doklad se doplňují po návratu.'
+    }
+    function canUploadProof(r:RequestRow) {
+        return ownSheet.value && selectedPerson.value?.attendance_enabled && missingProofDue(r)
+            && (!r.needs_actual || (r.actual_from && !r.actual_returned))
     }
     const scope=()=>({employee:person.value,month:month.value})
     async function loadDirectory() {
@@ -491,6 +509,7 @@ export function setupAttendance() {
         units.value = catalog
     }
     async function refresh(){
+        now.value = Date.now()
         today.value = pragueToday()
         if(!user.value)return
         try {
@@ -784,9 +803,9 @@ export function setupAttendance() {
         } else if (next?.kind === 'actual') {
             const {id} = next
             const request = sheet.value?.requests.find(item => item.id === id)
-            if (!request || !request.needs_actual || !(ownSheet.value || canReview.value)) { editor.value = null; return }
+            if (!request || !actualAction(request)) { editor.value = null; return }
             const from = date(request.actual_from ?? request.begins)
-            const to = date(request.actual_to ?? request.ends)
+            const to = new Date(Math.min(Date.now(), date(request.actual_to ?? request.ends).getTime()))
             actualEdit.value = {from:local.format(from) + 'T' + time(from.toISOString()),to:local.format(to) + 'T' + time(to.toISOString()),reason:'',photo:''}
         } else if (next?.kind === 'holiday-control' && hasRole('manager')) {
             const dayBefore = new Date(local.format(new Date()) + 'T12:00:00Z')
@@ -1362,6 +1381,7 @@ export function setupAttendance() {
         a.download='dochazka-'+month.value+'-v'+version+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)
     })}
     function updateDate() {
+        now.value = Date.now()
         const next = pragueToday()
         if (today.value === next) return
         today.value = next
@@ -1414,9 +1434,9 @@ export function setupAttendance() {
         activation, code, form, edit, deviceName, secret, labels, roles, requestKinds, requestSeverities,
         durationSeconds, durationEdit, submitDuration, breakEdit, submitBreak, actualEdit, submitActual, returnActual,
         actualProofRequired: computed(() => editor.value?.kind === 'actual' && !!sheet.value?.requests.find(
-            request => editor.value?.kind === 'actual' && request.id === editor.value.id && request.requires_proof)),
+            request => editor.value?.kind === 'actual' && request.id === editor.value.id && needsProof(request) && (!request.has_proof || request.actual_returned))),
         holidayControl, holidayControlHasChanges, submitHolidayControl, roundingEdit, breakRuleEdit, workBehaviors,
-        tabIcons, time, moment, day, hours, requestPeriod, canUploadProof, scope, run, refresh, signIn, signOut, roleNames, hasRole,
+        tabIcons, time, moment, day, hours, requestPeriod, canUploadProof, dueProofCount, actualAction, beforeReturn, afterReturnHint, scope, run, refresh, signIn, signOut, roleNames, hasRole,
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
