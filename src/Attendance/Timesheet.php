@@ -121,7 +121,6 @@ final class Timesheet
         $adjustments = $partialVacation = [];
         $missingActual = 0;
         foreach ($requests as $r) {
-            if ($r['generated_holiday'] ?? false) continue;
             if ($r['status'] === 'pending') $pending++;
             if ($r['status'] !== 'approved') continue;
             $range = [strtotime($r['begins']),strtotime($r['ends'])];
@@ -130,6 +129,7 @@ final class Timesheet
             if ($missingProof && strtotime($r['actual_to'] ?? $r['ends']) <= $reviewAt->getTimestamp()) {
                 $noteDays($range, 'Chybí povinný doklad.');
             }
+            if ($r['generated_holiday'] ?? false) continue;
             if ($r['needs_actual'] ?? false) {
                 $missingTime = empty($r['actual_from']) || !empty($r['actual_returned']);
                 if ($missingTime && $range[1] <= $reviewAt->getTimestamp()) {

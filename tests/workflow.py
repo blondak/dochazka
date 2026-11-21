@@ -626,6 +626,7 @@ def exercise(connect, php_command):
     assert len(matching) == 1 and matching[0]["kind"] == "DOVOLENA" and matching[0]["generated_holiday"] and matching[0]["seconds"] == 14400
     assert result["seconds"] == 14400 and result["missing_proofs"] == 1
     auto = next(r for r in result["requests"] if r.get("generated_holiday"))
+    assert "Chybí povinný doklad." in result["day_issues"][proof_day]["reasons"]
     aid = {"id": auto["id"]}
     manager.call("approve", dict(march, fingerprint=result["fingerprint"]), 409)
     manager.call("decide", dict(aid, status="rejected", reason="Ruční pokus"), 409)
@@ -634,7 +635,7 @@ def exercise(connect, php_command):
     assert manager.call("request-proof", aid)["jpeg"]
     payroll.call("request-proof", aid, 404)
     result = manager.call("sheet", march)
-    assert result["missing_proofs"] == 0
+    assert result["missing_proofs"] == 0 and proof_day not in result.get("day_issues", {})
     manager.call("approve", dict(march, fingerprint=result["fingerprint"]))
     v = payroll.call("close", march)["versions"][0]["version"]
     original = payroll.call("download", dict(march, version=v))["csv"]

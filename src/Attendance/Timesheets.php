@@ -104,7 +104,6 @@ final class Timesheets
             if (!$request['needs_actual']) unset($request['needs_actual'], $request['actual_from'], $request['actual_to'], $request['actual_returned']);
             if ($request['vacation_seconds'] === null) unset($request['vacation_seconds'], $request['vacation_side'], $request['vacation_consent']);
             if ($request['vacation_estimate'] === null) unset($request['vacation_estimate']);
-            if (!($request['needs_actual'] ?? false) && $request['requires_proof'] === ($request['kind'] === 'LEKAR')) unset($request['requires_proof']);
             if (!$request['generated_holiday']) unset($request['generated_holiday']);
             if (!$request['merged_work']) unset($request['merged_work']);
             if ($request['replaces_from'] === null) unset($request['replaces_from'], $request['replaces_to']);
@@ -144,6 +143,11 @@ final class Timesheets
             if ($proposals) $fingerprintSheet['breaks'] = $proposals;
             else unset($fingerprintSheet['breaks']);
         }
+        // Keep historical approval fingerprints stable after the calculation has used the full proof policy.
+        foreach ($requests as &$request) {
+            if (!($request['needs_actual'] ?? false) && $request['requires_proof'] === ($request['kind'] === 'LEKAR')) unset($request['requires_proof']);
+        }
+        unset($request);
         $payload = [$person['number'], $fingerprintSheet, $requests, $relevant];
         foreach ($sheet['rows'] as $index => &$row) {
             $kind = $row['kind'];
