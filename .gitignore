@@ -12,3 +12,6 @@
 /tests/__pycache__/
 /public/docs/elements/
 /public/index.html
+/public/manifest.webmanifest
+/public/pwa/
+/public/sw.js

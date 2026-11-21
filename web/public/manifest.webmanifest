@@ -1,0 +1,17 @@
+{
+    "id": "/",
+    "name": "Docházka",
+    "short_name": "Docházka",
+    "lang": "cs",
+    "description": "Pracovní výkazy a žádosti o volno.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#f8faf9",
+    "theme_color": "#ffffff",
+    "icons": [
+        {"src": "/pwa/clock-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "/pwa/clock-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "/pwa/clock-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+    ]
+}
