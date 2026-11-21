@@ -320,14 +320,18 @@ final class Timesheets
                 }
             }
         }
+        $schedules = $this->models->teamSchedules(array_column($team,'id'), $start, $end);
         $result = [];
         foreach ($team as $member) {
             $begin = max($start, WorkModels::day($member['starts']));
             $until = $member['last'] ? min($end, WorkModels::day($member['last'])->modify('+1 day')) : $end;
-            $plan = $this->models->schedule($member['id'], $begin, $until);
+            $plan = array_filter($schedules[$member['id']], static fn($day) =>
+                $day >= $begin->format('Y-m-d') && $day < $until->format('Y-m-d'), ARRAY_FILTER_USE_KEY);
             $seconds = 0;
-            foreach ($plan as $ranges) foreach ($ranges as [$a,$b]) foreach ($windows as [$x,$y]) {
-                $seconds += max(0,min($b,$y) - max($a,$x));
+            foreach ($plan as $ranges) {
+                foreach ($ranges as [$a,$b]) {
+                    foreach ($windows as [$x,$y]) $seconds += max(0, min($b,$y) - max($a,$x));
+                }
             }
             $result[] = ['name'=>$member['name'], 'planned'=>$plan ? $seconds : null, 'absences'=>$absences[$member['id']] ?? []];
         }
@@ -374,12 +378,18 @@ final class Timesheets
                 $tasks[] = ['employee'=>$person['id'], 'name'=>$person['name'], 'day'=>substr($r['begins'],0,10),
                     'request'=>$r['id'], 'owner'=>'employee', 'reason'=>'Doplnit skutečnost nebo doklad · '.$r['account_name']];
             }
+            foreach ($s['day_issues'] ?? [] as $day => $issue) {
+                if (in_array('Pro skutečnou nepřítomnost chybí rozvrh.', $issue['reasons'], true)) {
+                    $tasks[] = ['employee'=>$person['id'], 'name'=>$person['name'], 'owner'=>'hr',
+                        'day'=>$day, 'reason'=>'Doplnit pracovní model pro nepřítomnost'];
+                }
+            }
             foreach ($s['approval_tasks'] as $task) {
-                if (in_array($task['code'], ['pending','missing_proofs'], true)) continue;
+                if (in_array($task['code'], ['pending','missing_proofs','missing_actual'], true)) continue;
                 $tasks[] = ['employee'=>$person['id'], 'name'=>$person['name'], 'owner'=>'manager',
                     'day'=>$month.'-01', 'reason'=>$task['reason']];
             }
-            if (!$s['approval_tasks'] && $month <= date('Y-m')) {
+            if (!$s['approval_tasks'] && ($month < date('Y-m') || $fund['review'])) {
                 $tasks[] = ['employee'=>$person['id'], 'name'=>$person['name'], 'owner'=>'manager',
                     'day'=>array_key_first($fund['review']) ?? $month.'-01',
                     'reason'=>$fund['review'] ? 'Prověřit odchylky výkazu' : 'Zkontrolovat výkaz'];
@@ -393,9 +403,10 @@ final class Timesheets
             if (!$cover['active']) continue;
             $branch = $this->directory->managedUnits(['roles'=>['manager'],'org_unit_id'=>$cover['org_unit_id']]);
             foreach ($tasks as &$task) {
-                if ($task['owner'] !== 'manager' || $task['employee'] === $cover['manager'] ||
+                if ($task['owner'] !== 'manager' || in_array($task['employee'], [$cover['manager'], $cover['substitute']], true) ||
                     !in_array($memberUnits[$task['employee']] ?? null, $branch,true)) continue;
                 $task['substitute'] = $cover['substitute_name'];
+                if ($cover['manager'] === $actor['id']) $task['owner'] = 'substitute';
             }
             unset($task);
         }

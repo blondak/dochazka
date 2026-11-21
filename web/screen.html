@@ -115,7 +115,7 @@
         </PvDrawer>
 
         <ToolbarCard v-if="['Výkaz', 'Žádosti', 'Uzávěrka','Můj tým','Fond pracovní doby'].includes(tab)"
-            :label="tab === 'Výkaz' ? 'Nástroje výkazu' : tab === 'Žádosti' ? 'Nástroje žádostí' : 'Nástroje uzávěrky'" toolbar-class="sheet-toolbar">
+            :label="tab === 'Výkaz' ? 'Nástroje výkazu' : tab === 'Žádosti' ? 'Nástroje žádostí' : tab === 'Uzávěrka' ? 'Nástroje uzávěrky' : 'Výběr období'" toolbar-class="sheet-toolbar">
             <template #start>
                 <PeriodSelector :person="person" :month="month" :people="selectablePeople" :selected-name="selectedPerson?.name"
                     :show-person="['Výkaz','Žádosti'].includes(tab)" :editable-person="tab === 'Výkaz' && (hasRole('admin') || hasRole('hr'))" :busy="busy"
@@ -169,9 +169,10 @@
                 <template #title><h2>K vyřízení</h2></template>
                 <template #content>
                     <div class="record-actions">
-                        <PvButton v-for="owner in ['manager','employee']" :key="owner" size="small" :outlined="waitingFor !== owner"
+                        <PvButton v-for="(label,owner) in taskOwners" :key="owner"
+                            v-show="['manager','employee'].includes(owner) || overview.tasks.some(t => t.owner === owner)" size="small" :outlined="waitingFor !== owner"
                             :aria-pressed="waitingFor === owner" @click="waitingFor = owner"
-                            :label="(owner === 'manager' ? 'Čeká na mě' : 'Čeká na zaměstnance') + ' (' + overview.tasks.filter(t => t.owner === owner).length + ')'" />
+                            :label="label + ' (' + overview.tasks.filter(t => t.owner === owner).length + ')'" />
                     </div>
                     <p>Čekající žádosti ze všech období a výkazy za vybraný měsíc.</p>
                     <PvDataTable :value="overview.tasks.filter(t => t.owner === waitingFor)" size="small">
@@ -681,6 +682,14 @@
                     <p v-if="sheet.fund">Plánovaný fond {{ sheet.fund.planned === null ? '· chybí model' : hours(sheet.fund.planned) }}
                         · Práce {{ hours(sheet.fund.work) }} · Absence a svátky {{ hours(sheet.fund.absence) }}
                         · Rozdíl {{ sheet.fund.difference === null ? '—' : signedHours(sheet.fund.difference) }}</p>
+                    <details v-if="sheet.fund && Object.values(sheet.fund.days).some(d => d.difference !== 0)">
+                        <summary>Rozdíly po dnech</summary>
+                        <ul><template v-for="(value,key) in sheet.fund.days" :key="key">
+                            <li v-if="value.difference !== 0"><PvButton :label="day(key)" text size="small" @click="selectDayFromTask(key)" />
+                                {{ value.difference === null ? 'Chybí model' : signedHours(value.difference) }}
+                            </li>
+                        </template></ul>
+                    </details>
                     <PvDataTable :value="sheet.account_totals ? sheet.account_totals.map(account => ({
                         label:account.code === 'PRACE' ? account.name + ' (uznaná doba)' : account.name,
                         value:account.legacy_days ? hours(account.seconds) + ' + ' + account.legacy_days + ' kalendářních dnů' : hours(account.seconds),
@@ -1505,6 +1514,7 @@
     <form v-if="confirmation" class="stack confirmation-form" @submit.prevent="confirmAction">
         <p>{{ confirmation.description }}</p>
         <p v-for="balance in confirmation.balances" :key="balance.year">{{ balanceText(balance) }}</p>
+        <p v-if="confirmation.balanceHint">{{ confirmation.balanceHint }}</p>
         <div v-if="confirmation.coverage">
             <h2>Ve stejném termínu</h2>
             <p v-if="!confirmation.coverage.length">Ve spravovaném týmu nejsou další zaměstnanci.</p>

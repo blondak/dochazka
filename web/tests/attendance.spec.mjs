@@ -1397,3 +1397,49 @@ test('the timesheet toolbar opens a control run for the selected person and peri
         {...scope,to:'2026-11-15',token:'preview'},
     ])
 })
+
+test('HR edits the personnel record and follows the fund difference to the employee day', async ({page}) => {
+    const hr = {...accountant,roles:['hr']}
+    const key = '2026-11-16'
+    const fund = {work:900,absence:0,planned:28800,difference:-27900}
+    await openApp(page, hr, {
+        people:() => [hr,{...staff, starts:'2026-01-01'}],
+        'attendance-overview':input => {
+            expect(input.team).toBe(false)
+            return {people:[{employee:staff.id,name:staff.name,...fund,days:[key]}],tasks:[]}
+        },
+        sheet:() => sheet({fund:{...fund,days:{[key]:fund},review:{[key]:-27900}}}),
+    })
+    await page.getByRole('button',{name:'Upravit ' + staff.name,exact:true}).click()
+    const dialog = page.getByRole('dialog',{name:'Upravit zaměstnance'})
+    await expect(dialog.getByRole('tab',{name:'Přístup'})).toHaveCount(0)
+    await dialog.getByRole('tab',{name:'Docházka'}).click()
+    await expect(dialog.getByText('Pracovní model',{exact:true}).first()).toBeVisible()
+    await expect(dialog.getByLabel('Doménový SID')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await navigate(page, 'Fond pracovní doby')
+    await expect(page.getByRole('table')).toContainText('−7:45')
+    await page.getByRole('button',{name:'Rozdíl ve výkazu · ' + staff.name}).click()
+    await expect(page.getByRole('heading',{name:/Detail dne.*16\. 11\./})).toBeVisible()
+    await expect(page.getByRole('button',{name:'Schválit výkaz'})).toHaveCount(0)
+})
+
+test('manager opens a request from the team inbox outside the selected month and sees team cover', async ({page}) => {
+    const req = {...pending,begins:'2026-12-03T09:00:00+01:00',ends:'2026-12-03T10:00:00+01:00'}
+    await openApp(page, manager, {
+        people:() => [manager,staff],
+        sheet:() => sheet({pending:1,requests:[req]}),
+        'attendance-overview':() => ({people:[],tasks:[{employee:staff.id,request:req.id,name:staff.name,reason:'Lékař',owner:'manager',day:'2026-12-03'}]}),
+        'team-coverage':() => [{name:'Petra',planned:3600,absences:[{from:req.begins,to:req.ends,status:'approved',whole_day:false}]}],
+    })
+    await navigate(page,'Můj tým')
+    await page.getByRole('button',{name:'Otevřít · ' + staff.name + ' · Lékař'}).click()
+    await expect(page.getByLabel('Období')).toHaveValue('2026-12')
+    await expect(page.getByRole('article')).toBeFocused()
+    await page.getByRole('button',{name:'Schválit',exact:true}).click()
+    const dialog = page.getByRole('dialog',{name:'Schválit žádost'})
+    await expect(dialog).toContainText('Petra · Plán 1:00')
+    await expect(dialog).toContainText('Schválená absence')
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+})

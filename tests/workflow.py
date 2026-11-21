@@ -90,7 +90,7 @@ def exercise(connect, php_command, check_locks=False):
     admin.call("org-unit-delete", empty)
     admin.call("org-unit", {"id": branch, "name": "Provoz", "parent_id": warehouse}, 409)
     admin.call("org-unit-delete", {"id": branch}, 409)
-    for role,team in [("employee","A"),("manager","A"),("payroll","B"),("manager","B")]:
+    for role,team in [("employee","A"),("manager","A"),("payroll","B"),("manager","B"),("hr","B")]:
         login = role + team
         uid = admin.call("employee", {"name":login,"login":login,"number":login,"org_unit_id":warehouse if role=="employee" else units[team],"roles":[role],"attendance_enabled":role=="employee",
             "starts":month+"-01","sid":sid if role=="employee" else ""})["id"]
@@ -103,6 +103,23 @@ def exercise(connect, php_command, check_locks=False):
     manager = clients["managerA"][0]
     payroll = clients["payrollB"][0]
     scope = {"employee":uid,"month":month}
+    hr = clients["hrB"][0]
+    assert hr.call("org-units")
+    employee_info = next(p for p in hr.call("people") if p["id"] == uid)
+    assert "sid" not in employee_info and "login" not in employee_info
+    hr.call("employee",dict(employee_info, name="employeeA", roles=["admin"], login="unused"),403)
+    hr.call("employee",employee_info)
+    hr_employee = hr.call("employee", {"name":"Nový zaměstnanec", "org_unit_id":warehouse,
+        "attendance_enabled":False, "starts":month+"-01"})
+    created = next(p for p in admin.call("people") if p["id"] == hr_employee["id"])
+    assert created["roles"] == ["employee"] and created["login"].startswith("osoba-")
+    assert next(p for p in admin.call("people") if p["id"] == uid)["roles"] == ["employee"]
+    for op in ["devices","invite","employee-archive","approve","close"]:
+        hr.call(op,scope,403)
+    assert hr.call("work-models") == []
+    assert hr.call("attendance-overview",dict(scope,team=False))["people"][0]["planned"] is None
+    manager.call("attendance-overview",dict(scope,team=False),403)
+    assert clients["managerB"][0].call("attendance-overview",dict(scope,team=True))["people"] == []
     new_password = secrets.token_hex(12)
     anonymous.call("change-password", {"current_password": pw, "new_password": new_password}, 401)
     emp.call("change-password", {"current_password": "wrong", "new_password": new_password}, 403)
@@ -231,6 +248,11 @@ def exercise(connect, php_command, check_locks=False):
     photo = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAADElEQVQImWNgGB4AAADIAAH4XVuUAAAAAElFTkSuQmCC"
     emp.call("request", dict(visit, photo=photo), 422)
     req = emp.call("request", visit)
+    inbox = manager.call("attendance-overview",dict(scope, team=True))
+    assert any(task.get("request") == req["id"] for task in inbox["tasks"])
+    assert not clients["managerB"][0].call("attendance-overview",dict(scope,team=True))["tasks"]
+    assert manager.call("team-coverage",req) == []
+    hr.call("team-coverage",req,403)
     upload = dict(req, photo=photo)
     emp.call("request-proof-upload", upload, 409)
     manager.call("request-proof", req, 404)
@@ -287,6 +309,8 @@ def exercise(connect, php_command, check_locks=False):
     assert sheet["missing_proofs"] == 0
     assert next(r for r in sheet["requests"] if r["id"] == req["id"])["note"] == visit["note"]
     assert all("note" not in r and "reason" not in r for r in payroll.call("sheet", scope)["requests"])
+    assert sheet["fund"]["review"] and sheet["approval_note_required"]
+    manager.call("approve", dict(scope, fingerprint=sheet["fingerprint"]),422)
     manager.call("approve",dict(scope,fingerprint=sheet["fingerprint"],note="Zkontrolovány plánované směny."))
     version=payroll.call("close",scope)["versions"][0]["version"]
     if check_locks:
@@ -304,7 +328,11 @@ def exercise(connect, php_command, check_locks=False):
     payroll.call("close",scope,409)
     sheet=manager.call("sheet",scope)
     manager.call("approve",dict(scope,fingerprint=sheet["fingerprint"],note="Zkontrolovány plánované směny."))
+    changes = payroll.call("export-changes",dict(scope,version=1))
+    assert changes and all(c["employee"] == uid for c in changes)
     assert len(payroll.call("close",scope)["versions"])==2
+    assert payroll.call("export-changes",dict(scope,version=1,to_version=2)) == changes
+    assert payroll.call("export-changes",dict(scope,version=2)) == []
     assert payroll.call("download",dict(scope,version=version))["csv"]==csv
     assert len(payroll.call("close", scope)["versions"]) == 2
 
@@ -331,6 +359,15 @@ def exercise(connect, php_command, check_locks=False):
     reviewer = Client(connect)
     reviewer.call("activate", dict(invitation, password=pw))
     reviewer.call("login", {"login":"review","password":pw})
+    cover = {"starts":day_start.date().isoformat(), "ends":day_start.date().isoformat(), "substitute":reviewer_id}
+    manager.call("manager-cover",dict(cover,substitute=clients["managerB"][1]),403)
+    manager.call("manager-cover",cover)
+    manager.call("manager-cover",cover,409)
+    entries = reviewer.call("attendance-overview",dict(scope,team=True))["covers"]
+    assert len(entries) == 1 and entries[0]["active"]
+    reviewer.call("manager-cover",{"revoke":entries[0]["id"]},404)
+    manager.call("manager-cover",{"revoke":entries[0]["id"]})
+    assert not reviewer.call("attendance-overview",dict(scope,team=True))["covers"]
     reviewer.call("decide", dict(own_request, status="approved"))
     sheet = reviewer.call("sheet", own_scope)
     assert sheet["seconds"] == 4 * 3600
@@ -479,9 +516,19 @@ def exercise(connect, php_command, check_locks=False):
     assert manager.call("holiday-control", november_holiday)["skipped"]["unchanged"] == 1
     november_sheet = manager.call("sheet", {"employee": employee, "month": "2025-11"})
     assert sum(r["seconds"] for r in november_sheet["rows"] if r.get("generated_holiday")) == 16200
-    assert manager.call("request-preview", vacation) == {"seconds": 46800, "days": ["2024-03-28", "2024-04-02", "2024-04-03"]}
+    estimate = manager.call("request-preview", vacation)
+    assert estimate["seconds"] == 46800 and estimate["days"] == ["2024-03-28", "2024-04-02", "2024-04-03"]
+    assert estimate["balances"][0]["available"] is None
+    opening = {"effective_on":"2024-01-01", "csv":"osobni_cislo;hodiny\nCATALOG;40"}
+    subject_login.call("vacation-balance-import",opening,403)
+    assert hr.call("vacation-balance-import",opening)["count"] == 1
+    hr.call("vacation-balance-import",dict(opening,csv=opening["csv"].replace(";40",";4")+"\nUNKNOWN;5"),422)
+    balance = manager.call("request-preview", vacation)["balances"][0]
+    assert balance["available"] == 144000 and balance["after"] == 97200, balance
     request = manager.call("request", vacation)
     manager.call("decide", dict(request, status="approved"))
+    booked = manager.call("request-preview",dict(vacation, **{"from":"2024-04-08","to":"2024-04-08"}))["balances"][0]
+    assert booked["available"] == 97200, booked
     training = {"code": "SKOLENI", "name": "Školení", "description": "", "position": 50, "behavior": "work",
                 "requires_proof": True, "active": True, "payroll_code": "SKOL", "effective_on": "2024-04-01"}
     admin.call("attendance-account", training)
@@ -661,6 +708,7 @@ def exercise(connect, php_command, check_locks=False):
     manager.call("request-proof-upload", dict(aid, photo=photo), 404)
     subject_login.call("request-proof-upload", dict(aid, photo=photo))
     assert manager.call("request-proof", aid)["jpeg"]
+    hr.call("request-proof", aid, 404)
     payroll.call("request-proof", aid, 404)
     result = manager.call("sheet", march)
     assert result["missing_proofs"] == 0 and proof_day not in result.get("day_issues", {})
@@ -720,6 +768,16 @@ def exercise(connect, php_command, check_locks=False):
     estimate = manager.call("request-preview", half)
     assert estimate["seconds"] == 8100
     half_request = manager.call("request", half)
+    colleague = hr.call("employee", {"name":"Test pokrytí", "org_unit_id":warehouse, "attendance_enabled":True,
+        "number":"COVER-FIXTURE","starts":half_day, "ends":half_day})
+    hr.call("employee-work-model", {"model":model_id, "employee":colleague["id"], "effective_on":half_day})
+    manager.call("request", {"employee":colleague["id"],"kind":"LEKAR","from":half_day+"T13:00",
+        "to":half_day+"T14:30", "note":"Soukromá poznámka"})
+    covered = next(p for p in manager.call("team-coverage",half_request) if p["name"] == "Test pokrytí")
+    assert covered == {"name":"Test pokrytí","planned":8100,"absences":[{
+        "status":"pending","from":half_day+"T13:00:00+02:00","to":half_day+"T14:00:00+02:00","whole_day":False}]}, covered
+    colleague_info = next(p for p in hr.call("people") if p["id"] == colleague["id"])
+    hr.call("employee", dict(colleague_info,attendance_enabled=False))
     manager.call("decide", dict(half_request, status="approved"), 409)
     subject_login.call("request-vacation-consent", half_request)
     manager.call("decide", dict(half_request, status="approved"))

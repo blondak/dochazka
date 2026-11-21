@@ -248,6 +248,12 @@ final class WorkModels
         return $this->plans([$employee], $from, $until, $includeUnassignedDays)[$employee];
     }
 
+    public function teamSchedules(array $employees, Date $from, Date $until): array
+    {
+        return array_map(static fn(array $plan) => $plan['schedule'],
+            $this->plans($employees, $from, $until, false));
+    }
+
     /** Daily team view already has the effective break rules for all accounts. */
     public function dailySchedules(array $employees, Date $day, array $breakRules): array
     {

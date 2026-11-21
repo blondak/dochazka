@@ -27,7 +27,7 @@ interface ExportPart {from:string;to:string;seconds:number|null}
 interface ExportChange {employee:number|null;name:string|null;number:string;day:string;code:string;before:ExportPart[];after:ExportPart[]}
 interface Reviewer {id:number;name:string}
 interface Cover {id:number;manager:number;substitute:number;manager_name:string;substitute_name:string;starts:string;ends:string;active:boolean}
-interface TeamTask {substitute?:string;employee:number;name:string;reason:string;day:string;request?:number;owner:'manager'|'employee'}
+interface TeamTask {substitute?:string;employee:number;name:string;reason:string;day:string;request?:number;owner:'manager'|'employee'|'hr'|'substitute'}
 interface Overview {reviewers?:Reviewer[];covers?:Cover[];people:(FundDay & {employee:number;name:string;approved:boolean;days:string[]})[];tasks:TeamTask[]}
 interface Payroll {people:{id:number;name:string;approved:boolean}[];versions:{version:number;created:string}[];changed:boolean}
 interface Passkey {id:string;label:string;created:string}
@@ -35,6 +35,7 @@ interface Confirmation {
     title: string
     description: string
     balances?:VacationBalance[]
+    balanceHint?:string
     coverage?:{name:string;planned:number|null;absences:{status:string;from:string;to:string;whole_day:boolean}[]}[]
     details?: string
     label: string
@@ -198,18 +199,21 @@ export function setupAttendance() {
             }})
     }
     function exportPart(part:ExportPart) {
-        const span = part.from ? time(part.from) + '–' + time(part.to) + ' · ' : ''
+        const span = part.from ? workClock.format(date(part.from)) + '–' + workClock.format(date(part.to)) + ' · ' : ''
         return span + (part.seconds === null ? 'kalendářní den' : hours(part.seconds) + (part.seconds % 60 ? ' + ' + part.seconds % 60 + ' s' : ''))
     }
     const overview = ref<Overview|null>(null)
     const cover = ref({substitute:null as number|null, starts:today.value, ends:today.value})
-    const waitingFor = ref<'manager'|'employee'>('manager')
-    async function openOverviewDay(employee:number, key:string, request?:number) {
-        await navigate({tab:request ? 'Žádosti' : 'Výkaz', person:employee, month:key.slice(0,7), pendingOnly:false})
-        if (request) {
-            await nextTick()
-            document.getElementById('request-' + request)?.focus()
-        } else await selectDayFromTask(key)
+    const waitingFor = ref<TeamTask['owner']>('manager')
+    const taskOwners = {manager:'Čeká na mě',employee:'Čeká na zaměstnance',hr:'Čeká na personalistu',substitute:'Předáno zástupci'}
+    function openOverviewDay(employee:number, key:string, request?:number) {
+        return run(async () => {
+            await openPersonPeriod(employee, key, request ? 'Žádosti' : 'Výkaz')
+            if (request) {
+                await nextTick()
+                document.getElementById('request-' + request)?.focus()
+            } else await selectDayFromTask(key)
+        })
     }
     const fundTolerance = ref<number|null>(null)
     const gapMinutes = ref<string|null>(null)
@@ -785,6 +789,9 @@ export function setupAttendance() {
         showApprovalTasks.value = false
         exportComparison.value = null
         overview.value = null
+        balanceFile.value = null
+        cover.value = {substitute:null, starts:today.value, ends:today.value}
+        waitingFor.value = 'manager'
         chosenDay.value = ''
         dayChooserOpen.value = false
     }
@@ -1026,16 +1033,18 @@ export function setupAttendance() {
         const includedFromDirectory = employee !== undefined && people.value.some(p => p.id === employee && !p.attendance_enabled)
         return navigate({tab:t, person:employee ?? person.value, showAllPeople:showAllPeople.value || includedFromDirectory, unitFilter:null})
     }
+    async function openPersonPeriod(employee:number, day:string, target:'Žádosti'|'Výkaz') {
+        if (!attendancePeople.value.some(p => p.id === employee)) {
+            people.value = await api('people')
+            if (!attendancePeople.value.some(p => p.id === employee)) throw new Error('Výkaz vybrané osoby už není dostupný.')
+        }
+        await renderView({...view(), tab:target, person:employee, month:day.slice(0,7), pendingOnly:false, unitFilter:null, editor:null}, true)
+    }
     function openDailySheet(employee: number) {
         const day = daily.value?.day
         if (!day) return
-        const next = {...view(), tab:'Výkaz', person:employee, month:day.slice(0,7), unitFilter:null, editor:null}
         return run(async () => {
-            if (!scopePeople.value.some(p => p.id === employee)) {
-                people.value = await api('people')
-                if (!scopePeople.value.some(p => p.id === employee)) throw new Error('Výkaz vybrané osoby už není dostupný.')
-            }
-            await renderView(next, true)
+            await openPersonPeriod(employee, day, 'Výkaz')
             chosenDay.value = day
         })
     }
@@ -1234,30 +1243,38 @@ export function setupAttendance() {
         if (current.reasonRequired && !reason) return
         return run(() => current.action(reason))
     }
-    function decide(request: RequestRow, status: 'approved' | 'rejected') {
+    async function decide(request: RequestRow, status: 'approved' | 'rejected') {
+        if (busy.value) return
         const label = status === 'approved' ? 'Schválit žádost'
             : request.status === 'approved' ? 'Odvolat schválení' : 'Zamítnout žádost'
-        return run(async () => {
-            const absence = ['timed_absence','shift_absence'].includes(request.behavior ?? '') || ['DOVOLENA','LEKAR'].includes(request.kind)
-            const coverage = status === 'approved' && absence ? await api<Confirmation['coverage']>('team-coverage',{id:request.id}) : undefined
-            let balances:VacationBalance[]|undefined
-            if (status === 'approved' && request.kind === 'DOVOLENA') {
-                const range = pragueDayRange(request.begins, request.ends)
-                const preview = await api<VacationEstimate>('request-preview',{...scope(),kind:request.kind,from:range.first,to:range.last,
-                    vacation_side:request.vacation_side,vacation_seconds:request.vacation_seconds})
-                balances = preview.balances
-            }
-            openConfirmation({
-                balances, coverage, title: label,
-                label,
-                description: [selectedPerson.value?.name, requestTitle(request), requestPeriod(request),
-                    request.scheduled_seconds == null ? '' : 'Čerpání ' + hours(request.scheduled_seconds)].filter(Boolean).join(' · '),
-                details:request.note && !request.merged_work ? request.note : undefined,
-                destructive: status === 'rejected',
-                reasonRequired: status === 'rejected',
-                action: reason => save('decide', {id:request.id, status, reason}, 'Rozhodnutí bylo uloženo.'),
+        const config:Confirmation = {
+            title:label, label,
+            description:[selectedPerson.value?.name, requestTitle(request), requestPeriod(request),
+                request.scheduled_seconds == null ? '' : 'Čerpání ' + hours(request.scheduled_seconds)].filter(Boolean).join(' · '),
+            details:request.note && !request.merged_work ? request.note : undefined,
+            destructive:status === 'rejected', reasonRequired:status === 'rejected',
+            action:reason => save('decide', {id:request.id, status, reason}, 'Rozhodnutí bylo uloženo.'),
+        }
+        const absence = ['timed_absence','shift_absence'].includes(request.behavior ?? '') || ['DOVOLENA','LEKAR'].includes(request.kind)
+        if (status === 'approved' && absence) {
+            const originalSheet = sheet.value
+            await run(async () => {
+                config.coverage = await api<Confirmation['coverage']>('team-coverage',{id:request.id})
+                if (request.kind === 'DOVOLENA') {
+                    const range = pragueDayRange(request.begins, request.ends)
+                    try {
+                        const preview = await api<VacationEstimate>('request-preview',{...scope(),kind:request.kind,from:range.first,to:range.last,
+                            vacation_side:request.vacation_side,vacation_seconds:request.vacation_seconds})
+                        config.balances = preview.balances
+                    } catch (err) {
+                        if (!(err instanceof ApiError) || ![409,422].includes(err.status)) throw err
+                        config.balanceHint = 'Zůstatek nelze spočítat. ' + err.message
+                    }
+                }
             })
-        })
+            if (error.value || !user.value || sheet.value !== originalSheet) return
+        }
+        openConfirmation(config)
     }
     function invite(data:Person) {
         openConfirmation({
@@ -1553,7 +1570,7 @@ export function setupAttendance() {
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
-        balanceText, balanceDate, balanceFile, balanceFileInput, importBalances, exportComparison, compareExport, exportPart, overview, cover, waitingFor, openOverviewDay, signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
+        balanceText, balanceDate, balanceFile, balanceFileInput, importBalances, exportComparison, compareExport, exportPart, overview, cover, taskOwners, waitingFor, openOverviewDay, signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
         mobileLayout, dayChooserOpen, toggleDayChooser, monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromTask, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,

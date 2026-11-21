@@ -10,6 +10,15 @@ function signal(string $kind,string $at,int $pc=1): array {
 function absence(string $kind,string $from,string $to): array {
     return ['kind'=>$kind,'begins'=>$from,'ends'=>$to,'status'=>'approved'];
 }
+$fundDate = new DateTimeImmutable('2026-11-19');
+$shift = [[strtotime('2026-11-19 08:00'), strtotime('2026-11-19 16:00')]];
+$plan = ['schedule'=>['2026-11-19'=>$shift], 'credits'=>[]];
+foreach ([0=>true, 900=>true, 27900=>false, 28800=>false] as $work => $review) {
+    $rows = $work ? [['day'=>'2026-11-19','kind'=>'PRACE','seconds'=>$work]] : [];
+    $fund = Dochazka\Attendance\WorkingFund::calculate($plan,$rows,[],$fundDate,$fundDate->modify('+1 day'),'2026-11-20',15);
+    check($fund['planned'] === 28800 && $fund['difference'] === $work - 28800 && (bool)$fund['review'] === $review,
+        'empty and short shifts need review, tolerance includes its boundary');
+}
 $signals=[signal('login','2026-11-02 08:00'),signal('login','2026-11-02 09:00',2),
     signal('logout','2026-11-02 12:00',2),signal('logout','2026-11-02 16:00')];
 $r=Timesheet::build('2026-11',$signals,[absence('LEKAR','2026-11-02 10:00','2026-11-02 11:00')]);

@@ -91,7 +91,7 @@ final class Directory
             ->select('e.org_unit_id', 'e.id', 'e.name', 'e.number', 'e.sid', 'e.starts', "$effectiveEnd AS ends")
             ->from('employee', 'e')
             ->where('e.attendance_enabled', 'e.starts < :end')
-            ->andWhere("$effectiveEnd IS NULL OR $effectiveEnd >= GREATEST(:start, e.starts)")
+            ->andWhere("($effectiveEnd IS NULL OR $effectiveEnd >= GREATEST(:start, e.starts))")
             ->setParameter('start', $start->format('Y-m-d'))
             ->setParameter('end', $end->format('Y-m-d'))
             ->orderBy('e.number');
@@ -153,11 +153,23 @@ final class Directory
             if ($e->id && in_array('manager', $e->roles, true) && $e->orgUnit->id !== ($i['org_unit_id'] ?? null)) {
                 throw new Problem('Přesun vedoucího mění jeho oprávnění a provádí ho správce.', 403);
             }
+            if ($e->id && in_array('manager', $actor['roles'], true) && $e->orgUnit->id !== ($i['org_unit_id'] ?? null)) {
+                $managed = $this->units->managed($actor);
+                if (!isset($managed[$e->orgUnit->id]) && isset($managed[$i['org_unit_id']])) {
+                    throw new Problem('Přesun do vlastní schvalovací působnosti musí provést jiný personalista nebo správce.', 403);
+                }
+            }
             if ($e->id && array_diff($e->roles, ['employee']) &&
                 (($i['starts'] ?? '') !== $e->starts->format('Y-m-d') || (($i['ends'] ?? null) ?: null) !== $e->ends?->format('Y-m-d'))) {
                 throw new Problem('Dobu přístupu účtu s rozšířeným oprávněním mění správce.', 403);
             }
-            $i['roles'] = $e->id ? $e->roles : ['employee'];
+            $roles = $e->id ? $e->roles : ['employee'];
+            if ((isset($i['roles']) && $i['roles'] !== $roles) ||
+                (!empty($i['login']) && $i['login'] !== ($e->login ?? null)) ||
+                (!empty($i['sid']) && $i['sid'] !== $e->sid)) {
+                throw new Problem('Role a přihlašovací údaje spravuje správce.', 403);
+            }
+            $i['roles'] = $roles;
             $i['sid'] = $e->sid;
             $i['login'] = $e->id ? $e->login : 'osoba-'.bin2hex(random_bytes(8));
         }
