@@ -66,7 +66,11 @@ async function assertFits(page) {
 
 async function assertAccessible(page) {
     const results = await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze()
-    expect(results.violations.map(({id,nodes}) => ({id, nodes:nodes.map(node => node.target)}))).toEqual([])
+    const violations = results.violations.map(({id, nodes}) => ({
+        id,
+        nodes: nodes.map(({target, failureSummary}) => ({target, failureSummary})),
+    }))
+    expect(violations).toEqual([])
 }
 
 test('first run and invitation support keyboard, labels and small screens', async ({page}) => {
@@ -239,6 +243,8 @@ test('manager sees only the selected sheet and decides a request from its own di
     await expect(dialog).toContainText(pending.note)
     await expect(dialog.getByRole('button', {name:'Zamítnout žádost'})).toBeDisabled()
     await dialog.getByLabel('Důvod rozhodnutí').fill('Ověřit datum')
+    // The opening animation fades from transparent. Measure the contrast once the dialog is fully visible.
+    await expect(dialog).not.toHaveClass(/\bp-dialog-enter-active\b/)
     await assertAccessible(page)
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()

@@ -582,6 +582,10 @@ label, .field-label {
     margin-bottom: .75rem;
 }
 
+.confirmation-form > p {
+    color: var(--p-text-color, #172422);
+}
+
 .proof-dialog .p-dialog-footer {
     flex-wrap: wrap;
 }
