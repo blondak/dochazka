@@ -50,11 +50,9 @@ internal sealed class AttendanceService : ServiceBase
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+', 2)[0];
     private readonly CancellationTokenSource stop = new();
     private readonly TaskCompletionSource<CancellationToken> shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly Channel<DesktopChange> desktopChanges = Channel.CreateUnbounded<DesktopChange>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<bool> desktopChanges = Channel.CreateBounded<bool>(1);
     private Task? worker;
     private Task? serviceSessions;
-
-    private record DesktopChange(int SessionId, string At, bool IsLogon, Journal.DesktopAccount? Account);
 
     [STAThread]
     public static void Main(string[] args)
@@ -198,9 +196,23 @@ internal sealed class AttendanceService : ServiceBase
             tx.Commit();
         }
 
+        void Logon(int session, Journal.DesktopAccount account, string marker, string time, bool observed = true)
+        {
+            using var tx = db.BeginTransaction();
+            journal.RecordWindowsLogon(session, account, marker, time, tx, observed);
+            tx.Commit();
+        }
+
+        void Logoff(int session, string marker, string time)
+        {
+            using var tx = db.BeginTransaction();
+            journal.RecordWindowsLogoff(session, marker, time, tx);
+            tx.Commit();
+        }
+
         var desktop = new Journal.DesktopAccount(sid, "0xa1", "0xa2", false);
         var elevated = new Journal.DesktopAccount(sid, "0xa2", "0xa1", true);
-        journal.RecordWindowsLogon(1, desktop, boot, at);
+        Logon(1, desktop, boot, at);
         Audit(4624, elevated, "audit-elevated", at);
         Audit(4624, desktop, "audit-desktop", at);
         Audit(4634, elevated, "audit-elevated-logoff", later);
@@ -210,9 +222,12 @@ internal sealed class AttendanceService : ServiceBase
         // The Windows ID mapping survives a service restart and works without a matching 4634.
         journal = new Journal(db);
         journal.Initialize();
-        journal.RecordWindowsLogoff(1, "456", end);
-        journal.RecordWindowsLogoff(1, boot, end);
-        journal.RecordWindowsLogoff(1, boot, end);
+        Logoff(1, "456", end);
+        journal.SaveNotice(1, end, false, null);
+        journal.ReplayNotices(_ => "unknown", CancellationToken.None);
+        journal = new Journal(db);
+        journal.ReplayNotices(time => time == end ? boot : "unknown", CancellationToken.None);
+        Logoff(1, boot, end);
         Audit(4634, desktop, "audit-desktop-logoff", end);
         if (!journal.Batch().SequenceEqual(new[] {
             new Signal("wts.login.123.0xa1", "login", at, sid, "123.0xa1"),
@@ -221,9 +236,9 @@ internal sealed class AttendanceService : ServiceBase
 
         Audit(4624, elevated with { LogonId = "0xb2", LinkedLogonId = null }, "audit-first", at);
         var second = desktop with { LogonId = "0xb1", LinkedLogonId = "0xb2" };
-        journal.RecordWindowsLogon(2, second, boot, later);
+        Logon(2, second, boot, later);
         Audit(4634, second, "audit-fallback", end);
-        journal.RecordWindowsLogoff(2, boot, end);
+        Logoff(2, boot, end);
         if (!journal.Batch().Skip(2).SequenceEqual(new[] {
             new Signal("audit-first", "login", at, sid, "123.0xb2"),
             new Signal("audit-fallback", "logout", end, sid, "123.0xb2") }))
@@ -231,10 +246,10 @@ internal sealed class AttendanceService : ServiceBase
 
         var previouslyOpen = desktop with { LogonId = "0xc1", LinkedLogonId = null };
         Audit(4624, previouslyOpen, "before-upgrade", at);
-        journal.RecordWindowsLogon(3, previouslyOpen, boot, later, observed: false);
-        journal.RecordWindowsLogoff(3, boot, at);
-        journal.RecordWindowsLogoff(3, boot, end);
-        journal.RecordWindowsLogon(4, previouslyOpen with { LogonId = "0xd1" }, boot, end, observed: false);
+        Logon(3, previouslyOpen, boot, later, observed: false);
+        Logoff(3, boot, at);
+        Logoff(3, boot, end);
+        Logon(4, previouslyOpen with { LogonId = "0xd1" }, boot, end, observed: false);
         if (!journal.Batch().Skip(4).SequenceEqual(new[] {
             new Signal("before-upgrade", "login", at, sid, "123.0xc1"),
             new Signal("wts.logout.123.0xc1", "logout", end, sid, "123.0xc1") }))
@@ -243,6 +258,8 @@ internal sealed class AttendanceService : ServiceBase
 
     protected override void OnStart(string[] args)
     {
+        using var db = OpenJournal();
+        new Journal(db).Initialize();
         worker = Task.Run(() => Loop(stop.Token));
         serviceSessions = Task.Run(() => ServiceSessionPipe.Listen(LoadSettings, JournalPath, stop.Token));
         _ = serviceSessions.ContinueWith(failed =>
@@ -280,7 +297,9 @@ internal sealed class AttendanceService : ServiceBase
         bool isLogon = change.Reason == SessionChangeReason.SessionLogon;
         // Capture the logon token while it exists; the delivery loop may be waiting for HTTPS.
         var account = isLogon ? WindowsSessions.ReadConsoleUser(change.SessionId) : null;
-        desktopChanges.Writer.TryWrite(new(change.SessionId, at, isLogon, account));
+        using var db = OpenJournal();
+        new Journal(db).SaveNotice(change.SessionId, at, isLogon, account);
+        desktopChanges.Writer.TryWrite(true);
     }
 
     private void StopAndWait(CancellationToken deadline)
@@ -296,6 +315,13 @@ internal sealed class AttendanceService : ServiceBase
     private static Settings LoadSettings() =>
         JsonSerializer.Deserialize<Settings>(File.ReadAllText(Path.Combine(DataPath, "config.json"))) ?? throw new InvalidDataException();
 
+    private static SqliteConnection OpenJournal()
+    {
+        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = JournalPath }.ToString());
+        db.Open();
+        return db;
+    }
+
     private async Task Loop(CancellationToken cancel)
     {
         var path = DataPath;
@@ -306,37 +332,28 @@ internal sealed class AttendanceService : ServiceBase
         if (uri.Scheme != Uri.UriSchemeHttps) throw new InvalidDataException("Je vyžadováno HTTPS.");
         using var http = new HttpClient(config.CreateHandler()) { Timeout = TimeSpan.FromSeconds(20) };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.Token);
-        using var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = JournalPath }.ToString());
-        db.Open();
+        using var db = OpenJournal();
         var store = new Journal(db);
-        store.Initialize();
-        var pending = new Queue<DesktopChange>();
+
         string? boot = null;
         bool bound = false;
         long? lastPoll = null;
 
         string? Collect(CancellationToken token, bool history)
         {
-            while (desktopChanges.Reader.TryRead(out var change)) pending.Enqueue(change);
-            if (boot == null)
+            desktopChanges.Reader.TryRead(out _);
+            try
             {
-                try
+                store.ReplayNotices(Journal.Boot, token);
+                if (history && boot == null)
                 {
                     string marker = Journal.Boot(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
                     if (marker != "unknown") boot = marker;
                 }
-                catch (Exception error) when (error is EventLogException or UnauthorizedAccessException)
-                {
-                    // The historical collector reports the read failure. Keep notifications for the next pass.
-                }
             }
-            if (boot != null)
+            catch (Exception error) when (error is EventLogException or UnauthorizedAccessException)
             {
-                while (pending.TryDequeue(out var notice))
-                {
-                    if (notice.IsLogon) store.RecordWindowsLogon(notice.SessionId, notice.Account, boot, notice.At);
-                    else store.RecordWindowsLogoff(notice.SessionId, boot, notice.At);
-                }
+                store.Warn("Výpadek sběru: " + error.Message);
             }
             if (!history) return null;
 
@@ -348,7 +365,11 @@ internal sealed class AttendanceService : ServiceBase
                 foreach (int sessionId in sessions)
                 {
                     if (WindowsSessions.ReadConsoleUser(sessionId) is { } account)
-                        store.RecordWindowsLogon(sessionId, account, boot, observedAt, observed: false);
+                    {
+                        using var tx = db.BeginTransaction();
+                        store.RecordWindowsLogon(sessionId, account, boot, observedAt, tx, observed: false);
+                        tx.Commit();
+                    }
                 }
                 bound = fault == null;
             }
@@ -405,18 +426,19 @@ internal sealed class AttendanceService : ServiceBase
 
     private static string? CollectEvents(Journal store, DateTime installed, CancellationToken cancel)
     {
-        try
+        string? fault = null;
+        foreach (var channel in new[] { "Security", "System" })
         {
-            store.Collect("Security", installed, cancel);
-            if (!cancel.IsCancellationRequested) store.Collect("System", installed, cancel);
-            return null;
+            if (cancel.IsCancellationRequested) break;
+            try { store.Collect(channel, installed, cancel); }
+            catch (Exception error) when (!cancel.IsCancellationRequested)
+            {
+                fault = $"Výpadek sběru ({channel}): {error.Message}";
+                store.Warn(fault);
+            }
+            catch (Exception) when (cancel.IsCancellationRequested) { break; }
         }
-        catch (Exception error)
-        {
-            if (cancel.IsCancellationRequested) return null;
-            store.Warn("Výpadek sběru: " + error.Message);
-            return error.Message;
-        }
+        return fault;
     }
 
     private static async Task<bool> SendBatch(Journal store, HttpClient http, Uri uri, bool sendHeartbeat, CancellationToken cancel)

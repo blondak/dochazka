@@ -29,6 +29,7 @@ internal sealed class Journal(SqliteConnection db)
             CREATE TABLE IF NOT EXISTS windows_session(
                 boot TEXT NOT NULL, id INTEGER NOT NULL, sid TEXT NOT NULL, session_key TEXT NOT NULL, observed_at TEXT NOT NULL,
                 PRIMARY KEY(boot,id));
+            CREATE TABLE IF NOT EXISTS desktop_notice(id INTEGER PRIMARY KEY, windows_id INTEGER NOT NULL, at TEXT NOT NULL, logon INTEGER NOT NULL, account TEXT);
             CREATE TABLE IF NOT EXISTS health(message TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS deferred(event_id TEXT PRIMARY KEY, sid TEXT, first_seen INTEGER, retry_at INTEGER);
             CREATE INDEX IF NOT EXISTS deferred_sid ON deferred(sid);
@@ -231,9 +232,46 @@ internal sealed class Journal(SqliteConnection db)
         aliases.ExecuteNonQuery();
     }
 
-    internal void RecordWindowsLogon(int windowsId, DesktopAccount? account, string boot, string at, bool observed = true)
+    internal void SaveNotice(int sessionId, string at, bool logon, DesktopAccount? account)
     {
-        using var tx = db.BeginTransaction();
+        using var insert = Command("INSERT INTO desktop_notice(windows_id,at,logon,account) VALUES($p0,$p1,$p2,$p3)",
+            null, sessionId, at, logon, account == null ? (object)DBNull.Value : JsonSerializer.Serialize(account));
+        insert.ExecuteNonQuery();
+    }
+
+    internal void ReplayNotices(Func<string, string> resolveBoot, CancellationToken cancel)
+    {
+        long after = 0;
+        while (!cancel.IsCancellationRequested)
+        {
+            int sessionId;
+            string at;
+            bool logon;
+            DesktopAccount? account;
+            using (var next = Command("SELECT id,windows_id,at,logon,account FROM desktop_notice WHERE id>$p0 ORDER BY id LIMIT 1", null, after))
+            using (var reader = next.ExecuteReader())
+            {
+                if (!reader.Read()) return;
+                after = reader.GetInt64(0);
+                sessionId = reader.GetInt32(1);
+                at = reader.GetString(2);
+                logon = reader.GetBoolean(3);
+                account = reader.IsDBNull(4) ? null : JsonSerializer.Deserialize<DesktopAccount>(reader.GetString(4));
+            }
+            // Resolve at capture time so a service or computer restart cannot bind an old notice to a new boot.
+            string boot = resolveBoot(at);
+            if (boot == "unknown") continue;
+            using var tx = db.BeginTransaction();
+            if (logon) RecordWindowsLogon(sessionId, account, boot, at, tx);
+            else RecordWindowsLogoff(sessionId, boot, at, tx);
+            using var done = Command("DELETE FROM desktop_notice WHERE id=$p0", tx, after);
+            done.ExecuteNonQuery();
+            tx.Commit();
+        }
+    }
+
+    internal void RecordWindowsLogon(int windowsId, DesktopAccount? account, string boot, string at, SqliteTransaction tx, bool observed = true)
+    {
         if (account == null)
         {
             // Windows may reuse the session number for another user.
@@ -258,12 +296,10 @@ internal sealed class Journal(SqliteConnection db)
                 """, tx, boot, windowsId, at, sessionKey, account.Sid);
             remember.ExecuteNonQuery();
         }
-        tx.Commit();
     }
 
-    internal void RecordWindowsLogoff(int windowsId, string boot, string at)
+    internal void RecordWindowsLogoff(int windowsId, string boot, string at, SqliteTransaction tx)
     {
-        using var tx = db.BeginTransaction();
         string? sessionKey = null, sid = null;
         using (var lookup = Command("SELECT session_key,sid FROM windows_session WHERE boot=$p0 AND id=$p1 AND observed_at<=$p2",
             tx, boot, windowsId, at))
@@ -273,7 +309,6 @@ internal sealed class Journal(SqliteConnection db)
         }
         if (sessionKey != null && sid != null)
             CloseSession(sessionKey, sid, "wts.logout." + sessionKey, at, tx);
-        tx.Commit();
     }
 
     private void CloseSession(string sessionKey, string sid, string id, string at, SqliteTransaction tx)
