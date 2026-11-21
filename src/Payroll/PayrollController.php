@@ -77,4 +77,29 @@ NEON)]
     {
         return $this->json->respond($request, $response, fn(array $input) => $this->service->download($input), readOnly: true);
     }
+    #[Path('/export-changes'), Method('POST'), LoggedIn, Role('payroll')]
+    #[OpenApi(<<<'NEON'
+operationId: exportChanges
+summary: "Porovnat verzi exportu s podklady nebo další verzí"
+tags: [Evidence]
+security: [{session: []}]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+requestBody:
+    content:
+        application/json:
+            schema: {type: object, required: [month, version], properties: {month: {type: string}, version: {type: integer}, to_version: {type: integer}}}
+responses:
+    '200':
+        description: "Porovnat verzi exportu s podklady nebo další verzí"
+        content:
+            application/json:
+                schema: {type: array, items: {type: object}}
+    '403': {$ref: '#/components/responses/Error403'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    public function exportChanges(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, fn(array $input) => $this->service->changes($input), readOnly: true);
+    }
+
 }

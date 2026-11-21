@@ -1183,6 +1183,70 @@
                 }
             }
         },
+        "/api/v1/export-changes": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Porovnat verzi exportu s podklady nebo další verzí",
+                "operationId": "exportChanges",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "month",
+                                    "version"
+                                ],
+                                "properties": {
+                                    "month": {
+                                        "type": "string"
+                                    },
+                                    "version": {
+                                        "type": "integer"
+                                    },
+                                    "to_version": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Porovnat verzi exportu s podklady nebo další verzí",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
         "/api/v1/gateway-enroll": {
             "post": {
                 "tags": [

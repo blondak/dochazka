@@ -850,7 +850,23 @@
         </PvMessage>
 
         <template v-if="tab === 'Uzávěrka' && payroll">
-            <PvMessage v-if="payroll.changed" severity="warn">Podklady se od posledního exportu změnily.</PvMessage>
+            <PvMessage v-if="payroll.changed" severity="warn">Podklady se od posledního exportu změnily.
+                <PvButton label="Změny od posledního exportu" text @click="compareExport(payroll.versions[0].version)" />
+            </PvMessage>
+            <PvCard v-if="exportComparison">
+                <template #title><h2>{{ exportComparison.label }}</h2></template>
+                <template #content><PvDataTable :value="exportComparison.rows" size="small">
+                    <PvColumn header="Osoba"><template #body="{data}">{{ data.name }} · {{ data.number }}</template></PvColumn>
+                    <PvColumn header="Den"><template #body="{data}">
+                        <PvButton v-if="data.employee" text :label="day(data.day)" @click="openOverviewDay(data.employee,data.day)" />
+                        <span v-else>{{ day(data.day) }}</span>
+                    </template></PvColumn>
+                    <PvColumn field="code" header="Mzdový kód" />
+                    <PvColumn header="Původně"><template #body="{data}">{{ data.before.map(exportPart).join(', ') || '—' }}</template></PvColumn>
+                    <PvColumn header="Nově"><template #body="{data}">{{ data.after.map(exportPart).join(', ') || '—' }}</template></PvColumn>
+                    <template #empty>Exportované řádky a hodiny jsou shodné.</template>
+                </PvDataTable></template>
+            </PvCard>
             <PvCard>
                 <template #title><h2>Připravenost výkazů</h2></template>
                 <template #content>
@@ -882,6 +898,8 @@
                             <PvColumn header="Vytvořeno"><template #body="{data}">{{ moment(data.created) }}</template></PvColumn>
                             <PvColumn header="Akce">
                                 <template #body="{data}">
+                                    <PvButton v-if="data.version > 1" icon="pi pi-history" :aria-label="'Změny proti verzi ' + (data.version - 1)"
+                                        v-tooltip.top="'Porovnat s předchozí verzí'" text @click="compareExport(data.version-1,data.version)" />
                                     <PvButton icon="pi pi-download" v-tooltip.top="'Stáhnout CSV'" aria-label="Stáhnout CSV" size="small" outlined :disabled="busy" @click="download(data.version)" />
                                 </template>
                             </PvColumn>
