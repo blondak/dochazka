@@ -241,7 +241,8 @@ def exercise(connect, php_command, check_locks=False):
     assert sheet["seconds"] == 28800 and len(sheet["rows"]) == 1 and sheet["missing_actual"] == 1
     assert sheet["pending"] == 0 and sheet["missing_proofs"] == 1
     assert "T" in sheet["requests"][0]["begins"] and "T" in sheet["requests"][0]["ends"]
-    manager.call("approve", dict(scope, fingerprint=sheet["fingerprint"]), 409)
+    assert sheet["approval_blockers"] == ["Zaměstnanec musí přiložit povinné doklady.", "Doplňte skutečný čas žádostí, doklad nebo rozvrh."]
+    assert manager.call("approve", dict(scope, fingerprint=sheet["fingerprint"]), 409)["error"] == sheet["approval_blockers"][0]
     payroll.call("close", scope, 409)
     manager.call("request-proof-upload", upload, 404)
     payroll.call("request-proof-upload", upload, 404)
@@ -659,6 +660,7 @@ def exercise(connect, php_command, check_locks=False):
     payroll.call("request-proof", aid, 404)
     result = manager.call("sheet", march)
     assert result["missing_proofs"] == 0 and proof_day not in result.get("day_issues", {})
+    assert result["approval_blockers"] == [] and not result["approval_note_required"]
     manager.call("approve", dict(march, fingerprint=result["fingerprint"]))
     v = payroll.call("close", march)["versions"][0]["version"]
     original = payroll.call("download", dict(march, version=v))["csv"]

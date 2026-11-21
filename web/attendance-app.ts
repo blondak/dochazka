@@ -16,8 +16,9 @@ interface HolidayControlPreview {
 interface RequestRow {needs_actual?:boolean;actual_from?:string|null;actual_to?:string|null;actual_returned?:boolean;vacation_seconds?:number;vacation_estimate?:{from:string;to:string}[];vacation_consent?:boolean;generated_holiday?:boolean;id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean;merged_work?:boolean;replaces_from?:string;replaces_to?:string;account_name?:string;behavior?:Behavior;requires_proof?:boolean;scheduled_seconds?:number|null}
 interface AttendanceInterval {day:string;from:string;to:string;source:string}
 interface DayIssue {status:'missing'|'review';reasons:string[]}
-interface Sheet {presence?:AttendanceInterval[];breaks?:AttendanceInterval[];missing_actual?:number;unresolved_breaks?:number;absence_conflict?:boolean;
-    day_issues?:Record<string,DayIssue>;unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];vacation_conflict?:boolean;requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
+interface Sheet {
+    approval_blockers:string[];approval_note_required:boolean;presence?:AttendanceInterval[];breaks?:AttendanceInterval[];
+    day_issues?:Record<string,DayIssue>;unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
 interface Device {id:number;name:string;seen:string|null;agent_version:string|null;revoked:boolean;registered:boolean;warnings:string|null}
 interface Payroll {people:{id:number;name:string;approved:boolean}[];versions:{version:number;created:string}[];changed:boolean}
 interface Passkey {id:string;label:string;created:string}
@@ -453,20 +454,7 @@ export function setupAttendance() {
     const inActionDialog = computed(() =>
         settingsVisible.value || photoVisible.value || confirmationVisible.value || editor.value,
     )
-    const approvalBlockers = computed(() => {
-        if (!sheet.value) return []
-        const blockers = []
-        if (sheet.value.pending) blockers.push('Vyřiďte čekající žádosti.')
-        if (sheet.value.missing_actual) blockers.push('Doplňte skutečný čas žádostí, doklad nebo rozvrh.')
-        if (sheet.value.absence_conflict) blockers.push('Opravte překryv skutečných nepřítomností.')
-        if (sheet.value.unresolved_breaks) blockers.push('Prověřte přestávky.')
-        if (sheet.value.unresolved_adjustments?.length) blockers.push('Prověřte dřívější úpravy uznané doby.')
-        if (sheet.value.missing_proofs) blockers.push('Zaměstnanec musí přiložit povinné doklady.')
-        if (sheet.value.vacation_conflict ?? sheet.value.issues.some(issue => issue.includes('Dovolená se překrývá'))) {
-            blockers.push('Opravte překryv evidence s dovolenou.')
-        }
-        return blockers
-    })
+    const approvalBlockers = computed(() => sheet.value?.approval_blockers ?? ['Pro schválení výkazu aktualizujte centrálu.'])
     const adminTabs = ['Zaměstnanci', 'Organizační struktura', 'Zařízení', 'Konta docházky', 'Pracovní modely', 'Svátky a dny volna', 'Nastavení docházky']
     const mainTabs = computed(() => [
         ...(hasRole('admin') && needsSetup.value ? ['První kroky'] : []),
@@ -1050,7 +1038,7 @@ export function setupAttendance() {
     function approveSheet() {
         if (!sheet.value || approvalBlockers.value.length) return
         const input = {...scope(), fingerprint:sheet.value.fingerprint}
-        const reasonRequired = sheet.value.issues.length > 0
+        const reasonRequired = sheet.value.approval_note_required
         openConfirmation({
             title: 'Schválit výkaz', label: 'Potvrdit schválení',
             description: [selectedPerson.value?.name, month.value].filter(Boolean).join(' · '),

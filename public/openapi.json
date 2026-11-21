@@ -3661,6 +3661,10 @@
             },
             "Sheet": {
                 "type": "object",
+                "required": [
+                    "approval_blockers",
+                    "approval_note_required"
+                ],
                 "properties": {
                     "planned_shifts": {
                         "type": "object",
@@ -3734,6 +3738,17 @@
                     },
                     "pending": {
                         "type": "integer"
+                    },
+                    "approval_blockers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Důvody, které je třeba vyřešit před schválením výkazu."
+                    },
+                    "approval_note_required": {
+                        "type": "boolean",
+                        "description": "Schválení vyžaduje poznámku k vyřešení nesrovnalostí."
                     },
                     "missing_proofs": {
                         "type": "integer",

@@ -22,7 +22,7 @@ const pending = {
 
 function sheet(overrides = {}) {
     return {
-        rows:[], seconds:0, pending:0, missing_proofs:0, approved:false, issues:[],
+        approval_blockers:[], approval_note_required:false, rows:[], seconds:0, pending:0, missing_proofs:0, approved:false, issues:[],
         vacation_conflict:false, fingerprint:'test-fingerprint', requests:[], ...overrides,
     }
 }
@@ -196,6 +196,7 @@ test('manager sees only the selected sheet and decides a request from its own di
         sheet:({employee:selected}) => selected === employee.id && unavailable
             ? {status:503, body:{error:'Výkaz je dočasně nedostupný.'}}
             : sheet({seconds:selected === manager.id ? 19800 : 27000, pending:decision ? 0 : 1,
+                approval_blockers:decision ? [] : ['Vyřiďte čekající žádosti.'],
                 requests:[{...pending, status:decision?.status || 'pending'}]}),
         decide:data => { decision = data; return {ok:true} },
     })
@@ -213,6 +214,8 @@ test('manager sees only the selected sheet and decides a request from its own di
     unavailable = false
     await page.getByRole('button', {name:'Načíst znovu'}).click()
     await expect(page.getByText('7:30')).toBeVisible()
+    await expect(page.getByText('Vyřiďte čekající žádosti.')).toBeVisible()
+    await expect(page.getByRole('button', {name:'Schválit výkaz'})).toHaveCount(0)
     await page.getByRole('button', {name:'Vyřídit žádosti'}).click()
     await page.getByRole('button', {name:'Zamítnout', exact:true}).click()
     const dialog = page.getByRole('dialog', {name:'Zamítnout žádost'})

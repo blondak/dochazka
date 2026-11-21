@@ -220,6 +220,8 @@ final class Timesheets
             }
         }
         unset($request);
+        $sheet['missing_proofs'] = $missingProofs;
+        $blockers = self::approvalBlockers($sheet);
         return $sheet + [
             'planned_shifts' => (object) $planned,
             'calendar_days' => (object) $plan['calendarDays'],
@@ -229,29 +231,35 @@ final class Timesheets
             'sessions' => $sessions,
             'requests' => $requests,
             'internal_by_day' => (object) $internal,
-            'missing_proofs' => $missingProofs,
+            'approval_blockers' => $blockers,
+            'approval_note_required' => $sheet['issues'] !== [],
             'fingerprint' => $hash,
             'approval' => $approval,
-            'approved' => $missingProofs === 0 && empty($sheet['missing_actual']) && empty($sheet['unresolved_breaks'])
-                && empty($sheet['unresolved_adjustments']) && empty($sheet['absence_conflict']) && $approval && $approval['fingerprint'] === $hash,
+            'approved' => !$blockers && $approval && $approval['fingerprint'] === $hash,
         ];
+    }
+
+    private static function approvalBlockers(array $sheet): array
+    {
+        $reasons = [
+            'pending' => 'Vyřiďte čekající žádosti.',
+            'missing_proofs' => 'Zaměstnanec musí přiložit povinné doklady.',
+            'missing_actual' => 'Doplňte skutečný čas žádostí, doklad nebo rozvrh.',
+            'absence_conflict' => 'Opravte překryv skutečných nepřítomností.',
+            'unresolved_breaks' => 'Prověřte přestávky.',
+            'unresolved_adjustments' => 'Prověřte dřívější úpravy uznané doby.',
+            'vacation_conflict' => 'Opravte překryv evidence s dovolenou.',
+        ];
+        return array_values(array_filter($reasons, static fn(string $key): bool => !empty($sheet[$key]), ARRAY_FILTER_USE_KEY));
     }
 
     private function approve(array $actor,array $person,array $input): void
     {
         $sheet = $this->sheet($person,$input['month']);
-        if ($sheet['fingerprint'] !== ($input['fingerprint'] ?? '') || $sheet['pending'])
-            throw new Problem('Výkaz se změnil nebo obsahuje čekající žádost.',409);
-        if ($sheet['missing_proofs'] > 0) {
-            throw new Problem('Ke schválené žádosti chybí povinný doklad.', 409);
-        }
-        if (!empty($sheet['missing_actual']) || !empty($sheet['unresolved_breaks']) || !empty($sheet['unresolved_adjustments'])) {
-            throw new Problem('Nejdříve doplňte skutečnost žádostí a vyřešte přestávky nebo úpravy uznané doby.', 409);
-        }
+        if ($sheet['fingerprint'] !== ($input['fingerprint'] ?? '')) throw new Problem('Výkaz se změnil. Načtěte jej znovu.', 409);
+        if ($sheet['approval_blockers']) throw new Problem($sheet['approval_blockers'][0], 409);
         $note = trim($input['note'] ?? '');
-        if (!empty($sheet['absence_conflict'])) throw new Problem('Nejdříve opravte překryv časových nepřítomností.', 409);
-        if ($sheet['vacation_conflict']) throw new Problem('Nejdříve opravte překryv s dovolenou.', 409);
-        if ($sheet['issues'] && !$note) throw new Problem('Doplňte opravu a popište vyřešení nesrovnalostí.');
+        if ($sheet['approval_note_required'] && $note === '') throw new Problem('Doplňte opravu a popište vyřešení nesrovnalostí.');
         $approval = $this->em->find(Approval::class, ['employee' => $person['id'], 'month' => $input['month']]);
         if (!$approval) {
             $approval = new Approval($this->em->getReference(Employee::class, $person['id']), $input['month']);
