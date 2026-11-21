@@ -44,7 +44,7 @@ final class DailyAttendance
             ->from('signal_session', 'ss')
             ->innerJoin('ss', 'signal', 's', 's.sid = ss.sid AND s.device = ss.device AND s.session_key = ss.session_key')
             ->innerJoin('ss', 'device', 'd', 'd.id = ss.device')
-            ->where('ss.sid IN (:sids)', 's.happened <= :cutoff')
+            ->where('ss.sid IN (:sids)', 'ss.duplicate_of IS NULL', 's.happened <= :cutoff')
             ->andWhere("(s.happened < :end OR s.kind = 'logout')")
             ->andWhere("tstzrange(ss.first_event, ss.last_event, '[]') && tstzrange(:start, :end, '[)')")
             ->setParameter('sids', $sids, ArrayParameterType::STRING)

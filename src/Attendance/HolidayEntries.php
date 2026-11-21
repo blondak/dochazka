@@ -181,7 +181,7 @@ final class HolidayEntries
                 WHERE r.employee = :employee AND NOT r.generated_holiday AND r.status IN ('pending','approved') AND a.behavior <> 'shift_absence'
                 AND r.begins < (d.day + 1)::timestamptz AND r.ends > d.day::timestamptz
             ) OR EXISTS (
-                SELECT FROM signal_session s WHERE s.sid = :sid AND s.service_at IS NULL
+                SELECT FROM signal_session s WHERE s.sid = :sid AND s.service_at IS NULL AND s.duplicate_of IS NULL
                 AND tstzrange(s.first_event, s.last_event, '[]') && tstzrange(d.day::timestamptz, (d.day + 1)::timestamptz, '[)')
             )
             SQL, ['days' => json_encode($days, JSON_THROW_ON_ERROR), 'employee' => $employee, 'sid' => $sid])

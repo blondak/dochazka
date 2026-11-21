@@ -652,6 +652,10 @@
                                             <label for="show-service-sessions">Zobrazit servisní relace</label>
                                         </div>
                                     </template>
+                                    <template #end>
+                                        <PvButton icon="pi pi-search" text aria-label="Kontrola relací" v-tooltip.top="'Kontrola relací'"
+                                            :disabled="busy" @click="openEditor({kind:'session-control',employee:person,day:selectedDay.key})" />
+                                    </template>
                                 </PvToolbar>
                                 <div class="table-region" role="region" aria-labelledby="day-sessions-title" tabindex="0">
                                     <PvDataTable :value="visibleSessions" size="small" striped-rows :table-props="{'aria-label':sessionsLabel}">
@@ -856,6 +860,8 @@
             <ToolbarCard label="Nástroje zařízení">
                 <template #start>
                     <PvButton label="Přidat zařízení" icon="pi pi-plus" size="small" :disabled="busy" @click="addDevice" />
+                    <PvButton label="Kontrola relací" icon="pi pi-search" size="small" outlined :disabled="busy"
+                        @click="openEditor({kind:'session-control'})" />
                 </template>
             </ToolbarCard>
             <div class="table-region" role="region" aria-label="Seznam zařízení" tabindex="0">
@@ -1278,6 +1284,41 @@
         </div>
         <PvButton type="submit" :label="actualEdit.photo ? 'Uložit čas a doklad' : 'Uložit skutečný čas'" :loading="busy" />
     </form>
+</PvDialog>
+
+<PvDialog :visible="editor?.kind === 'session-control'" @update:visible="dismissEditor" modal header="Kontrola relací"
+    class="session-control-dialog" :closable="!busy" :close-on-escape="!busy">
+    <div class="stack">
+        <p>{{ editor?.employee ? selectedPerson?.name : 'Všichni zaměstnanci' }} · Nejvýše 31 dokončených dnů.</p>
+        <form class="fields" @submit.prevent="reviewSessions(false)">
+            <label class="field">Od<PvInputText v-model="sessionControl.from" type="date" required :max="sessionControl.latest" :disabled="busy" /></label>
+            <label class="field">Do včetně<PvInputText v-model="sessionControl.to" type="date" required :min="sessionControl.from" :max="sessionControl.latest" :disabled="busy" /></label>
+            <PvButton type="submit" label="Vyhledat relace" icon="pi pi-search" :loading="busy" />
+        </form>
+        <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
+        <template v-if="sessionControl.rows">
+            <PvDataTable :value="sessionControl.rows" data-key="token" size="small" striped-rows :table-props="{'aria-label':'Nálezy kontroly relací'}">
+                <PvColumn header="Výběr"><template #body="{data}">
+                    <PvCheckbox v-if="data.state !== 'incomplete'" v-model="sessionControl.selected" :value="data.token" :disabled="busy"
+                        :aria-label="(data.state === 'suppressed' ? 'Obnovit ' : 'Potlačit ') + data.session" />
+                </template></PvColumn>
+                <PvColumn header="Osoba a stanice"><template #body="{data}">{{ data.name }}<small class="muted-block">{{ data.station }}</small></template></PvColumn>
+                <PvColumn header="Přihlášení"><template #body="{data}">{{ sessionStamp(data.from) }}<small class="muted-block">{{ data.session }}</small></template></PvColumn>
+                <PvColumn header="Nález"><template #body="{data}">
+                    {{ data.state === 'suppressed' ? 'Potlačená relace' : data.state === 'candidate' ? 'Možná duplicita' : 'Bez odhlášení · k ruční kontrole' }}
+                    <small v-if="data.kept" class="muted-block">Ponechaná relace {{ data.kept }}</small>
+                    <small v-if="data.kept_from" class="muted-block">{{ sessionStamp(data.kept_from) }} · počet událostí {{ data.kept_events }}</small>
+                    <small v-if="data.kept_from" class="muted-block">{{ data.kept_to ? 'Odhlášení ' + moment(data.kept_to) : 'I ponechané relaci chybí odhlášení.' }}</small>
+                </template></PvColumn>
+                <template #empty>V období nebyly nalezeny neúplné ani potlačené relace.</template>
+            </PvDataTable>
+            <form v-if="sessionControl.selected.length" class="stack" @submit.prevent="reviewSessions(true)">
+                <p>Potlačit {{ reviewChanges.suppress }} · Obnovit {{ reviewChanges.restore }}. Výkaz se přepočítá. Původní události zůstanou uložené.</p>
+                <label class="field">Důvod změny<PvInputText v-model="sessionControl.reason" required :disabled="busy" /></label>
+                <PvButton type="submit" label="Potvrdit vybrané změny" :disabled="busy || !sessionControl.reason.trim()" />
+            </form>
+        </template>
+    </div>
 </PvDialog>
 
 <PvDialog :visible="editor?.kind === 'holiday-control'" @update:visible="dismissEditor" modal header="Kontrolní chod" class="editor-dialog">

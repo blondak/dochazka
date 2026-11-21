@@ -850,6 +850,51 @@ def exercise(connect, php_command, check_locks=False):
     manager.call("save-work-row", dict(november, day=day, kind="PRACE", fingerprint=result["fingerprint"],
         **{"from": "14:00", "to": "15:00", "reason": "Kontrola překryvu s dovolenou"}), 422)
 
+    # The original logs stay intact, including a late-arriving event for a suppressed login.
+    review_day = "2025-11-19"
+    review_scope = {"employee":employee, "from":review_day, "to":review_day}
+    first_key, second_key = "639306130020100627.0x403fc1", "639306130020100627.0x404007"
+    def add_review_signal(event_id, session, kind, at):
+        event = {"sid":sid_catalog,"id":event_id,"session":session,"kind":kind,"at":review_day+"T"+at+"+01:00"}
+        return anonymous.call("events", {"events":[event]}, token=token, web=False)["results"][0]["status"]
+    def candidates():
+        return admin.call("session-control-preview", review_scope)
+    def apply_review(row):
+        return dict(review_scope,tokens=[row["token"]],reason="Porovnány události stanice")
+    add_review_signal("split-1",first_key,"login","06:05:45.683226")
+    add_review_signal("split-2",second_key,"login","06:05:45.683243")
+    pair, = candidates()
+    assert pair["session"] == second_key and pair["kept"] == first_key and pair["state"] == "candidate" and pair["kept_events"] == 1, pair
+    manager.call("session-control-preview",review_scope,403)
+    hr.call("session-control-apply",apply_review(pair),403)
+    admin.call("session-control-apply", dict(apply_review(pair),reason=" "),422)
+    admin.call("session-control-apply", dict(apply_review(pair),tokens=[pair["token"],"stale"]),409)
+    assert candidates() == [pair]
+    admin.call("session-control-apply",apply_review(pair))
+    assert [s["session"] for s in manager.call("sheet",november)["sessions"] if s["session"] in (first_key,second_key)] == [first_key]
+    suppressed = next(row for row in candidates() if row["state"] == "suppressed")
+    admin.call("session-control-apply",apply_review(suppressed))
+    assert candidates() == [pair]
+    add_review_signal("split-close",first_key,"logout","13:33:00")
+    admin.call("session-control-apply",apply_review(pair),409)
+    pair, = candidates()
+    before = manager.call("sheet",november)
+    admin.call("session-control-apply",apply_review(pair))
+    after = manager.call("sheet",november)
+    assert before["seconds"] == after["seconds"] and before["fingerprint"] != after["fingerprint"]
+    assert "Chybí odhlášení." not in after.get("day_issues",{}).get(review_day,{}).get("reasons",[])
+    assert add_review_signal("split-2",second_key,"login","06:05:45.683243") == "duplicate"
+    assert candidates()[0]["state"] == "suppressed"
+    assert add_review_signal("split-close-late",second_key,"logout","13:34:00") == "accepted"
+    assert candidates() == []
+    assert {s["session"] for s in manager.call("sheet",november)["sessions"]} >= {first_key,second_key}
+    other_boot = "9999.0x403fc1"
+    add_review_signal("single",other_boot,"login","06:05:45.683250")
+    lone, = candidates()
+    assert lone["state"] == "incomplete"
+    admin.call("session-control-apply",apply_review(lone),409)
+    add_review_signal("single-end",other_boot,"logout","06:05:46")
+
     # Keep this historical employee and break rule out of the Docker browser test period.
     admin.call("attendance-account", dict(account, break_rule=dict(break_rule, effective_on="2025-12-01", enabled=False)))
     historical_person = next(person for person in admin.call("people") if person["id"] == employee)

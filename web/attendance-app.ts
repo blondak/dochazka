@@ -26,6 +26,10 @@ interface VacationEstimate {seconds:number;days:string[];intervals?:{from:string
 interface ExportPart {from:string;to:string;seconds:number|null}
 interface ExportChange {employee:number|null;name:string|null;number:string;day:string;code:string;before:ExportPart[];after:ExportPart[]}
 interface Reviewer {id:number;name:string}
+interface SessionFinding {
+    token:string; state:'candidate'|'incomplete'|'suppressed'; name:string; station:string; session:string
+    from:string; kept:string|null; kept_from:string|null; kept_events:number|null; kept_to:string|null
+}
 interface Cover {id:number;manager:number;substitute:number;manager_name:string;substitute_name:string;starts:string;ends:string;active:boolean}
 interface TeamTask {substitute?:string;employee:number;name:string;reason:string;day:string;request?:number;owner:'manager'|'employee'|'hr'|'substitute'}
 interface Overview {reviewers?:Reviewer[];covers?:Cover[];people:(FundDay & {employee:number;name:string;approved:boolean;days:string[]})[];tasks:TeamTask[]}
@@ -75,6 +79,7 @@ type Editor = {kind:'unit'; id?:number} | {kind:'employee'; id?:number} | {kind:
     | {kind:'work'; row?:number; fingerprint:string}
     | {kind:'duration';row:number;stale?:boolean;fingerprint:string} | {kind:'break';day:string;from?:string} | {kind:'actual';id:number}
     | {kind:'holiday-control';employee?:number}
+    | {kind:'session-control';employee?:number;day?:string}
 interface AttendanceView {
     account: number
     tab: string
@@ -225,6 +230,43 @@ export function setupAttendance() {
         {from:'',to:'',latest:'',checkHolidays:true,token:'',added:0,removed:0,changed:0},
     )
     const holidayControlHasChanges = computed(() => holidayControl.value.added + holidayControl.value.changed + holidayControl.value.removed > 0)
+    const sessionControl = ref({from:'',to:'',latest:'',rows:null as SessionFinding[]|null,selected:[] as string[],reason:''})
+    const reviewChanges = computed(() => {
+        const state = sessionControl.value
+        const restore = state.rows?.filter(row => row.state === 'suppressed' && state.selected.includes(row.token)).length ?? 0
+        return {restore, suppress:state.selected.length - restore}
+    })
+    function resetSessionSelection() {
+        Object.assign(sessionControl.value, {rows:null,selected:[],reason:''})
+    }
+    function sessionStamp(value:string) {
+        return moment(value) + (value.match(/\.\d{6}/)?.[0] ?? '')
+    }
+    watch(() => [sessionControl.value.from, sessionControl.value.to], resetSessionSelection)
+    function reviewSessions(apply:boolean) {
+        return run(async () => {
+            const current = editor.value
+            if (current?.kind !== 'session-control') return
+            const state = sessionControl.value
+            const period = {from:state.from, to:state.to, employee:current.employee}
+            if (apply) {
+                const changes = {tokens:[...state.selected], reason:state.reason.trim()}
+                if (!changes.tokens.length || !changes.reason) return
+                try {
+                    const result = await api<{changed:number}>('session-control-apply', {...period, ...changes})
+                    notice.value = 'Změněné relace: ' + result.changed
+                } finally {
+                    resetSessionSelection()
+                }
+                await refresh()
+            }
+            const rows = await api<SessionFinding[]>('session-control-preview', period)
+            if (editor.value === current && state === sessionControl.value) {
+                resetSessionSelection()
+                state.rows = rows
+            }
+        })
+    }
     const roundingEdit = ref({change:false, mode:'down', minutes:30, effective_on:today.value})
     const breakRuleEdit = ref({change:false, enabled:true, minutes:30, preferred:240, deadline:360, effective_on:today.value})
     const workEdit = ref({kind:'PRACE', day:'', from:'', to:'', untilMidnight:false, reason:''})
@@ -914,21 +956,24 @@ export function setupAttendance() {
             const from = date(request.actual_from ?? request.begins)
             const to = new Date(Math.min(Date.now(), date(request.actual_to ?? request.ends).getTime()))
             actualEdit.value = {from:local.format(from) + 'T' + time(from.toISOString()),to:local.format(to) + 'T' + time(to.toISOString()),reason:'',photo:''}
+        } else if (next?.kind === 'session-control' && hasRole('admin') &&
+            ((tab.value === 'Výkaz' && next.employee === person.value) || (tab.value === 'Zařízení' && next.employee === undefined))) {
+            const latest = yesterday()
+            const day = next.day && validDay(next.day) && next.day <= latest ? next.day : latest
+            sessionControl.value = {from:day, to:day, latest, rows:null, selected:[], reason:''}
         } else if (next?.kind === 'holiday-control' && hasRole('manager')) {
-            const dayBefore = new Date(local.format(new Date()) + 'T12:00:00Z')
-            dayBefore.setUTCDate(dayBefore.getUTCDate() - 1)
-            const yesterday = dayBefore.toISOString().slice(0,10)
-            let from = selectedDailyDay.value < yesterday ? selectedDailyDay.value : yesterday
+            const latest = yesterday()
+            let from = selectedDailyDay.value < latest ? selectedDailyDay.value : latest
             let to = from
             if (next.employee) {
                 const first = month.value + '-01'
                 const lastDay = new Date(first+'T00:00:00Z')
                 lastDay.setUTCMonth(lastDay.getUTCMonth() + 1, 0)
                 const last = lastDay.toISOString().slice(0,10)
-                from = first <= yesterday ? first : ''
-                to = from ? (last <= yesterday ? last : yesterday) : ''
+                from = first <= latest ? first : ''
+                to = from ? (last <= latest ? last : latest) : ''
             }
-            holidayControl.value = {from,to,latest:yesterday,checkHolidays:true,token:'',added:0,removed:0,changed:0}
+            holidayControl.value = {from,to,latest,checkHolidays:true,token:'',added:0,removed:0,changed:0}
         } else if (next?.kind === 'work' && tab.value === 'Výkaz' && canReview.value && sheet.value?.fingerprint === next.fingerprint) {
             if (next.row === undefined) {
                 const active = selectedDay.value?.key ?? ''
@@ -956,6 +1001,11 @@ export function setupAttendance() {
         error.value = ''
         showEditor(next)
         recordView()
+    }
+    function yesterday() {
+        const date = new Date(local.format(new Date()) + 'T12:00:00Z')
+        date.setUTCDate(date.getUTCDate() - 1)
+        return date.toISOString().slice(0,10)
     }
     function dismissEditor() {
         if (!editor.value) return
@@ -1573,7 +1623,7 @@ export function setupAttendance() {
         durationSeconds, durationEdit, submitDuration, breakEdit, submitBreak, actualEdit, submitActual, returnActual,
         actualProofRequired: computed(() => editor.value?.kind === 'actual' && !!sheet.value?.requests.find(
             request => editor.value?.kind === 'actual' && request.id === editor.value.id && needsProof(request) && (!request.has_proof || request.actual_returned))),
-        holidayControl, holidayControlHasChanges, submitHolidayControl, roundingEdit, breakRuleEdit, workBehaviors,
+        sessionControl, sessionStamp, reviewChanges, reviewSessions, holidayControl, holidayControlHasChanges, submitHolidayControl, roundingEdit, breakRuleEdit, workBehaviors,
         tabIcons, time, moment, day, hours, requestPeriod, canUploadProof, dueProofCount, actualAction, beforeReturn, afterReturnHint, scope, run, refresh, signIn, signOut, roleNames, hasRole,
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,

@@ -66,7 +66,7 @@ final class Timesheets
         $recorded = $person['sid'] === null || $start >= $end ? [] : $this->db->fetchAllAssociative(
             "SELECT s.*, ss.service_at, d.name AS station FROM signal_session ss JOIN signal s USING (sid, device, session_key)
              JOIN device d ON d.id = ss.device
-             WHERE ss.sid = ? AND tstzrange(ss.first_event, ss.last_event, '[]') && tstzrange(?, ?, '[)')
+             WHERE ss.sid = ? AND ss.duplicate_of IS NULL AND tstzrange(ss.first_event, ss.last_event, '[]') && tstzrange(?, ?, '[)')
              ORDER BY s.happened, s.device, s.event_id",
             [$person['sid'], $start->format(DATE_ATOM), $end->format(DATE_ATOM)],
         );

@@ -7,6 +7,18 @@
   },
   "components": {
     "schemas": {
+      "SessionControlPeriod": {
+        "type":"object", "required":["from","to"],
+        "properties":{"from":{"type":"string","format":"date"},"to":{"type":"string","format":"date"},"employee":{"type":"integer","minimum":1}}
+      },
+      "SessionControlRow": {
+        "type":"object","properties":{
+          "state":{"enum":["candidate","incomplete","suppressed"]},"token":{"type":"string"},
+          "employee":{"type":"integer"},"name":{"type":"string"},"device":{"type":"integer"},"station":{"type":"string"},
+          "session":{"type":"string"},"from":{"type":"string","format":"date-time"},"kept":{"type":["string","null"]},
+          "kept_from":{"type":["string","null"],"format":"date-time"},"kept_events":{"type":["integer","null"]},"kept_to":{"type":["string","null"],"format":"date-time"}
+        }
+      },
       "Reviewer": {
         "type":"object","properties":{"id":{"type":"integer"},"name":{"type":"string"}}
       },

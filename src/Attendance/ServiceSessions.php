@@ -152,6 +152,16 @@ final class ServiceSessions
             return;
         }
         $key = ['sid' => $row['sid'], 'device' => (int) $row['device'], 'session_key' => $row['session_key']];
+        if ($service) {
+            $affected = $this->db->fetchAllAssociative('SELECT session_key, duplicate_of FROM signal_session
+                WHERE sid=? AND device=? AND duplicate_of IS NOT NULL AND (session_key=? OR duplicate_of=?)',
+                [$row['sid'], $row['device'], $row['session_key'], $row['session_key']]);
+            foreach ($affected as $affectedSession) {
+                $restored = array_replace($key, ['session_key'=>$affectedSession['session_key']]);
+                $this->db->update('signal_session', ['duplicate_of'=>null], $restored);
+                $this->audit->audit($actor, 'duplicate-session-service-change', $restored + ['kept'=>$affectedSession['duplicate_of']]);
+            }
+        }
         $this->db->update('signal_session', [
             'service_by' => $service ? $actor : null,
             'service_at' => $service ? (new \DateTimeImmutable())->format(DATE_ATOM) : null,

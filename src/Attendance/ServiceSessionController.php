@@ -13,7 +13,63 @@ use Nepada\SecurityAnnotations\Annotations\{LoggedIn, Role};
 #[Path('/api/v1')]
 final class ServiceSessionController implements IController
 {
-    public function __construct(private JsonEndpoint $json, private ServiceSessions $sessions) {}
+    public function __construct(private JsonEndpoint $json, private ServiceSessions $sessions, private DuplicateSessions $duplicates) {}
+
+    #[Path('/session-control-preview'), Method('POST'), LoggedIn, Role('admin')]
+    #[OpenApi(<<<'NEON'
+operationId: sessionControlPreview
+summary: "Vyhledat neúplná přihlášení a možné duplicitní relace"
+tags: [Zařízení]
+security: [{session: []}]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+requestBody:
+    required: true
+    content:
+        application/json:
+            schema: {$ref: '#/components/schemas/SessionControlPeriod'}
+responses:
+    '200':
+        description: "Možné duplicity, neúplné a již potlačené relace"
+        content:
+            application/json:
+                schema: {type: array, items: {$ref: '#/components/schemas/SessionControlRow'}}
+    '403': {$ref: '#/components/responses/Error403'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    public function preview(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->duplicates->preview(...), readOnly: true);
+    }
+
+    #[Path('/session-control-apply'), Method('POST'), LoggedIn, Role('admin')]
+    #[OpenApi(<<<'NEON'
+operationId: sessionControlApply
+summary: "Potlačit nebo obnovit vybrané relace z ověřeného náhledu"
+tags: [Zařízení]
+security: [{session: []}]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+requestBody:
+    required: true
+    content:
+        application/json:
+            schema:
+                allOf:
+                    - {$ref: '#/components/schemas/SessionControlPeriod'}
+                    - {type: object, required: [tokens, reason], properties: {tokens: {type: array, items: {type: string}}, reason: {type: string}}}
+responses:
+    '200':
+        description: "Počet provedených změn"
+        content:
+            application/json:
+                schema: {type: object, properties: {changed: {type: integer}}}
+    '403': {$ref: '#/components/responses/Error403'}
+    '409': {$ref: '#/components/responses/Error409'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    public function apply(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, $this->duplicates->apply(...));
+    }
 
     #[Path('/service-session-link'), Method('POST'), DeviceToken]
     #[OpenApi(<<<'NEON'

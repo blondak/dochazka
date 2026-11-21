@@ -472,6 +472,14 @@ p, small {
     width: min(640px, 94vw);
 }
 
+.session-control-dialog {
+    width: min(960px, 96vw);
+}
+
+.session-control-dialog .muted-block {
+    overflow-wrap: anywhere;
+}
+
 .editor-dialog .employee-fields {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
 }

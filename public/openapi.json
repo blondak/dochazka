@@ -3031,6 +3031,133 @@
                 }
             }
         },
+        "/api/v1/session-control-apply": {
+            "post": {
+                "tags": [
+                    "Zařízení"
+                ],
+                "summary": "Potlačit nebo obnovit vybrané relace z ověřeného náhledu",
+                "operationId": "sessionControlApply",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "allOf": [
+                                    {
+                                        "$ref": "#/components/schemas/SessionControlPeriod"
+                                    },
+                                    {
+                                        "type": "object",
+                                        "required": [
+                                            "tokens",
+                                            "reason"
+                                        ],
+                                        "properties": {
+                                            "tokens": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Počet provedených změn",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "changed": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Error409"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
+        "/api/v1/session-control-preview": {
+            "post": {
+                "tags": [
+                    "Zařízení"
+                ],
+                "summary": "Vyhledat neúplná přihlášení a možné duplicitní relace",
+                "operationId": "sessionControlPreview",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SessionControlPeriod"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Možné duplicity, neúplné a již potlačené relace",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/SessionControlRow"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
         "/api/v1/setup": {
             "post": {
                 "tags": [
@@ -3382,6 +3509,87 @@
     },
     "components": {
         "schemas": {
+            "SessionControlPeriod": {
+                "type": "object",
+                "required": [
+                    "from",
+                    "to"
+                ],
+                "properties": {
+                    "from": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "to": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "employee": {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                }
+            },
+            "SessionControlRow": {
+                "type": "object",
+                "properties": {
+                    "state": {
+                        "enum": [
+                            "candidate",
+                            "incomplete",
+                            "suppressed"
+                        ]
+                    },
+                    "token": {
+                        "type": "string"
+                    },
+                    "employee": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "device": {
+                        "type": "integer"
+                    },
+                    "station": {
+                        "type": "string"
+                    },
+                    "session": {
+                        "type": "string"
+                    },
+                    "from": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "kept": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "kept_from": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "kept_events": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "kept_to": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                }
+            },
             "Reviewer": {
                 "type": "object",
                 "properties": {

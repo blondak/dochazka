@@ -1449,3 +1449,40 @@ test('manager opens a request from the team inbox outside the selected month and
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
 })
+
+test('administrator previews and reverses a duplicate session without preselecting changes', async ({page}) => {
+    let suppressed = false
+    const changes = []
+    const key = '639306130020100627.0x404007'
+    await openApp(page, administrator, {
+        people:() => [administrator, employee],
+        'session-control-preview':() => [{
+            name:employee.name, station:'PC-10', session:key, from:'2026-11-16T06:05:45.683243+01:00',
+            state:suppressed ? 'suppressed' : 'candidate', token:suppressed ? 'restore' : 'suppress',
+            kept:'639306130020100627.0x403fc1', kept_from:'2026-11-16T06:05:45.683226+01:00', kept_events:1,
+        }],
+        'session-control-apply':data => {
+            changes.push(data)
+            suppressed = data.tokens[0] === 'suppress'
+            return {changed:1}
+        },
+    })
+    await navigate(page,'Zařízení')
+    await page.getByRole('button',{name:'Kontrola relací'}).click()
+    const dialog = page.getByRole('dialog',{name:'Kontrola relací'})
+    await dialog.getByRole('button',{name:'Vyhledat relace'}).click()
+    await expect(dialog.getByText('I ponechané relaci chybí odhlášení.')).toBeVisible()
+    const apply = dialog.getByRole('button',{name:'Potvrdit vybrané změny'})
+    await expect(apply).toHaveCount(0)
+    await dialog.getByRole('checkbox',{name:'Potlačit '+key}).check()
+    await expect(apply).toBeDisabled()
+    await dialog.getByLabel('Důvod změny').fill('Ověřena dvojice ze staršího agenta')
+    await apply.click()
+    await dialog.getByRole('checkbox',{name:'Obnovit '+key}).check()
+    await dialog.getByLabel('Důvod změny').fill('Nové podklady')
+    await apply.click()
+    await expect(dialog.getByRole('checkbox',{name:'Potlačit '+key})).not.toBeChecked()
+    expect(changes.map(c => c.tokens)).toEqual([['suppress'],['restore']])
+    expect(changes[0].from).toBe('2026-11-16')
+    expect(changes[0]).not.toHaveProperty('employee')
+})

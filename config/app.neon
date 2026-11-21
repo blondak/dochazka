@@ -71,6 +71,7 @@ services:
     - Dochazka\Attendance\MergePolicy
     - Dochazka\Attendance\AttendanceController
     - Dochazka\Attendance\ServiceSessions
+    - Dochazka\Attendance\DuplicateSessions
     - Dochazka\Attendance\ServiceSessionController
     - Dochazka\Absence\Requests
     - Dochazka\Absence\AbsenceController
