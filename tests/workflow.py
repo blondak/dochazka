@@ -237,11 +237,15 @@ def exercise(connect, php_command, check_locks=False):
     payroll.call("close", scope, 409)
     manager.call("decide", dict(req, status="approved"))
 
+    visit_day = manager.call("daily-attendance", {"day": month+"-03"})
+    assert next(p for p in visit_day["people"] if p["id"] == uid)["approved_absences"] == ["Lékař"]
     sheet = manager.call("sheet", scope)
     assert sheet["seconds"] == 28800 and len(sheet["rows"]) == 1 and sheet["missing_actual"] == 1
     assert sheet["pending"] == 0 and sheet["missing_proofs"] == 1
     assert "T" in sheet["requests"][0]["begins"] and "T" in sheet["requests"][0]["ends"]
     assert sheet["approval_blockers"] == ["Zaměstnanec musí přiložit povinné doklady.", "Doplňte skutečný čas žádostí, doklad nebo rozvrh."]
+    assert [task["reason"] for task in sheet["approval_tasks"]] == sheet["approval_blockers"]
+    assert sheet["approval_tasks"][0]["owner"] == "Zaměstnanec"
     assert manager.call("approve", dict(scope, fingerprint=sheet["fingerprint"]), 409)["error"] == sheet["approval_blockers"][0]
     payroll.call("close", scope, 409)
     manager.call("request-proof-upload", upload, 404)
