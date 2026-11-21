@@ -766,6 +766,11 @@ def exercise(connect, php_command):
     admin.call("revoke",{"id":admin.call("devices")[0]["id"]})
     emp.call("events",{"events":[]},401,token=token)
 
+    archived = admin.call("employee", {"name":"Archivace dnes", "login":"archive-today", "number":"ARCHIVE",
+        "org_unit_id":units["A"], "roles":["employee"], "attendance_enabled":True, "starts":day_start.date().isoformat()})
+    admin.call("employee-archive", dict(archived, archived=True))
+    assert archived["id"] in [p["id"] for p in manager.call("daily-attendance")["people"]]
+
     from identity_checks import check_accounts
     check_accounts(connect, Client, admin, pw)
 

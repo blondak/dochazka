@@ -33,7 +33,7 @@ final class DailyAttendance
             ->select('id', 'name', 'sid')
             ->from('employee')
             ->where('org_unit_id IN (:units)', 'attendance_enabled = true', 'starts <= :day')
-            ->andWhere('(ends IS NULL OR ends >= :day)', '(archived_on IS NULL OR archived_on > :day)')
+            ->andWhere('(ends IS NULL OR ends >= :day)', '(archived_on IS NULL OR archived_on >= :day)')
             ->setParameter('units', array_keys($this->units->managed($actor)), ArrayParameterType::INTEGER)
             ->setParameter('day', $day)
             ->orderBy('name')->addOrderBy('id')
