@@ -146,9 +146,12 @@
                     </template>
                 </template>
                 <template v-else-if="tab === 'Uzávěrka' && payroll">
-                    <p v-if="!payroll.people.length && !payroll.versions.length">Za toto období nejsou žádné výkazy k uzavření.</p>
-                    <p v-else-if="payroll.people.some(p => !p.approved)">Měsíc lze uzavřít po schválení všech výkazů.</p>
-                    <p v-else-if="payroll.versions.length && !payroll.changed">Export pro aktuální podklady je připravený.</p>
+                    <span v-if="payroll.people.length">{{ payroll.people.length - payrollRemaining.length }} z {{ payroll.people.length }} schváleno</span>
+                    <PvButton v-if="payrollRemaining.length" :label="remainingOnly ? 'Zobrazit všechny' : 'Zobrazit zbývající (' + payrollRemaining.length + ')'"
+                        :aria-pressed="remainingOnly" icon="pi pi-filter" size="small" outlined @click="remainingOnly = !remainingOnly" />
+                    <p v-else-if="!payroll.people.length && !payroll.versions.length">Za toto období nejsou žádné výkazy k uzavření.</p>
+                    <PvButton v-else-if="payroll.versions.length && !payroll.changed" label="Stáhnout aktuální CSV" icon="pi pi-download"
+                        size="small" :disabled="busy" @click="download(payroll.versions[0].version)" />
                     <PvButton v-else label="Uzavřít měsíc" icon="pi pi-check" size="small" :disabled="busy" @click="closeMonth" />
                 </template>
             </template>
@@ -804,7 +807,7 @@
                 <template #title><h2>Připravenost výkazů</h2></template>
                 <template #content>
                     <div class="table-region" role="region" aria-label="Připravenost výkazů" tabindex="0">
-                        <PvDataTable :value="payroll.people" data-key="id" size="small" striped-rows :table-props="{'aria-label':'Připravenost výkazů'}">
+                        <PvDataTable :value="payrollPeople" data-key="id" size="small" striped-rows :table-props="{'aria-label':'Připravenost výkazů'}">
                             <PvColumn field="name" header="Jméno" sortable />
                             <PvColumn header="Stav">
                                 <template #body="{data}">

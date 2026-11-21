@@ -601,7 +601,7 @@ test('payroll opens a specific sheet, closes a ready month and downloads CSV', a
     let inspected
     const csv = 'osobni_cislo;datum\r\n100;2026-11-16\r\n'
     const payroll = () => ({
-        people:[{...employee, approved:true}], changed:false,
+        people:[{...employee, approved:!!inspected}, {...manager, approved:true}], changed:false,
         versions:closed ? [{version:1, created:'2026-11-17 12:01:00+01'}] : [],
     })
     await openApp(page, accountant, {
@@ -614,6 +614,13 @@ test('payroll opens a specific sheet, closes a ready month and downloads CSV', a
             return {csv}
         },
     })
+    await expect(page.getByText('1 z 2 schváleno')).toBeVisible()
+    const table = page.getByRole('table', {name:'Připravenost výkazů'})
+    await page.getByRole('button', {name:'Zobrazit zbývající (1)'}).click()
+    await expect(table).not.toContainText(manager.name)
+    await expect(table).toContainText(employee.name)
+    await page.getByRole('button', {name:'Zobrazit všechny'}).click()
+    await expect(table).toContainText(manager.name)
     await page.getByRole('button', {name:'Zobrazit výkaz · ' + employee.name}).click()
     await expect(page.getByRole('heading', {name:'Výkaz', exact:true})).toBeFocused()
     expect(inspected).toEqual({employee:employee.id, month:'2026-11'})
@@ -622,10 +629,11 @@ test('payroll opens a specific sheet, closes a ready month and downloads CSV', a
     const dialog = page.getByRole('dialog', {name:'Uzavřít měsíc'})
     await expect(dialog).toContainText('2026-11')
     await dialog.getByRole('button', {name:'Uzavřít měsíc'}).click()
-    await expect(page.getByText('Export pro aktuální podklady je připravený.')).toBeVisible()
+    await expect(page.getByText('2 z 2 schváleno')).toBeVisible()
+    await expect(page.getByRole('table', {name:'Mzdové exporty'}).getByRole('button', {name:'Stáhnout CSV'})).toBeVisible()
     expect(closed.month).toBe('2026-11')
     const download = page.waitForEvent('download')
-    await page.getByRole('button', {name:'Stáhnout CSV'}).click()
+    await page.getByRole('button', {name:'Stáhnout aktuální CSV'}).click()
     expect((await download).suggestedFilename()).toBe('dochazka-2026-11-v1.csv')
     expect(await readFile(await (await download).path(),'utf8')).toBe(csv)
 })

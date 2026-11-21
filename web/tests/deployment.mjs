@@ -77,7 +77,7 @@ try {
 
     const payroll = await login('payroll')
     await openPilotMonth(payroll)
-    await expect(payroll.getByText('Měsíc lze uzavřít po schválení všech výkazů.')).toBeVisible()
+    await expect(payroll.getByRole('button', {name:/Zobrazit zbývající/})).toBeVisible()
     await expect(payroll.getByRole('button', {name:'Uzavřít měsíc'})).toHaveCount(0)
 
     await navigate(employee, 'Výkaz')

@@ -143,6 +143,14 @@ export function setupAttendance() {
     const freshPerson=()=>({id:0,name:'',number:'',login:'',roles:['employee'],attendance_enabled:true,org_unit_id:null,sid:'',starts:today.value,ends:''})
     const user=ref<Person|null>(null), people=ref<Person[]>([]), devices=ref<Device[]>([]), payroll=ref<Payroll|null>(null)
     const person=ref(0), month=ref(today.value.slice(0,7)),sheet=ref<Sheet|null>(null),tab=ref('Výkaz')
+    const remainingOnly = ref(false)
+    const payrollRemaining = computed(() => payroll.value?.people.filter(p => !p.approved) ?? [])
+    const payrollPeople = computed(() => remainingOnly.value && payrollRemaining.value.length
+        ? payrollRemaining.value : payroll.value?.people ?? [])
+    watch([month, () => user.value?.id], () => { remainingOnly.value = false })
+    watch(payroll, result => {
+        if (result && !payrollRemaining.value.length) remainingOnly.value = false
+    })
     const pendingOnly = ref(false)
     const visibleRequests = computed(() => (sheet.value?.requests ?? []).filter(r => !pendingOnly.value || r.status === 'pending'))
     const daily = ref<DailyAttendance|null>(null)
@@ -1454,7 +1462,7 @@ export function setupAttendance() {
         passkeyAvailable, passkeyList, newPasskey, addPasskey, removePasskey,
         photoVisible, photoPreview, adjusted, scanMessage, cameraInput, mobileCamera, selectProof, openCamera,
         captureProof, straightenProof, showOriginal, clearPhoto,
-        user, people, devices, payroll, person, month, sheet, tab, tabs, mainTabs, adminTabs, navigationVisible, busy, error, notice, login, password,
+        remainingOnly, payrollRemaining, payrollPeople, user, people, devices, payroll, person, month, sheet, tab, tabs, mainTabs, adminTabs, navigationVisible, busy, error, notice, login, password,
         units, unitTree, employeeUnit, unitEdit, newUnitPath, originalUnit, parentOptions, deleteUnit, openEditor,
         activation, code, form, edit, deviceName, secret, labels, roles, requestKinds, requestSeverities,
         durationSeconds, durationEdit, submitDuration, breakEdit, submitBreak, actualEdit, submitActual, returnActual,
