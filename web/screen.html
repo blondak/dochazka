@@ -177,8 +177,12 @@
                     <p>Stav podle evidence Windows. Aktualizováno v {{ time(daily.updated) }}.</p>
                     <div class="table-region" role="region" aria-labelledby="team-attendance" tabindex="0">
                         <PvDataTable :value="daily.people" data-key="id" size="small" striped-rows :table-props="{'aria-labelledby':'team-attendance'}">
-                            <PvColumn field="name" header="Zaměstnanec" />
-                            <PvColumn header="Stav">
+                            <PvColumn field="name" header="Zaměstnanec">
+                                <template #body="{data}">{{ data.name }}
+                                    <small v-if="data.approved_absences?.length" class="muted-block">Schválená žádost · {{ data.approved_absences.join(', ') }}</small>
+                                </template>
+                            </PvColumn>
+                            <PvColumn header="Relace počítače">
                                 <template #body="{ data }"><PvTag
                                     :value="data.status === 'present' && daily.day !== today ? 'Otevřená relace' : dailyStatuses[data.status].label"
                                     :severity="dailyStatuses[data.status].severity" /></template>

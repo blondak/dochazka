@@ -7,7 +7,7 @@ interface ComputerSession {device:number;station:string;session:string;from:stri
 interface DailyAttendance {
     day:string
     updated:string
-    people:{id:number;name:string;status:'present'|'finished'|'absent'|'untracked';worked_seconds:number|null;from?:string|null;to?:string|null}[]
+    people:{id:number;name:string;approved_absences?:string[];status:'present'|'finished'|'absent'|'untracked';worked_seconds:number|null;from?:string|null;to?:string|null}[]
 }
 interface HolidayControlPreview {
     token:string;added:number;changed:number;removed:number
@@ -110,9 +110,9 @@ const dayIssueStyles = {
     review: {icon:'pi pi-exclamation-triangle', label:'Ke kontrole', severity:'warn'},
 }
 const dailyStatuses = {
-    present: {label:'Přítomen', severity:'success'},
-    finished: {label:'Odpracováno', severity:'info'},
-    absent: {label:'Nepřítomen', severity:'secondary'},
+    present: {label:'Aktivní', severity:'success'},
+    finished: {label:'Ukončena', severity:'info'},
+    absent: {label:'Bez aktivní relace', severity:'secondary'},
     untracked: {label:'Bez přiřazeného účtu', severity:'warn'},
 }
 const date = (s: string) => new Date(s.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00'))

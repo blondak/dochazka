@@ -58,24 +58,30 @@ final class DailyAttendance
         foreach ($events as $event) {
             $bySid[$event['sid']][] = $event;
         }
-        $requests = [];
+        $accounts = $this->catalog->accounts();
+        $requests = $absences = [];
         if ($roster !== []) {
             $approved = $this->db->createQueryBuilder()
                 ->select('r.*', 'EXISTS(SELECT 1 FROM medical_proof p WHERE p.request_id = r.id) AS has_proof')
                 ->from('request', 'r')
-                ->where('employee IN (:ids)', 'NOT generated_holiday', "status = 'approved'", 'begins < :cutoff', 'ends > :start')
+                ->where('employee IN (:ids)', 'NOT generated_holiday', "status = 'approved'", 'begins < :end', 'ends > :start')
                 ->andWhere("(kind <> 'PRACE' OR ((merged_work OR replaces_from IS NOT NULL) AND ends <= :cutoff))")
                 ->setParameter('ids', array_column($roster, 'id'), ArrayParameterType::INTEGER)
+                ->setParameter('end', $end->format(DATE_ATOM))
                 ->setParameter('cutoff', $cutoff)
                 ->setParameter('start', $start->format(DATE_ATOM))
                 ->fetchAllAssociative();
             foreach ($approved as $request) {
-                $requests[$request['employee']][] = $request;
+                $id = $request['employee'];
+                $account = $accounts[$request['kind']];
+                if (in_array($account['behavior'], ['shift_absence', 'timed_absence'], true)) {
+                    $absences[$id][$request['kind']] = $account['name'];
+                }
+                if (new DateTimeImmutable($request['begins']) < min($now, $end)) $requests[$id][] = $request;
             }
         }
         $limits = $this->mergePolicy->limits($start, $end);
         $people = [];
-        $accounts = $this->catalog->accounts();
         $breakRules = $this->catalog->durationRules('break');
         $corrections = $exceptions = [];
         if ($roster) {
@@ -94,7 +100,9 @@ final class DailyAttendance
             $exception = $exceptions[$person['id']] ?? null;
             $policy = ['break_rules' => $breakRules, 'adjustments' => $corrections[$person['id']] ?? [],
                 'break_exceptions' => $exception ? [$day => $exception] : []];
-            $people[] = ['id' => (int) $person['id'], 'name' => $person['name']] + (
+            $personInfo = ['id' => (int) $person['id'], 'name' => $person['name']];
+            if (isset($absences[$person['id']])) $personInfo['approved_absences'] = array_values($absences[$person['id']]);
+            $people[] = $personInfo + (
                 $person['sid'] === null
                     ? ['status' => 'untracked', 'worked_seconds' => null, 'from' => null, 'to' => null]
                     : self::summarize($bySid[$person['sid']] ?? [], $requests[$person['id']] ?? [], $start, $end, $limits, $accounts, $schedules[$person['id']], $policy)

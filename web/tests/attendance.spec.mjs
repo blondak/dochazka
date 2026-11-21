@@ -286,7 +286,7 @@ test('a manager browses the team attendance by day and opens the matching timesh
                 {id:employee.id, name:employee.name, status:closed ? 'finished' : 'present',
                     from:`${day}T08:00:00+01:00`, to:closed ? `${day}T16:00:00+01:00` : null,
                     worked_seconds:closed ? 27000 : null},
-                {id:manager.id, name:manager.name, status:'absent', from:null, to:null, worked_seconds:null},
+                {id:manager.id, name:manager.name, status:'absent', approved_absences:['Dovolená'], from:null, to:null, worked_seconds:null},
             ]}
         },
     }, '/?mesic=2026-10')
@@ -296,12 +296,13 @@ test('a manager browses the team attendance by day and opens the matching timesh
     expect(await holidayIcon.evaluate(icon => getComputedStyle(icon, '::before').content)).not.toBe('none')
     await expect(page.getByText('17. 11. 2026', {exact:true})).toBeVisible()
     const employeeRow = page.getByRole('row').filter({hasText:employee.name})
-    await expect(employeeRow).toContainText('Přítomen')
+    await expect(page.getByText('Schválená žádost · Dovolená')).toBeVisible()
+    await expect(employeeRow).toContainText('Aktivní')
     await expect(employeeRow.getByRole('cell', {name:'08:00', exact:true})).toBeVisible()
     await expect(employeeRow.getByRole('cell', {name:'—', exact:true})).toHaveCount(2)
-    await expect(page.getByRole('row').filter({hasText:manager.name})).toContainText('Nepřítomen')
+    await expect(page.getByRole('row').filter({hasText:manager.name})).toContainText('Bez aktivní relace')
     await page.getByRole('button', {name:'Obnovit', exact:true}).click()
-    await expect(employeeRow).toContainText('Odpracováno')
+    await expect(employeeRow).toContainText('Ukončena')
     await expect(employeeRow.getByRole('cell', {name:'16:00', exact:true})).toBeVisible()
     await expect(employeeRow).toContainText('7:30')
     await expect(page).toHaveURL(/sekce=denni-prehled/)
@@ -312,11 +313,11 @@ test('a manager browses the team attendance by day and opens the matching timesh
     await expect(page).toHaveURL(/den=2026-11-16/)
     await expect(employeeRow).toContainText('Otevřená relace')
     await next.click()
-    await expect(employeeRow).toContainText('Odpracováno')
+    await expect(employeeRow).toContainText('Ukončena')
     await page.goBack()
     await expect(employeeRow).toContainText('Otevřená relace')
     await page.goForward()
-    await expect(employeeRow).toContainText('Odpracováno')
+    await expect(employeeRow).toContainText('Ukončena')
     await previous.click()
     await page.getByRole('button', {name:'Dnes',exact:true}).click()
     await expect(page).not.toHaveURL(/den=/)

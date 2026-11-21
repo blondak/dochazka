@@ -3583,6 +3583,13 @@
                                         "untracked"
                                     ]
                                 },
+                                "approved_absences": {
+                                    "type": "array",
+                                    "description": "Konta schválených žádostí o nepřítomnost pro vybraný den.",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
                                 "worked_seconds": {
                                     "type": [
                                         "integer",
