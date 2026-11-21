@@ -5,6 +5,7 @@ namespace Dochazka\Attendance;
 
 use DateTimeImmutable as Date;
 use DateTimeZone;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Dochazka\Audit\AuditTrail;
 use Dochazka\Http\Problem;
@@ -244,21 +245,50 @@ final class WorkModels
     /** Chargeable working shifts, calendar credits and display names use the same dated calendar and model. */
     public function plan(int $employee, Date $from, Date $until, bool $includeUnassignedDays = true): array
     {
-        $schedule = $credits = $calendarDays = [];
-        if ($from >= $until) return compact('schedule', 'credits', 'calendarDays');
+        return $this->plans([$employee], $from, $until, $includeUnassignedDays)[$employee];
+    }
+
+    /** Daily team view already has the effective break rules for all accounts. */
+    public function dailySchedules(array $employees, Date $day, array $breakRules): array
+    {
+        return array_map(static fn(array $plan): array => $plan['schedule'],
+            $this->plans($employees, $day, $day->modify('+1 day'), false, $breakRules));
+    }
+
+    private function plans(array $employees, Date $from, Date $until, bool $includeUnassignedDays, ?array $breakRules = null): array
+    {
+        $plans = array_fill_keys($employees, ['schedule' => [], 'credits' => [], 'calendarDays' => []]);
+        if (!$plans || $from >= $until) return $plans;
         $zone = new DateTimeZone('Europe/Prague');
         $from = $from->setTimezone($zone);
         $until = $until->setTimezone($zone);
-        $revisions = $this->db->createQueryBuilder()->select('a.effective_on AS assignment', 'v.effective_on', 'v.week')
+        $lastDay = $until->modify('-1 microsecond')->format('Y-m-d');
+        // For a single day only the most recent applicable assignment and version per person can contribute.
+        $employeeColumn = $from->format('Y-m-d') === $lastDay ? 'DISTINCT ON (a.employee) a.employee' : 'a.employee';
+        $revisions = $this->db->createQueryBuilder()->select($employeeColumn, 'a.effective_on AS assignment', 'v.effective_on', 'v.week')
             ->from('employee_work_model', 'a')->innerJoin('a', 'work_model_version', 'v', 'v.model = a.model')
-            ->where('a.employee = :employee', 'a.effective_on <= :last_day', 'v.effective_on <= :last_day')
-            ->setParameter('employee', $employee)->setParameter('last_day', $until->modify('-1 microsecond')->format('Y-m-d'))
-            ->orderBy('a.effective_on', 'DESC')->addOrderBy('v.effective_on', 'DESC')->fetchAllAssociative();
-        if ($revisions || $includeUnassignedDays) $calendarDays = $this->calendar->days($from, $until);
+            ->where('a.employee IN (:employees)', 'a.effective_on <= :last_day', 'v.effective_on <= :last_day')
+            ->setParameter('employees', $employees, ArrayParameterType::INTEGER)
+            ->setParameter('last_day', $lastDay)->orderBy('a.employee')
+            ->addOrderBy('a.effective_on', 'DESC')->addOrderBy('v.effective_on', 'DESC')->fetchAllAssociative();
+        if (!$revisions && !$includeUnassignedDays) return $plans;
+        $calendarDays = $this->calendar->days($from, $until);
+        $rules = $breakRules ?? ($revisions ? ($this->catalog->durationRules('break')['PRACE'] ?? []) : []);
+        $byEmployee = [];
+        foreach ($revisions as $revision) {
+            $revision['week'] = json_decode($revision['week'], true, flags: JSON_THROW_ON_ERROR);
+            $byEmployee[$revision['employee']][] = $revision;
+        }
+        foreach ($employees as $employee) {
+            $plans[$employee] = $this->employeePlan($byEmployee[$employee] ?? [], $from, $until, $calendarDays, $rules);
+        }
+        return $plans;
+    }
+
+    private function employeePlan(array $revisions, Date $from, Date $until, array $calendarDays, array $rules): array
+    {
+        $schedule = $credits = [];
         if (!$revisions) return compact('schedule', 'credits', 'calendarDays');
-        $rules = $this->catalog->durationRules('break')['PRACE'] ?? [];
-        foreach ($revisions as &$revision) $revision['week'] = json_decode($revision['week'], true, flags: JSON_THROW_ON_ERROR);
-        unset($revision);
         for ($date = $from->setTime(0, 0); $date < $until; $date = $date->modify('+1 day')) {
             $key = $date->format('Y-m-d');
             foreach ($revisions as $revision) {

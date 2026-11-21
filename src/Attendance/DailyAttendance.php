@@ -88,6 +88,8 @@ final class DailyAttendance
                 ->where('employee IN (:ids)', 'day = :day')
                 ->setParameters($scope, ['ids' => ArrayParameterType::INTEGER])->fetchAllKeyValue();
         }
+        $tracked = array_filter($roster, static fn(array $person): bool => $person['sid'] !== null);
+        $schedules = $this->models->dailySchedules(array_column($tracked, 'id'), $start, $breakRules['PRACE'] ?? []);
         foreach ($roster as $person) {
             $exception = $exceptions[$person['id']] ?? null;
             $policy = ['break_rules' => $breakRules, 'adjustments' => $corrections[$person['id']] ?? [],
@@ -95,7 +97,7 @@ final class DailyAttendance
             $people[] = ['id' => (int) $person['id'], 'name' => $person['name']] + (
                 $person['sid'] === null
                     ? ['status' => 'untracked', 'worked_seconds' => null, 'from' => null, 'to' => null]
-                    : self::summarize($bySid[$person['sid']] ?? [], $requests[$person['id']] ?? [], $start, $end, $limits, $accounts, $this->models->schedule($person['id'], $start, $end), $policy)
+                    : self::summarize($bySid[$person['sid']] ?? [], $requests[$person['id']] ?? [], $start, $end, $limits, $accounts, $schedules[$person['id']], $policy)
             );
         }
         return ['day' => $day, 'updated' => $now->format(DATE_ATOM), 'people' => $people];

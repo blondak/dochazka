@@ -952,6 +952,25 @@ def exercise_development():
 
                 exercise_setup(connect, token)
                 exercise(connect, [PHP], check_locks=True)
+                # Compare the batched daily schedule with the historical monthly plan for the entire mixed roster.
+                php("-r", r"""
+                    $di = require 'config/bootstrap.php';
+                    $db = $di->getByType(Doctrine\DBAL\Connection::class);
+                    $models = $di->getByType(Dochazka\Attendance\WorkModels::class);
+                    $rules = $di->getByType(Dochazka\Attendance\Catalog::class)->durationRules('break')['PRACE'] ?? [];
+                    $ids = $db->fetchFirstColumn('SELECT id FROM employee');
+                    $first = $models::day('2025-11-01');
+                    foreach ($ids as $id) $monthly[$id] = $models->schedule($id, $first, $first->modify('+1 month'));
+                    foreach (['14', '17', '18'] as $day) {
+                        $date = $models::day('2025-11-'.$day);
+                        $daily = $models->dailySchedules($ids, $date, $rules);
+                        foreach ($ids as $id) {
+                            if ($daily[$id] !== array_intersect_key($monthly[$id], [$date->format('Y-m-d') => true])) {
+                                throw new RuntimeException("Odlišný rozvrh osoby $id pro den $day.");
+                            }
+                        }
+                    }
+                """)
                 sql("""DO $$ BEGIN
                     IF NOT EXISTS (SELECT 1 FROM audit a JOIN employee e ON e.id = a.actor
                         WHERE a.action='attendance-correction' AND e.login='managerA'
