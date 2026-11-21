@@ -89,13 +89,13 @@ responses:
     '409': {$ref: '#/components/responses/Error409'}
     '422': {$ref: '#/components/responses/Error422'}
 NEON)]
-    #[LoggedIn, Role('admin')]
+    #[LoggedIn, Role('admin', 'hr')]
     public function workModels(ApiRequest $request, ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, fn() => $this->models->listing(), readOnly: true);
     }
 
-    #[Path('/employee-model-choices'), Method('POST'), LoggedIn, Role('admin')]
+    #[Path('/employee-model-choices'), Method('POST'), LoggedIn, Role('admin', 'hr')]
     #[OpenApi(<<<'NEON'
 operationId: employeeModelChoices
 summary: "Pracovní modely a historie přiřazení pro dialog zaměstnance"
@@ -115,13 +115,13 @@ NEON)]
     public function modelChoices(ApiRequest $request, ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, function (array $input): array {
-            $actor = $this->accounts->actor('admin');
+            $actor = $this->accounts->actor(['admin', 'hr']);
             $employee = isset($input['employee']) ? $this->directory->person($actor, (int) $input['employee']) : null;
             return ['models' => $this->models->listing(), 'assignments' => $employee ? $this->models->assignments($employee['id']) : []];
         }, readOnly: true);
     }
 
-    #[Path('/work-model-change-preview'), Method('POST'), LoggedIn, Role('admin')]
+    #[Path('/work-model-change-preview'), Method('POST'), LoggedIn, Role('admin', 'hr')]
     #[OpenApi(<<<'NEON'
 operationId: workModelChangePreview
 summary: "Náhled dopadů změny rozvrhu nebo přiřazení"
@@ -134,7 +134,7 @@ NEON)]
     public function changePreview(ApiRequest $request, ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, function (array $input): array {
-            $actor = $this->accounts->actor('admin');
+            $actor = $this->accounts->actor(['admin', 'hr']);
             if (isset($input['employee'])) {
                 $input['person'] = $this->directory->person($actor, (int) $input['employee']);
                 if (isset($input['attendance_start'])) $input['person']['starts'] = WorkModels::day($input['attendance_start'])->format('Y-m-d');
@@ -160,11 +160,11 @@ responses:
     '409': {$ref: '#/components/responses/Error409'}
     '422': {$ref: '#/components/responses/Error422'}
 NEON)]
-    #[LoggedIn, Role('admin')]
+    #[LoggedIn, Role('admin', 'hr')]
     public function saveWorkModel(ApiRequest $request, ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, function (array $input): array {
-            $actor = $this->accounts->actor('admin')['id'];
+            $actor = $this->accounts->actor(['admin', 'hr'])['id'];
             $result = $this->models->save($actor, $input);
             $this->holidayEntries->reconcileExisting($result['impact'], $actor);
             return ['id' => $result['id']];
@@ -186,7 +186,7 @@ responses:
     '409': {$ref: '#/components/responses/Error409'}
     '422': {$ref: '#/components/responses/Error422'}
 NEON)]
-    #[LoggedIn, Role('admin')]
+    #[LoggedIn, Role('admin', 'hr')]
     public function assignWorkModel(ApiRequest $request, ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, $this->assign(...));
@@ -309,7 +309,7 @@ NEON)]
 
     private function assign(array $input): array
     {
-        $actor = $this->accounts->actor('admin');
+        $actor = $this->accounts->actor(['admin', 'hr']);
         $person = $this->directory->person($actor, (int) ($input['employee'] ?? 0));
         $result = $this->models->assign($actor['id'], $person, $input);
         $this->holidayEntries->reconcileExisting($result['impact'], $actor['id']);

@@ -19,7 +19,7 @@ final class Accounts
         private Session $session,
     ) {}
 
-    public function actor(?string $role = null): array
+    public function actor(string|array|null $role = null): array
     {
         $auth = $this->session->getSection('auth');
         $id = $auth->get('user');
@@ -35,7 +35,7 @@ final class Accounts
         if (!$employee) {
             throw new Problem('Přihlaste se.', 401);
         }
-        if ($role !== null && !in_array($role, $employee['roles'], true)) {
+        if ($role !== null && !array_intersect((array) $role, $employee['roles'])) {
             throw new Problem('Přístup zamítnut.', 403);
         }
         return $employee + ['org_unit_path' => $this->units->path($employee['org_unit_id']), 'managed' => in_array('manager', $employee['roles'], true)];

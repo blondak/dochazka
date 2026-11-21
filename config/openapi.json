@@ -183,6 +183,7 @@
           "enum": [
             "employee",
             "manager",
+            "hr",
             "payroll",
             "admin"
           ]

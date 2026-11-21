@@ -39,7 +39,7 @@ NEON)]
     #[Path('/employee'), Method('POST')]
     #[OpenApi(<<<'NEON'
 operationId: employee
-summary: "Správce vytvoří nebo upraví zaměstnance"
+summary: "Správce nebo personalista vytvoří nebo upraví zaměstnance"
 tags: [Správa]
 requestBody: {$ref: '#/components/requestBodies/Employee'}
 parameters: [{$ref: '#/components/parameters/WebHeader'}]
@@ -51,7 +51,7 @@ responses:
     '409': {$ref: '#/components/responses/Error409'}
     '422': {$ref: '#/components/responses/Error422'}
 NEON)]
-    #[LoggedIn, Role('admin')]
+    #[LoggedIn, Role('admin', 'hr')]
     public function employee(ApiRequest $request,ApiResponse $response): ApiResponse
     {
         return $this->json->respond($request, $response, fn(array $input) => $this->service->savePerson($input));

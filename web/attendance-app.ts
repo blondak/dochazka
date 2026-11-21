@@ -85,9 +85,9 @@ function validDay(value: string) {
     const parsed = new Date(value+'T00:00:00Z')
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0,10) === value
 }
-const labels:Record<string,string>={employee:'Zaměstnanec',manager:'Vedoucí',admin:'Správce',payroll:'Mzdová účetní',PRACE:'Práce',PRESTAVKA:'Přestávka',DOVOLENA:'Dovolená',LEKAR:'Lékař',pending:'Čeká na schválení',approved:'Schváleno',rejected:'Zamítnuto'}
+const labels:Record<string,string>={employee:'Zaměstnanec',manager:'Vedoucí',hr:'Personalista',admin:'Správce',payroll:'Mzdová účetní',PRACE:'Práce',PRESTAVKA:'Přestávka',DOVOLENA:'Dovolená',LEKAR:'Lékař',pending:'Čeká na schválení',approved:'Schváleno',rejected:'Zamítnuto'}
 const options = (values: string[]) => values.map(value => ({ value, label: labels[value] }))
-const roles = options(['employee', 'manager', 'payroll', 'admin'])
+const roles = options(['employee', 'manager', 'hr', 'payroll', 'admin'])
 const roleNames = (assigned:string[]) => assigned.map(role => labels[role]).join(', ')
 const defaultRequestKinds = options(['LEKAR', 'DOVOLENA', 'PRACE', 'PRESTAVKA'])
 const freshRequest = () => ({kind:'LEKAR',from:'',to:'',fromTime:'',toTime:'',note:'',vacationMode:'full',vacationHours:'',consent:false})
@@ -470,7 +470,7 @@ export function setupAttendance() {
     const canSubmitRequest = computed(() => (ownSheet.value || managesPerson.value) && selectedPerson.value?.attendance_enabled)
     const scopePeople = computed(() => people.value.filter(p => {
         if (p.id === user.value?.id) return p.attendance_enabled
-        return hasRole('admin') || hasRole('payroll')
+        return hasRole('admin') || hasRole('hr') || hasRole('payroll')
             || (hasRole('manager') && p.managed)
     }))
     const attendancePeople = computed(() => scopePeople.value.filter(p => p.attendance_enabled))
@@ -487,8 +487,9 @@ export function setupAttendance() {
     const adminTabs = ['Zaměstnanci', 'Organizační struktura', 'Zařízení', 'Konta docházky', 'Pracovní modely', 'Svátky a dny volna', 'Nastavení docházky']
     const mainTabs = computed(() => [
         ...(hasRole('admin') && needsSetup.value ? ['První kroky'] : []),
+        ...(hasRole('hr') && !hasRole('admin') ? ['Zaměstnanci', 'Pracovní modely'] : []),
         ...(hasRole('payroll') ? ['Uzávěrka'] : []),
-        ...(hasRole('payroll') || hasRole('admin') || hasRole('manager') || (hasRole('employee') && user.value?.attendance_enabled)
+        ...(hasRole('payroll') || hasRole('hr') || hasRole('admin') || hasRole('manager') || (hasRole('employee') && user.value?.attendance_enabled)
             ? ['Výkaz', 'Žádosti'] : []),
         ...(hasRole('manager') ? ['Denní přehled'] : []),
     ])
@@ -574,6 +575,8 @@ export function setupAttendance() {
         accounts.value = await api('attendance-accounts')
         if (hasRole('admin')) {
             await Promise.all([loadDirectory(), api<Device[]>('devices').then(result => { devices.value = result })])
+        } else if (hasRole('hr')) {
+            await loadDirectory()
         } else {
             people.value = await api('people')
         }
@@ -770,7 +773,7 @@ export function setupAttendance() {
     }
     function showEditor(next: Editor | null) {
         modelCopy.value = null
-        if (next?.kind === 'employee' && hasRole('admin') && ['Zaměstnanci', 'Výkaz'].includes(tab.value)) {
+        if (next?.kind === 'employee' && (hasRole('admin') || hasRole('hr')) && ['Zaměstnanci', 'Výkaz'].includes(tab.value)) {
             const {id} = next
             const data = people.value.find(p => p.id === id)
             if (id !== undefined && !data) {
@@ -1030,7 +1033,7 @@ export function setupAttendance() {
                 [!employee.name.trim(), 'general', '#employee-name', 'Vyplňte jméno.'],
                 [employee.attendance_enabled && !employee.number?.trim(), 'general', '#employee-number', 'Vyplňte osobní číslo.'],
                 [!employee.org_unit_id, 'general', '#employee-unit', 'Vyberte organizační jednotku.'],
-                [!employee.login?.trim(), 'access', '#employee-login', 'Vyplňte uživatelské jméno.'],
+                [hasRole('admin') && !employee.login?.trim(), 'access', '#employee-login', 'Vyplňte uživatelské jméno.'],
                 [!employee.roles.length, 'access', '#role-employee', 'Vyberte alespoň jednu roli.'],
                 [!employee.starts, 'attendance', '#employee-starts', 'Vyplňte začátek evidence.'],
                 [!!employee.ends && employee.ends < (employee.starts ?? ''), 'attendance', '#employee-ends', 'Konec evidence předchází začátku.'],

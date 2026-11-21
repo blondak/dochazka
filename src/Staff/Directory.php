@@ -19,7 +19,7 @@ final class Directory
     {
         $p = $this->em->find(Employee::class, $id);
         if (!$p) throw new Problem('Osoba nenalezena.',404);
-        $canReadAll = array_intersect(['payroll', 'admin'], $actor['roles']) !== [];
+        $canReadAll = array_intersect(['payroll', 'admin', 'hr'], $actor['roles']) !== [];
         $managed = isset($this->units->managed($actor)[$p->orgUnit->id]);
         if (!$managed && ($review || ($actor['id'] !== $id && !$canReadAll))) {
             throw new Problem('Přístup zamítnut.', 403);
@@ -33,7 +33,7 @@ final class Directory
         $admin = in_array('admin', $actor['roles'], true);
         $managed = $this->units->managed($actor);
         $criteria = match (true) {
-            $admin || in_array('payroll', $actor['roles'], true) => [],
+            array_intersect(['admin','hr','payroll'], $actor['roles']) !== [] => [],
             in_array('manager', $actor['roles'], true) => ['orgUnit' => array_keys($managed)],
             default => null,
         };
@@ -43,7 +43,7 @@ final class Directory
         }
         $employees = $this->em->getRepository(Employee::class)->findBy($criteria, ['name' => 'ASC']);
         $units = $criteria === [] ? $this->units->catalog() : $managed;
-        return array_map(static function (Employee $employee) use ($admin, $units, $managed): array {
+        return array_map(static function (Employee $employee) use ($admin, $actor, $units, $managed): array {
             $id = $employee->orgUnit->id;
             $person = $employee->summary() + ['org_unit_path' => $units[$id]['path'], 'managed' => isset($managed[$id])];
             if ($admin) {
@@ -52,6 +52,10 @@ final class Directory
                     'ends' => $employee->ends?->format('Y-m-d'),
                     'login' => $employee->login,
                 ];
+            }
+            if (in_array('hr', $actor['roles'], true)) {
+                $person['starts'] = $employee->starts->format('Y-m-d');
+                $person['ends'] = $employee->ends?->format('Y-m-d');
             }
             unset($person['sid']);
             return $person;
@@ -67,9 +71,22 @@ final class Directory
 
     public function savePerson(array $i): array
     {
-        $who=$this->accounts->actor('admin')['id'];
+        $actor = $this->accounts->actor(['admin', 'hr']);
+        $who = $actor['id'];
         $e=empty($i['id']) ? new Employee : $this->em->find(Employee::class,(int)$i['id']);
         if (!$e) throw new Problem('Osoba nenalezena.');
+        if (!in_array('admin', $actor['roles'], true)) {
+            if ($e->id && in_array('manager', $e->roles, true) && $e->orgUnit->id !== ($i['org_unit_id'] ?? null)) {
+                throw new Problem('Přesun vedoucího mění jeho oprávnění a provádí ho správce.', 403);
+            }
+            if ($e->id && array_diff($e->roles, ['employee']) &&
+                (($i['starts'] ?? '') !== $e->starts->format('Y-m-d') || (($i['ends'] ?? null) ?: null) !== $e->ends?->format('Y-m-d'))) {
+                throw new Problem('Dobu přístupu účtu s rozšířeným oprávněním mění správce.', 403);
+            }
+            $i['roles'] = $e->id ? $e->roles : ['employee'];
+            $i['sid'] = $e->sid;
+            $i['login'] = $e->id ? $e->login : 'osoba-'.bin2hex(random_bytes(8));
+        }
         $sid=strtoupper(trim($i['sid'] ?? '')) ?: null;
         if ($e->sid && $e->sid!==$sid) throw new Problem('Přiřazený SID nelze přepsat bez migrace historie.');
         if ($sid && !preg_match('/^S-1-5-21-(?:\d+-){3}\d+$/D',$sid)) throw new Problem('Neplatný doménový SID.');

@@ -16,7 +16,7 @@ final class OrgUnitController implements IController
 {
     public function __construct(private JsonEndpoint $json, private OrgUnits $units, private Accounts $accounts) {}
 
-    #[Path('/org-units'), Method('POST'), LoggedIn, Role('admin')]
+    #[Path('/org-units'), Method('POST'), LoggedIn, Role('admin', 'hr')]
     #[OpenApi(<<<'NEON'
 operationId: orgUnitUnits
 summary: "Organizační jednotky"

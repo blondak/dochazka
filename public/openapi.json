@@ -896,7 +896,7 @@
                 "tags": [
                     "Správa"
                 ],
-                "summary": "Správce vytvoří nebo upraví zaměstnance",
+                "summary": "Správce nebo personalista vytvoří nebo upraví zaměstnance",
                 "operationId": "employee",
                 "parameters": [
                     {
@@ -3267,6 +3267,7 @@
                     "enum": [
                         "employee",
                         "manager",
+                        "hr",
                         "payroll",
                         "admin"
                     ]

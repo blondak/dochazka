@@ -118,7 +118,7 @@
             :label="tab === 'Výkaz' ? 'Nástroje výkazu' : tab === 'Žádosti' ? 'Nástroje žádostí' : 'Nástroje uzávěrky'" toolbar-class="sheet-toolbar">
             <template #start>
                 <PeriodSelector :person="person" :month="month" :people="selectablePeople" :selected-name="selectedPerson?.name"
-                    :show-person="tab !== 'Uzávěrka'" :editable-person="tab === 'Výkaz' && hasRole('admin')" :busy="busy"
+                    :show-person="tab !== 'Uzávěrka'" :editable-person="tab === 'Výkaz' && (hasRole('admin') || hasRole('hr'))" :busy="busy"
                     :can-show-all-people="canShowAllPeople" :show-all-people="showAllPeople" @show-all-people="setShowAllPeople"
                     @select-person="selectPerson" @edit-person="editPerson(selectedPerson)" @select-month="selectMonth" @move-month="moveMonth" />
                 <div v-if="tab === 'Výkaz' && sheet && canReview" class="sheet-actions">
@@ -749,9 +749,9 @@
                                     icon="pi pi-file-edit" v-tooltip.top="'Otevřít žádosti'" :aria-label="'Otevřít žádosti · ' + data.name"
                                     size="small" text :disabled="busy" @click="changeTab('Žádosti', data.id)" />
                                 <PvButton icon="pi pi-pencil" v-tooltip.top="'Upravit'" :aria-label="'Upravit ' + data.name" size="small" severity="secondary" text @click="editPerson(data)" />
-                                <PvButton v-if="!data.archived_on" icon="pi pi-envelope" v-tooltip.top="'Vydat pozvánku'" size="small" outlined :disabled="busy"
+                                <PvButton v-if="hasRole('admin') && !data.archived_on" icon="pi pi-envelope" v-tooltip.top="'Vydat pozvánku'" size="small" outlined :disabled="busy"
                                     :aria-label="'Pozvánka pro ' + data.name" @click="invite(data)" />
-                                <PvButton :icon="data.archived_on ? 'pi pi-replay' : 'pi pi-box'"
+                                <PvButton v-if="hasRole('admin')" :icon="data.archived_on ? 'pi pi-replay' : 'pi pi-box'"
                                     v-tooltip.top="data.archived_on ? 'Zrušit archivaci' : 'Archivovat'" size="small" text
                                     :aria-label="(data.archived_on ? 'Zrušit archivaci · ' : 'Archivovat · ') + data.name"
                                     :disabled="busy" @click="archivePerson(data)" />
@@ -1276,7 +1276,7 @@
     <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
     <form class="stack" novalidate @submit.prevent="submitEmployee">
         <PvTabs v-model:value="employeePanel">
-            <PvTabList><PvTab value="general">Základní údaje</PvTab><PvTab value="access">Přístup</PvTab><PvTab value="attendance">Docházka</PvTab></PvTabList>
+            <PvTabList><PvTab value="general">Základní údaje</PvTab><PvTab v-if="hasRole('admin')" value="access">Přístup</PvTab><PvTab value="attendance">Docházka</PvTab></PvTabList>
             <PvTabPanels>
                 <PvTabPanel value="general">
                     <div class="employee-fields">
@@ -1293,7 +1293,7 @@
                         </div>
                     </div>
                 </PvTabPanel>
-                <PvTabPanel value="access">
+                <PvTabPanel v-if="hasRole('admin')" value="access">
                     <div class="employee-fields">
                         <label class="field">Uživatelské jméno<PvInputText id="employee-login" v-model="edit.login" required fluid /></label>
                         <fieldset class="role-options">
@@ -1311,7 +1311,7 @@
                             <PvCheckbox v-model="edit.attendance_enabled" input-id="employee-attendance" binary />
                             <label for="employee-attendance">Zpracovávat docházku</label>
                         </div>
-                        <label class="field sid-field">Doménový SID<PvInputText v-model="edit.sid" :readonly="!!edit.id && !!people.find(p => p.id === edit.id)?.sid" fluid /></label>
+                        <label v-if="hasRole('admin')" class="field sid-field">Doménový SID<PvInputText v-model="edit.sid" :readonly="!!edit.id && !!people.find(p => p.id === edit.id)?.sid" fluid /></label>
                         <div class="field">
                             <label for="employee-starts">Začátek evidence</label>
                             <PvDatePicker v-model="edit.starts" input-id="employee-starts" date-format="yy-mm-dd" update-model-type="string"

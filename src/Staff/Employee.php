@@ -11,7 +11,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'employee')]
 class Employee
 {
-    public const ROLES = ['employee', 'manager', 'payroll', 'admin'];
+    public const ROLES = ['employee', 'manager', 'hr', 'payroll', 'admin'];
 
     #[ORM\Id, ORM\GeneratedValue(strategy: 'IDENTITY'), ORM\Column]
     public ?int $id = null;
