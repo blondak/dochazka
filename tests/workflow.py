@@ -894,6 +894,17 @@ def exercise(connect, php_command, check_locks=False):
     assert lone["state"] == "incomplete"
     admin.call("session-control-apply",apply_review(lone),409)
     add_review_signal("single-end",other_boot,"logout","06:05:46")
+    # Three near-simultaneous logins are ambiguous. A separate open session cannot be suppressed either.
+    for n, clock in enumerate(["09:00:00.000001","09:00:00.000020","09:00:00.000040","09:00:01.000050"]):
+        add_review_signal("cluster-"+str(n),"2000.0x"+str(n+1),"login",clock)
+    assert [r["state"] for r in candidates()] == ["incomplete"] * 4
+    # Marking the retained session as service restores its partner, so no work login disappears with it.
+    add_review_signal("service-pair-a","3000.0xa","login","10:00:00")
+    add_review_signal("service-pair-b","3000.0xb","login","10:00:00.000024")
+    service_pair = next(row for row in candidates() if row["state"] == "candidate")
+    admin.call("session-control-apply",apply_review(service_pair))
+    admin.call("service-session-change", {"employee":employee,"session":"3000.0xa","device":service_pair["device"],"service":True})
+    assert next(row for row in candidates() if row["session"] == "3000.0xb")["state"] == "incomplete"
 
     # Keep this historical employee and break rule out of the Docker browser test period.
     admin.call("attendance-account", dict(account, break_rule=dict(break_rule, effective_on="2025-12-01", enabled=False)))
