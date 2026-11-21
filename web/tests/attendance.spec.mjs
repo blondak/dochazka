@@ -1164,11 +1164,11 @@ test('vacation request previews hours and a manager sees them when deciding', as
 })
 
 
-test('an empty Saturday is selected when it is today and a manager can enter vacation for another date', async ({page}) => {
+test('an empty Saturday selects the last scheduled weekday and a manager can still enter a different date', async ({page}) => {
     let saved
     await openApp(page, manager, {
         people:() => [manager, employee],
-        sheet:() => sheet({rows:[{day:'2026-11-13',kind:'PRACE',from:'2026-11-13T08:00:00+01:00',to:'2026-11-13T12:00:00+01:00'}]}),
+        sheet:() => sheet({planned_shifts:{'2026-11-14':[], '2026-11-13':[{from:'2026-11-13T08:00:00+01:00',to:'2026-11-13T12:00:00+01:00'}]}, rows:[{day:'2026-11-13',kind:'PRACE',from:'2026-11-13T08:00:00+01:00',to:'2026-11-13T12:00:00+01:00'}]}),
         'request-preview':data => data.from === '2026-11-14'
             ? {status:422,body:{error:'Ve vybraném období není žádná směna k čerpání.'}}
             : {seconds:14400,days:[data.from]},
@@ -1176,7 +1176,10 @@ test('an empty Saturday is selected when it is today and a manager can enter vac
     }, '/', new Date('2026-11-14T12:00:00+01:00'))
     await page.getByRole('combobox', {name:'Osoba'}).click()
     await page.getByRole('option', {name:employee.name}).click()
-    await expect(page.getByRole('heading', {name:/Detail dne.*14\. 11/})).toBeVisible()
+    await expect(page.getByRole('heading', {name:/Detail dne.*13\. 11/})).toBeVisible()
+    const days = page.getByRole('table', {name:'Dny v měsíci'})
+    await expect(days.getByRole('row', {name:/14\. 11\./})).toHaveCount(0)
+    await expect(days.getByRole('button', {name:/13\. 11\./})).toHaveAttribute('aria-pressed','true')
     const bar = page.getByRole('toolbar', {name:'Nástroje výkazu'})
     const layout = await bar.evaluate(el => {
         const grid = document.getElementById('month-days-title').closest('.p-card').getBoundingClientRect()
@@ -1189,6 +1192,9 @@ test('an empty Saturday is selected when it is today and a manager can enter vac
     const dialog = page.getByRole('dialog', {name:'Přidat záznam do výkazu'})
     await dialog.getByRole('combobox', {name:'Konto'}).click()
     await page.getByRole('option', {name:'Dovolená'}).click()
+    await expect(dialog.getByLabel('Den', {exact:true})).toHaveValue('2026-11-13')
+    await dialog.getByLabel('Den', {exact:true}).fill('2026-11-14')
+    await dialog.getByLabel('Den', {exact:true}).press('Tab')
     await expect(dialog.getByLabel('Začátek')).toHaveCount(0)
     await expect(dialog.getByText('Ve vybraném období není žádná směna k čerpání.')).toBeVisible()
     await dialog.getByLabel('Důvod úpravy').fill('Dohodnutá dovolená')
@@ -1485,4 +1491,38 @@ test('administrator previews and reverses a duplicate session without preselecti
     expect(changes.map(c => c.tokens)).toEqual([['suppress'],['restore']])
     expect(changes[0].from).toBe('2026-11-16')
     expect(changes[0]).not.toHaveProperty('employee')
+})
+
+test('the timesheet keeps a scheduled Saturday or a Saturday with only a computer login selected', async ({page}) => {
+    const saturday = '2026-11-21'
+    const start = saturday+'T06:05:45+01:00'
+    const now = new Date(saturday+'T12:00:00+01:00')
+    let plan = [{from:start,to:saturday+'T13:30:00+01:00'}]
+    let sessions = []
+    await openApp(page,employee,{sheet:() => sheet({planned_shifts:{[saturday]:plan},sessions})},'/',now)
+    const detail = page.getByRole('heading',{name:/Detail dne.*21\. 11/})
+    await expect(detail).toBeVisible()
+    plan = []
+    sessions = [{from:start,to:null,service:false,session:'boot.1',device:1,station:'PC-10'}]
+    await page.reload()
+    await expect(detail).toBeVisible()
+    await expect(page.getByText('PC-10')).toHaveCount(0)
+})
+
+test('Friday stays selected and under review on a free Saturday even if the last work entry was Thursday', async ({page}) => {
+    const friday = '2026-11-20'
+    const saturday = '2026-11-21'
+    const issue = 'Do fondu směny chybí 7:00.'
+    await openApp(page, employee, {sheet:() => sheet({
+        planned_shifts:{[friday]:[{from:friday+'T06:00:00+01:00',to:friday+'T13:00:00+01:00'}],[saturday]:[]},
+        rows:[{day:'2026-11-19',kind:'PRACE',from:'2026-11-19T06:05:00+01:00',to:'2026-11-19T13:33:00+01:00'}],
+        day_issues:{[friday]:{status:'review',reasons:['Chybí odhlášení.',issue]}},
+        fund:{planned:25200,work:0,absence:0,difference:-25200,days:{},review:{[friday]:-25200}},
+    })}, '/', new Date(saturday+'T12:00:00+01:00'))
+    const table = page.getByRole('table',{name:'Dny v měsíci'})
+    await expect(table.getByRole('button',{name:/pá 20\. 11\./})).toHaveAttribute('aria-pressed','true')
+    await expect(table.getByRole('row',{name:/so 21\. 11\./})).toHaveCount(0)
+    await page.getByRole('button',{name:'K prověření · 1'}).click()
+    const item = page.getByRole('listitem').filter({has:page.getByRole('button',{name:/pá 20\. 11\. 2026/})})
+    await expect(item).toContainText(issue)
 })

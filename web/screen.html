@@ -465,7 +465,7 @@
                         <h3 v-if="monthDays.some(entry => entry.attention)">Dny k prověření</h3>
                         <ul v-if="monthDays.some(entry => entry.attention)">
                             <li v-for="entry in monthDays.filter(entry => entry.attention)" :key="entry.key">
-                                <PvButton :label="day(entry.key)" text size="small" @click="selectDayFromTask(entry.key)" />
+                                <PvButton :label="entry.label + ' ' + entry.key.slice(0,4)" text size="small" @click="selectDayFromTask(entry.key)" />
                                 {{ entry.attention.reasons.join(' ') }}
                             </li>
                         </ul>

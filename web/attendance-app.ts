@@ -388,7 +388,7 @@ export function setupAttendance() {
             return {
                 key, label:calendarDay.format(calendarDate), weekend:weekday === 0 || weekday === 6, today:key === today.value,
                 holiday:sheet.value?.calendar_days?.[key], holidaySeconds:0,
-                seconds:0, internal:null as number|null, rows:[] as (Row & {sheetIndex:number})[], sessions:[] as ComputerSession[], requests:[] as RequestRow[],
+                seconds:0, internal:null as number|null, hasWorkSession:false, rows:[] as (Row & {sheetIndex:number})[], sessions:[] as ComputerSession[], requests:[] as RequestRow[],
             }
         })
         for (const [sheetIndex, row] of (sheet.value?.rows ?? []).entries()) {
@@ -399,10 +399,11 @@ export function setupAttendance() {
             if (workBehaviors.value.has(row.kind)) entry.seconds += durationSeconds(row)
         }
         for (const session of sheet.value?.sessions ?? []) {
-            if (!hasRole('admin') && !session.service) continue
             const {first, last} = pragueDayRange(session.from, session.to)
             for (const entry of days) {
-                if (entry.key >= first && entry.key <= last) entry.sessions.push(session)
+                if (entry.key < first || entry.key > last) continue
+                if (!session.service) entry.hasWorkSession = true
+                if (hasRole('admin') || session.service) entry.sessions.push(session)
             }
         }
         for (const request of sheet.value?.requests ?? []) {
@@ -428,17 +429,22 @@ export function setupAttendance() {
             const attention: DayIssue|undefined = pending
                 ? {status:'review', reasons:[pendingDayReason, ...(issue?.reasons ?? [])]}
                 : issue
-            return {...entry, attention, planned: sheet.value?.planned_shifts?.[entry.key] ?? []}
+            const shifts = sheet.value?.planned_shifts?.[entry.key]
+            const hasRecords = entry.hasWorkSession || entry.rows.length > 0 || entry.sessions.length > 0 || entry.requests.length > 0
+            const workday = shifts === undefined ? !entry.weekend && !entry.holiday : shifts.length > 0
+            return {...entry, attention, planned:shifts ?? [], hasRecords, workday}
         }).filter(entry => (!first || entry.key >= first) && (!lastDay || entry.key <= lastDay)
-            && (!entry.weekend || entry.today || entry.holiday || entry.attention || entry.planned.length > 0
-                || entry.rows.length > 0 || entry.sessions.length > 0 || entry.requests.length > 0))
+            && (!entry.weekend || entry.key === chosenDay.value || entry.holiday || entry.attention || entry.workday || entry.hasRecords))
     })
     const selectedDay = computed(() => {
         const days = monthDays.value
-        const current = days.find(entry => entry.today)
-        const hasRecords = (entry: typeof days[number]) => entry.rows.length > 0 || entry.sessions.length > 0 || entry.requests.length > 0
-        return days.find(entry => entry.key === chosenDay.value)
-            ?? current ?? days.find(hasRecords) ?? days[0]
+        const chosen = days.find(entry => entry.key === chosenDay.value)
+        if (chosen) return chosen
+        if (month.value === today.value.slice(0,7)) {
+            const relevant = days.filter(entry => entry.workday || entry.hasRecords || entry.attention)
+            return relevant.filter(entry => entry.key <= today.value).at(-1) ?? relevant[0]
+        }
+        return days.find(entry => entry.hasRecords) ?? days[0]
     })
     const monthAbsences = computed(() => {
         let doctorSeconds = 0
