@@ -865,6 +865,7 @@ def exercise(connect, php_command, check_locks=False):
     add_review_signal("split-2",second_key,"login","06:05:45.683243")
     pair, = candidates()
     assert pair["session"] == second_key and pair["kept"] == first_key and pair["state"] == "candidate" and pair["kept_events"] == 1, pair
+    assert pair["kept_to"] is None, pair
     manager.call("session-control-preview",review_scope,403)
     hr.call("session-control-apply",apply_review(pair),403)
     admin.call("session-control-apply", dict(apply_review(pair),reason=" "),422)
@@ -878,6 +879,7 @@ def exercise(connect, php_command, check_locks=False):
     add_review_signal("split-close",first_key,"logout","13:33:00")
     admin.call("session-control-apply",apply_review(pair),409)
     pair, = candidates()
+    assert pair["kept_to"] == review_day + "T13:33:00+01:00", pair
     before = manager.call("sheet",november)
     admin.call("session-control-apply",apply_review(pair))
     after = manager.call("sheet",november)

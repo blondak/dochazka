@@ -62,7 +62,7 @@ final class DuplicateSessions
         }
         $records = $this->db->executeQuery(<<<SQL
             SELECT e.id AS employee, e.name, d.id AS device, d.name AS station, ss.session_key AS session,
-                ss.first_event, ss.duplicate_of, ss.service_at, stats.events, stats.closed,
+                ss.first_event, ss.duplicate_of, ss.service_at, stats.events, stats.closed, stats.logout,
                 split_part(ss.session_key, '.', 1) AS boot,
                 (ss.first_event AT TIME ZONE 'Europe/Prague')::date AS day
             FROM signal_session ss JOIN employee e ON e.sid=ss.sid JOIN device d ON d.id=ss.device
