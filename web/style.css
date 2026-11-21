@@ -418,6 +418,26 @@ p, small {
 }
 
 @media (max-width: 760px) {
+    html:root {
+        --p-text-color: var(--p-surface-900);
+        --p-text-muted-color: var(--p-surface-700);
+        --p-form-field-color: var(--p-text-color);
+        --p-form-field-placeholder-color: var(--p-text-muted-color);
+        --p-button-sm-font-size: .9375rem;
+        --p-button-label-font-weight: 600;
+        --p-button-text-secondary-color: var(--p-text-muted-color);
+        --p-button-outlined-secondary-color: var(--p-text-muted-color);
+    }
+
+    body {
+        font-size: 1rem;
+        font-weight: 500;
+    }
+
+    small, .month-days .today-tag {
+        font-size: .875rem;
+    }
+
     .daily-table {
         table-layout: fixed;
         width: 100%;
