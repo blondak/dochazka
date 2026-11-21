@@ -1237,7 +1237,10 @@ export function setupAttendance() {
             if (editor.value?.kind !== 'holiday-control' || !holidayControl.value.checkHolidays) return
             const {from,to,token} = holidayControl.value
             const input = {employee:editor.value.employee,from,to}
-            if (token && holidayControlHasChanges.value) await save('holiday-control', {...input,token}, 'Kontrolní chod byl dokončen.')
+            if (token && holidayControlHasChanges.value) {
+                const {added, changed, removed} = holidayControl.value
+                await save('holiday-control', {...input,token}, `Kontrolní chod dokončen. Přidáno ${added} · Změněno ${changed} · Odebráno ${removed}.`)
+            }
             else Object.assign(holidayControl.value, await api<HolidayControlPreview>('holiday-control', input))
         })
     }

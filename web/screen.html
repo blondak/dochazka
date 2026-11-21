@@ -1166,7 +1166,7 @@
             <label class="check-field"><PvCheckbox v-model="holidayControl.checkHolidays" binary :disabled="busy" /> Kontrola svátků a firemního volna</label>
         </fieldset>
         <div v-if="holidayControl.token" role="status" class="stack">
-            <p>Přidáno {{ holidayControl.added }} · Změněno {{ holidayControl.changed }} · Odebráno {{ holidayControl.removed }}</p>
+            <p>Přidá se {{ holidayControl.added }} · Změní se {{ holidayControl.changed }} · Odebere se {{ holidayControl.removed }}</p>
             <ul v-if="holidayControl.skipped && Object.values(holidayControl.skipped).some(count => count > 0)">
                 <li v-if="holidayControl.skipped.missing_model">Bez platného pracovního modelu · {{ holidayControl.skipped.missing_model }}</li>
                 <li v-if="holidayControl.skipped.without_shift">Bez plánované směny · {{ holidayControl.skipped.without_shift }}</li>
@@ -1177,7 +1177,7 @@
             <p v-if="holidayControl.skipped?.occupied && (holidayControl.skipped.missing_model || holidayControl.skipped.without_shift)">Jeden den zaměstnance může mít více důvodů.</p>
             <p v-if="holidayControl.skipped?.missing_model">Správce přiřadí model na záložce Docházka v dialogu zaměstnance.</p>
         </div>
-        <PvButton type="submit" :label="holidayControl.token && holidayControlHasChanges ? 'Potvrdit kontrolní chod' : holidayControl.token ? 'Obnovit náhled' : 'Zobrazit náhled'"
+        <PvButton type="submit" :label="holidayControl.token && holidayControlHasChanges ? 'Provést změny' : holidayControl.token ? 'Obnovit náhled' : 'Zobrazit náhled'"
             :disabled="!holidayControl.checkHolidays" :loading="busy" />
     </form>
 </PvDialog>
