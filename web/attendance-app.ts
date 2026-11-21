@@ -1074,7 +1074,7 @@ export function setupAttendance() {
         const {kind, day, from, to, untilMidnight, reason} = workEdit.value
         const times = fullShiftEntry.value ? {} : {from, to:untilMidnight ? '24:00' : to}
         return submit('save-work-row', {...scope(), row:current.row, fingerprint:current.fingerprint, kind, day, ...times, reason},
-            current.row === undefined ? 'Konto bylo zapsáno do výkazu.' : 'Pracovní úsek byl upraven.')
+            current.row === undefined ? 'Záznam byl přidán do výkazu.' : 'Pracovní úsek byl upraven.')
     }
     const requestTitle = (request:RequestRow) => request.generated_holiday ? accountName(request.kind) + ' · zápis z kalendáře'
         : request.replaces_from ? 'Úprava pracovního úseku'

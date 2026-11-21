@@ -1246,7 +1246,7 @@
         <p v-if="proofEntry">Zaměstnanec přiloží doklad po skončení absence nebo práce.</p>
         <label class="field" for="work-edit-reason">Důvod úpravy<PvInputText id="work-edit-reason" v-model.trim="workEdit.reason" required maxlength="4000" fluid /></label>
         <div class="record-actions">
-            <PvButton type="submit" :label="editor?.row === undefined ? 'Zapsat konto' : 'Uložit úsek'" :loading="busy"
+            <PvButton type="submit" :label="editor?.row === undefined ? 'Uložit záznam' : 'Uložit úsek'" :loading="busy"
                 :disabled="!workEdit.reason || !workEdit.day || (fullShiftEntry && !requestEstimate)" />
             <PvButton type="button" label="Zrušit" text :disabled="busy" @click="dismissEditor" />
         </div>
