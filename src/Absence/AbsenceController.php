@@ -163,4 +163,29 @@ NEON)]
     {
         return $this->json->respond($request, $response, fn(array $input) => $this->service->uploadProof($input), maxBytes: 7340032);
     }
+    #[Path('/vacation-balance-import'), Method('POST'), LoggedIn, Role('hr', 'payroll', 'admin')]
+    #[OpenApi(<<<'NEON'
+operationId: importVacationBalances
+summary: "Importovat počáteční zůstatky dovolené z CSV"
+tags: [Evidence]
+security: [{session: []}]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+requestBody:
+    content:
+        application/json:
+            schema: {type: object, required: [effective_on, csv], properties: {effective_on: {type: string, format: date}, csv: {type: string}}}
+responses:
+    '200':
+        description: "Importovat počáteční zůstatky dovolené z CSV"
+        content:
+            application/json:
+                schema: {type: object}
+    '403': {$ref: '#/components/responses/Error403'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    public function importVacationBalances(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, fn(array $input) => $this->service->importBalances($input));
+    }
+
 }

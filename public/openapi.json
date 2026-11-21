@@ -3161,6 +3161,65 @@
                 }
             }
         },
+        "/api/v1/vacation-balance-import": {
+            "post": {
+                "tags": [
+                    "Evidence"
+                ],
+                "summary": "Importovat počáteční zůstatky dovolené z CSV",
+                "operationId": "importVacationBalances",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WebHeader"
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "effective_on",
+                                    "csv"
+                                ],
+                                "properties": {
+                                    "effective_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "csv": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "session": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Importovat počáteční zůstatky dovolené z CSV",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
+                    }
+                }
+            }
+        },
         "/api/v1/work-model": {
             "post": {
                 "tags": [

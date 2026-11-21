@@ -58,13 +58,84 @@ final class Requests
 
     public function preview(array $input): array
     {
-        [, , $account, $start, , $ranges, $side] = $this->validateRequest($input);
+        [, $person, $account, $start, $end, $ranges, $side] = $this->validateRequest($input);
         return [
             'seconds' => self::seconds($ranges),
             'days' => $account['behavior'] === 'shift_absence'
                 ? array_values(array_unique(array_map(static fn(array $part) => $start->setTimestamp($part[0])->format('Y-m-d'), $ranges)))
                 : [],
-        ] + ($side === null ? [] : ['intervals' => self::formatIntervals($start, $ranges)]);
+        ] + ($account['code'] === 'DOVOLENA' ? ['balances'=>$this->balances($person, $start, $end, $ranges)] : [])
+            + ($side === null ? [] : ['intervals' => self::formatIntervals($start, $ranges)]);
+    }
+
+    public function importBalances(array $input): array
+    {
+        $actor = $this->accounts->actor(['hr', 'payroll', 'admin']);
+        $date = WorkModels::day($input['effective_on'] ?? '')->format('Y-m-d');
+        $lines = preg_split('/\R/u', trim(preg_replace('/^\x{FEFF}/u', '', $input['csv'] ?? '')));
+        if (array_shift($lines) !== 'osobni_cislo;hodiny' || !$lines) throw new Problem('Použijte záhlaví osobni_cislo;hodiny a alespoň jeden řádek.');
+        $db = $this->em->getConnection();
+        $seen = [];
+        foreach ($lines as $index => $line) {
+            $fields = str_getcsv($line, separator:';', escape:'');
+            if (count($fields) !== 2 || !preg_match('/^-?\d{1,5}(?:[.,]\d{1,2})?$/D', trim($fields[1]))) {
+                throw new Problem('Neplatné hodiny na řádku '.($index + 2).'.');
+            }
+            $number = trim($fields[0]);
+            $id = $db->fetchOne('SELECT id FROM employee WHERE number=? AND attendance_enabled', [$number]);
+            if (!$id || isset($seen[$id])) throw new Problem('Neznámé nebo opakované osobní číslo na řádku '.($index + 2).'.');
+            $seen[$id] = true;
+            $seconds = (int) round(3600 * (float) str_replace(',', '.', $fields[1]));
+            $db->executeStatement('INSERT INTO vacation_balance(employee,effective_on,seconds) VALUES (?,?,?)
+                ON CONFLICT(employee,effective_on) DO UPDATE SET seconds=EXCLUDED.seconds', [$id,$date,$seconds]);
+        }
+        $this->audit->audit($actor['id'], 'vacation-balance-import', ['date'=>$date,'employees'=>array_keys($seen)]);
+        return ['count'=>count($seen)];
+    }
+
+    private function balances(array $person, DateTimeImmutable $first, DateTimeImmutable $until, array $ranges): array
+    {
+        $db = $this->em->getConnection();
+        $result = [];
+        for ($year = (int) $first->format('Y'); $year <= (int) $until->modify('-1 microsecond')->format('Y'); $year++) {
+            $yearStart = WorkModels::day(sprintf('%04d-01-01',$year));
+            $yearEnd = $yearStart->modify('+1 year');
+            $asOf = min($yearEnd->modify('-1 day'), max($yearStart,$first));
+            $snapshot = $db->fetchAssociative('SELECT effective_on,seconds FROM vacation_balance
+                WHERE employee=? AND effective_on BETWEEN ? AND ? ORDER BY effective_on DESC LIMIT 1',
+                [$person['id'],$yearStart->format('Y-m-d'),$asOf->format('Y-m-d')]);
+            $requested = 0;
+            foreach ($ranges as [$a,$b]) $requested += max(0, min($b,$yearEnd->getTimestamp()) - max($a,$yearStart->getTimestamp()));
+            if (!$snapshot) {
+                $result[] = ['year'=>$year, 'requested'=>$requested, 'available'=>null, 'after'=>null];
+                continue;
+            }
+            $start = max(WorkModels::day($snapshot['effective_on']),WorkModels::day($person['starts']));
+            $end = $person['ends'] ? min($yearEnd,WorkModels::day($person['ends'])->modify('+1 day')) : $yearEnd;
+            $plan = $this->models->plan($person['id'], $start, $end);
+            $holidays = $this->holidayEntries->visible($person['id'], $person['sid'], $start, $end, $plan['credits']);
+            $approved = $db->fetchAllAssociative("SELECT * FROM request WHERE employee=? AND kind='DOVOLENA' AND status='approved'
+                AND NOT generated_holiday AND begins < ? AND ends > ?", [$person['id'],$end->format(DATE_ATOM),$start->format(DATE_ATOM)]);
+            $available = $snapshot['seconds'];
+            for ($m = $start->modify('first day of this month'); $m < $end; $m = $m->modify('+1 month')) {
+                $mEnd = min($m->modify('+1 month'),$end);
+                $entries = array_filter($holidays, static fn($entry,$day) => $entry['account'] === 'DOVOLENA' &&
+                    $day >= $m->format('Y-m-d') && $day < $mEnd->format('Y-m-d'), ARRAY_FILTER_USE_BOTH);
+                $sheet = \Dochazka\Attendance\Timesheet::build($m->format('Y-m'), [], $approved, max($start,$m), $mEnd,
+                    schedule:$plan['schedule'], calendarEntries:$entries);
+                foreach ($sheet['rows'] as $row) {
+                    if ($row['kind'] !== 'DOVOLENA') continue;
+                    if (!isset($row['seconds'])) {
+                        $available = null;
+                        break 2;
+                    }
+                    $available -= $row['seconds'];
+                }
+            }
+            $result[] = ['year'=>$year,'date'=>$snapshot['effective_on'],'requested'=>$requested,
+                'available'=>$available, 'after'=>$available === null ? null : $available - $requested];
+        }
+        return $result;
     }
 
     private function validateRequest(array $input): array

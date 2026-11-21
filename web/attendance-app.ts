@@ -13,7 +13,7 @@ interface HolidayControlPreview {
     token:string;added:number;changed:number;removed:number
     skipped?:{missing_model:number;without_shift:number;occupied:number;unchanged:number}
 }
-interface RequestRow {needs_actual?:boolean;actual_from?:string|null;actual_to?:string|null;actual_returned?:boolean;vacation_seconds?:number;vacation_estimate?:{from:string;to:string}[];vacation_consent?:boolean;generated_holiday?:boolean;id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean;merged_work?:boolean;replaces_from?:string;replaces_to?:string;account_name?:string;behavior?:Behavior;requires_proof?:boolean;scheduled_seconds?:number|null}
+interface RequestRow {needs_actual?:boolean;actual_from?:string|null;actual_to?:string|null;actual_returned?:boolean;vacation_seconds?:number;vacation_side?:string;vacation_estimate?:{from:string;to:string}[];vacation_consent?:boolean;generated_holiday?:boolean;id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean;merged_work?:boolean;replaces_from?:string;replaces_to?:string;account_name?:string;behavior?:Behavior;requires_proof?:boolean;scheduled_seconds?:number|null}
 interface AttendanceInterval {day:string;from:string;to:string;source:string}
 interface DayIssue {status:'missing'|'review';reasons:string[]}
 interface FundDay {planned:number|null;work:number;absence:number;difference:number|null}
@@ -21,6 +21,8 @@ interface Sheet {fund?:FundDay & {days:Record<string,FundDay>;review:Record<stri
     approval_tasks?:{code:string;reason:string;owner:string}[];approval_blockers:string[];approval_note_required:boolean;presence?:AttendanceInterval[];breaks?:AttendanceInterval[];
     day_issues?:Record<string,DayIssue>;unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
 interface Device {id:number;name:string;seen:string|null;agent_version:string|null;revoked:boolean;registered:boolean;warnings:string|null}
+interface VacationBalance {year:number;date?:string;requested:number;available:number|null;after:number|null}
+interface VacationEstimate {seconds:number;days:string[];intervals?:{from:string;to:string}[];balances?:VacationBalance[]}
 interface ExportPart {from:string;to:string;seconds:number|null}
 interface ExportChange {employee:number|null;name:string|null;number:string;day:string;code:string;before:ExportPart[];after:ExportPart[]}
 interface TeamTask {employee:number;name:string;reason:string;day:string;request?:number;owner:'manager'|'employee'}
@@ -30,6 +32,7 @@ interface Passkey {id:string;label:string;created:string}
 interface Confirmation {
     title: string
     description: string
+    balances?:VacationBalance[]
     coverage?:{name:string;planned:number|null;absences:{status:string;from:string;to:string;whole_day:boolean}[]}[]
     details?: string
     label: string
@@ -169,6 +172,28 @@ export function setupAttendance() {
             const rows = await api<ExportChange[]>('export-changes',{month:month.value, version, to_version:next})
             exportComparison.value = {label:'Verze ' + version + ' → ' + (next ? 'verze ' + next : 'aktuální podklady'), rows}
         })
+    }
+    const balanceDate = ref(today.value)
+    const balanceFile = ref<File|null>(null)
+    const balanceFileInput = ref<HTMLInputElement|null>(null)
+    function balanceText(b:VacationBalance) {
+        if (b.available === null || b.after === null) return b.year + (b.date ? ' · Čerpání bez modelu nelze převést na hodiny.' : ' · Zůstatek nebyl k tomuto dni importován.')
+        return b.year + ' · K dispozici ' + signedHours(b.available) + ' · Tato žádost ' + hours(b.requested)
+            + ' · Po schválení ' + signedHours(b.after) + ' (zůstatek k ' + day(b.date!) + ')'
+    }
+    function importBalances() {
+        const file = balanceFile.value
+        if (!file || !validDay(balanceDate.value)) return
+        const effective_on = balanceDate.value
+        openConfirmation({title:'Importovat zůstatky',label:'Importovat',description:file.name + ' · ' + day(effective_on),
+            details:'Existující zůstatky pro stejné osobní číslo a datum budou nahrazeny.',
+            action:async () => {
+                const {count} = await api<{count:number}>('vacation-balance-import',{effective_on,csv:await file.text()})
+                if (balanceFileInput.value) balanceFileInput.value.value = ''
+                balanceFile.value = null
+                confirmationVisible.value = false
+                notice.value = 'Počet importovaných zůstatků: ' + count
+            }})
     }
     function exportPart(part:ExportPart) {
         const span = part.from ? time(part.from) + '–' + time(part.to) + ' · ' : ''
@@ -1212,8 +1237,15 @@ export function setupAttendance() {
         return run(async () => {
             const absence = ['timed_absence','shift_absence'].includes(request.behavior ?? '') || ['DOVOLENA','LEKAR'].includes(request.kind)
             const coverage = status === 'approved' && absence ? await api<Confirmation['coverage']>('team-coverage',{id:request.id}) : undefined
+            let balances:VacationBalance[]|undefined
+            if (status === 'approved' && request.kind === 'DOVOLENA') {
+                const range = pragueDayRange(request.begins, request.ends)
+                const preview = await api<VacationEstimate>('request-preview',{...scope(),kind:request.kind,from:range.first,to:range.last,
+                    vacation_side:request.vacation_side,vacation_seconds:request.vacation_seconds})
+                balances = preview.balances
+            }
             openConfirmation({
-                coverage, title: label,
+                balances, coverage, title: label,
                 label,
                 description: [selectedPerson.value?.name, requestTitle(request), requestPeriod(request),
                     request.scheduled_seconds == null ? '' : 'Čerpání ' + hours(request.scheduled_seconds)].filter(Boolean).join(' · '),
@@ -1253,7 +1285,7 @@ export function setupAttendance() {
     const fullShiftEntry = computed(() => entryAccount.value?.behavior === 'shift_absence' || workEdit.value.kind === 'DOVOLENA')
     const proofEntry = computed(() => entryAccount.value?.requires_proof ?? workEdit.value.kind === 'LEKAR')
     const proofRequest = computed(() => requestAccount.value?.requires_proof ?? form.value.kind === 'LEKAR')
-    const requestEstimate = ref<{seconds:number; days:string[];intervals?:{from:string;to:string}[]}|null>(null)
+    const requestEstimate = ref<VacationEstimate|null>(null)
     const requestEstimateError = ref('')
     const previewKey = computed(() => {
         const entry = editor.value?.kind === 'work' && fullShiftEntry.value
@@ -1274,7 +1306,7 @@ export function setupAttendance() {
         requestEstimateError.value = ''
         if (!key) return
         try {
-            const estimate = await api<{seconds:number;days:string[];intervals?:{from:string;to:string}[]}>('request-preview', JSON.parse(key))
+            const estimate = await api<VacationEstimate>('request-preview', JSON.parse(key))
             if (current) requestEstimate.value = estimate
         } catch (error) {
             if (current) requestEstimateError.value = (error as Error).message
@@ -1518,7 +1550,7 @@ export function setupAttendance() {
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
-        exportComparison, compareExport, exportPart, overview, waitingFor, openOverviewDay, signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
+        balanceText, balanceDate, balanceFile, balanceFileInput, importBalances, exportComparison, compareExport, exportPart, overview, waitingFor, openOverviewDay, signedHours, fundTolerance, gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
         mobileLayout, dayChooserOpen, toggleDayChooser, monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromTask, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,
