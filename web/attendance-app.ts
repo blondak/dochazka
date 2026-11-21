@@ -68,6 +68,7 @@ interface AttendanceView {
     tab: string
     person: number
     month: string
+    pendingOnly: boolean
     dailyDay: string|null
     showAllPeople: boolean
     unitFilter: number|null
@@ -142,6 +143,8 @@ export function setupAttendance() {
     const freshPerson=()=>({id:0,name:'',number:'',login:'',roles:['employee'],attendance_enabled:true,org_unit_id:null,sid:'',starts:today.value,ends:''})
     const user=ref<Person|null>(null), people=ref<Person[]>([]), devices=ref<Device[]>([]), payroll=ref<Payroll|null>(null)
     const person=ref(0), month=ref(today.value.slice(0,7)),sheet=ref<Sheet|null>(null),tab=ref('Výkaz')
+    const pendingOnly = ref(false)
+    const visibleRequests = computed(() => (sheet.value?.requests ?? []).filter(r => !pendingOnly.value || r.status === 'pending'))
     const daily = ref<DailyAttendance|null>(null)
     const dailyDay = ref<string|null>(null)
     const selectedDailyDay = computed(() => dailyDay.value ?? today.value)
@@ -335,14 +338,11 @@ export function setupAttendance() {
         const button = (event.target as HTMLElement).closest('tr')?.querySelector<HTMLButtonElement>('button[data-sheet-day]')
         if (button?.dataset.sheetDay) void selectDay(button.dataset.sheetDay)
     }
-    async function showPendingRequests() {
-        const entry = monthDays.value.find(item => item.requests.some(request => request.status === 'pending'))
-        if (!entry) return
-        await selectDay(entry.key)
-        await nextTick()
-        const heading = document.getElementById('day-requests-title')
-        heading?.focus({preventScroll:true})
-        heading?.scrollIntoView({block:'nearest'})
+    function showPendingRequests() {
+        return navigate({tab:'Žádosti', pendingOnly:true})
+    }
+    function setPendingOnly(value:boolean) {
+        return navigate({pendingOnly:value})
     }
     let dailyTimer: number | undefined
     const preview=ref(''), proofVisible=ref(false)
@@ -443,7 +443,7 @@ export function setupAttendance() {
     const canSubmitRequest = computed(() => (ownSheet.value || managesPerson.value) && selectedPerson.value?.attendance_enabled)
     const scopePeople = computed(() => people.value.filter(p => {
         if (p.id === user.value?.id) return p.attendance_enabled
-        return hasRole('admin') || (hasRole('payroll') && tab.value === 'Výkaz')
+        return hasRole('admin') || hasRole('payroll')
             || (hasRole('manager') && p.managed)
     }))
     const attendancePeople = computed(() => scopePeople.value.filter(p => p.attendance_enabled))
@@ -459,9 +459,9 @@ export function setupAttendance() {
     const adminTabs = ['Zaměstnanci', 'Organizační struktura', 'Zařízení', 'Konta docházky', 'Pracovní modely', 'Svátky a dny volna', 'Nastavení docházky']
     const mainTabs = computed(() => [
         ...(hasRole('admin') && needsSetup.value ? ['První kroky'] : []),
-        ...(hasRole('payroll') ? ['Uzávěrka', 'Výkaz'] : []),
-        ...(hasRole('admin') || hasRole('manager') || (hasRole('employee') && user.value?.attendance_enabled)
-            ? (hasRole('payroll') ? ['Žádosti'] : ['Výkaz', 'Žádosti']) : []),
+        ...(hasRole('payroll') ? ['Uzávěrka'] : []),
+        ...(hasRole('payroll') || hasRole('admin') || hasRole('manager') || (hasRole('employee') && user.value?.attendance_enabled)
+            ? ['Výkaz', 'Žádosti'] : []),
         ...(hasRole('manager') ? ['Denní přehled'] : []),
     ])
     const tabs = computed(() => [...(hasRole('admin') ? adminTabs : []), ...mainTabs.value])
@@ -692,7 +692,7 @@ export function setupAttendance() {
     function view(): AttendanceView {
         return {
             account: user.value?.id ?? 0, tab: tab.value, person: person.value, month: month.value,
-            dailyDay:dailyDay.value, showAllPeople:showAllPeople.value,
+            pendingOnly:pendingOnly.value, dailyDay:dailyDay.value, showAllPeople:showAllPeople.value,
             unitFilter:unitFilter.value, showArchived: showArchived.value, editor: editor.value ? {...editor.value} : null,
         }
     }
@@ -729,6 +729,7 @@ export function setupAttendance() {
     }
     function applyView(next: AttendanceView) {
         if (tabs.value.includes(next.tab)) tab.value = next.tab
+        pendingOnly.value = tab.value === 'Žádosti' && !!next.pendingOnly
         if (validMonth.test(next.month)) month.value = next.month
         today.value = pragueToday()
         dailyDay.value = next.dailyDay && validDay(next.dailyDay) && next.dailyDay < today.value ? next.dailyDay : null
@@ -892,7 +893,7 @@ export function setupAttendance() {
         }
         return run(() => renderView(entry, false))
     }
-    function navigate(next: Partial<Pick<AttendanceView,'tab'|'person'|'month'|'dailyDay'|'showAllPeople'|'showArchived'|'unitFilter'>>) {
+    function navigate(next: Partial<Pick<AttendanceView,'tab'|'person'|'month'|'dailyDay'|'pendingOnly'|'showAllPeople'|'showArchived'|'unitFilter'>>) {
         return run(() => renderView({...view(), ...next, editor:null}, true))
     }
     function moveMonth(offset: number) {
@@ -1441,7 +1442,7 @@ export function setupAttendance() {
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
         gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
-        monthDays, selectedDay, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
+        monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,
         accounts, models, accountPanel, accountForm, modelForm, expandedModels, selectedModelVersions, displayModelVersion, activeModelVersion,

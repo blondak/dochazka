@@ -612,10 +612,14 @@
             <PvCard>
                 <template #content>
                     <h2>Žádosti za období</h2>
+                    <label class="check-field">
+                        <PvCheckbox :model-value="pendingOnly" binary @update:model-value="setPendingOnly" />
+                        Čeká na schválení ({{ sheet.pending }})
+                    </label>
                     <p v-if="hasRole('manager') && ownSheet && sheet.requests.some(r => r.status === 'pending')">
                         Vaše žádosti může vyřídit jiný vedoucí ve vaší nebo nadřazené jednotce.
                     </p>
-                    <article v-for="request in sheet.requests" :key="request.id" class="record"
+                    <article v-for="request in visibleRequests" :key="request.id" class="record"
                         :aria-label="requestTitle(request) + ' · ' + requestPeriod(request)">
                         <div class="record-info">
                             <div class="record-title">
@@ -663,7 +667,7 @@
                             </template>
                         </div>
                     </article>
-                    <p v-if="!sheet.requests.length">Žádné žádosti za zvolené období.</p>
+                    <p v-if="!visibleRequests.length">{{ pendingOnly ? 'Žádné čekající žádosti za zvolené období.' : 'Žádné žádosti za zvolené období.' }}</p>
                 </template>
             </PvCard>
         </template>

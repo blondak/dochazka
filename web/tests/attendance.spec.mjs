@@ -245,8 +245,11 @@ test('manager sees only the selected sheet and decides a request from its own di
     await expect(dialog.getByLabel('Důvod rozhodnutí')).toHaveValue('')
     await dialog.getByLabel('Důvod rozhodnutí').fill('Návštěva se nekonala')
     await dialog.getByRole('button', {name:'Zamítnout žádost'}).click()
-    await expect(page.getByRole('table', {name:'Žádosti vybraného dne'}).getByText('Zamítnuto', {exact:true})).toBeVisible()
-    await expect(page).toHaveURL(/sekce=vykaz/)
+    await expect(page.getByText('Žádné čekající žádosti za zvolené období.')).toBeVisible()
+    const filter = page.getByRole('checkbox', {name:'Čeká na schválení (0)'})
+    await filter.uncheck()
+    await expect(page.getByRole('article').getByText('Zamítnuto', {exact:true})).toBeVisible()
+    await expect(page).toHaveURL(/sekce=zadosti/)
     expect(decision).toEqual({id:pending.id, status:'rejected', reason:'Návštěva se nekonala'})
 })
 
