@@ -228,6 +228,7 @@ test('manager sees only the selected sheet and decides a request from its own di
     unavailable = false
     await page.getByRole('button', {name:'Načíst znovu'}).click()
     await expect(page.getByText('7:30')).toBeVisible()
+    await page.getByRole('button', {name:'K doplnění'}).click()
     await expect(page.getByText('Vyřiďte čekající žádosti.')).toBeVisible()
     await expect(page.getByRole('button', {name:'Schválit výkaz'})).toHaveCount(0)
     await page.getByRole('button', {name:'Vyřídit žádosti'}).click()
@@ -447,8 +448,8 @@ test('work row selections stay within a day and the manager confirms the origina
     const toolbar = page.getByRole('toolbar',{name:'Nástroje výkazu'})
     await expect(toolbar.getByLabel('Období')).toHaveValue('2026-11')
     await expect(toolbar.getByRole('combobox',{name:'Osoba'})).toBeVisible()
-    await expect(toolbar.getByText('Výkaz čeká na schválení')).toBeVisible()
-    await expect(toolbar.getByText('Čekající žádosti (0)')).toBeVisible()
+    await expect(toolbar.getByText('Připraven ke schválení')).toBeVisible()
+    await expect(toolbar.getByRole('button', {name:'Schválit výkaz'})).toBeVisible()
     const arrangement = await toolbar.evaluate(el => {
         const controls = Array.from(el.querySelectorAll('.p-toolbar-start .p-button, .p-select, .p-datepicker-input'))
         const boxes = controls.map(node => node.getBoundingClientRect())

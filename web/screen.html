@@ -136,9 +136,14 @@
                 <template v-if="tab === 'Výkaz' && sheet">
                     <PvButton v-if="sheet.pending" :label="'Čekající žádosti (' + sheet.pending + ')'" icon="pi pi-clock"
                         severity="secondary" outlined size="small" @click="showPendingRequests" />
-                    <PvTag v-else value="Čekající žádosti (0)" severity="secondary" icon="pi pi-inbox" />
-                    <PvTag :value="sheet.approved ? 'Výkaz schválen' : 'Výkaz čeká na schválení'"
-                        :severity="sheet.approved ? 'success' : 'info'" :icon="sheet.approved ? 'pi pi-check-circle' : 'pi pi-hourglass'" />
+                    <PvTag v-if="sheet.approved" value="Schváleno" severity="success" icon="pi pi-check-circle" />
+                    <PvButton v-else-if="approvalBlockers.length" label="K doplnění" icon="pi pi-exclamation-triangle"
+                        size="small" outlined severity="warn" :aria-expanded="showApprovalTasks" aria-controls="approval-tasks"
+                        @click="showApprovalTasks = !showApprovalTasks" />
+                    <template v-else>
+                        <PvTag value="Připraven ke schválení" severity="info" />
+                        <PvButton v-if="canReview" label="Schválit výkaz" icon="pi pi-check" size="small" :disabled="busy" @click="approveSheet" />
+                    </template>
                 </template>
                 <template v-else-if="tab === 'Uzávěrka' && payroll">
                     <p v-if="!payroll.people.length && !payroll.versions.length">Za toto období nejsou žádné výkazy k uzavření.</p>
@@ -369,6 +374,25 @@
             Žádná osoba k zobrazení.
         </PvMessage>
         <template v-if="tab === 'Výkaz' && sheet">
+            <section v-if="!sheet.approved && approvalBlockers.length" v-show="showApprovalTasks" id="approval-tasks" aria-label="Co brání schválení">
+                <PvCard>
+                    <template #title><h2>Co brání schválení</h2></template>
+                    <template #content>
+                        <ul v-if="sheet.approval_tasks">
+                            <li v-for="task in sheet.approval_tasks" :key="task.code"><strong>{{ task.owner }}</strong> · {{ task.reason }}</li>
+                        </ul>
+                        <ul v-else><li v-for="reason in approvalBlockers" :key="reason">{{ reason }}</li></ul>
+                        <h3 v-if="monthDays.some(entry => entry.attention)">Dny k prověření</h3>
+                        <ul v-if="monthDays.some(entry => entry.attention)">
+                            <li v-for="entry in monthDays.filter(entry => entry.attention)" :key="entry.key">
+                                <PvButton :label="day(entry.key)" text size="small" @click="selectDayFromTask(entry.key)" />
+                                {{ entry.attention.reasons.join(' ') }}
+                            </li>
+                        </ul>
+                        <PvButton v-if="sheet.pending" label="Vyřídit žádosti" outlined size="small" @click="showPendingRequests" />
+                    </template>
+                </PvCard>
+            </section>
             <PvMessage v-if="dueProofCount" severity="warn">
                 Doklady k doložení: {{ dueProofCount }}.
                 <PvButton v-if="tabs.includes('Žádosti') && canSubmitRequest" label="Otevřít žádosti" size="small" text @click="changeTab('Žádosti')" />
@@ -596,16 +620,7 @@
             <PvMessage v-if="hasRole('manager') && ownSheet && selectedPerson?.attendance_enabled && !sheet.approved" severity="info">
                 Váš výkaz může schválit jiný vedoucí ve vaší nebo nadřazené jednotce.
             </PvMessage>
-            <PvCard v-if="canReview && !sheet.approved">
-                <template #title><h2>Schválení výkazu</h2></template>
-                <template #content>
-                    <ul v-if="approvalBlockers.length">
-                        <li v-for="blocker in approvalBlockers" :key="blocker">{{ blocker }}</li>
-                    </ul>
-                    <PvButton v-if="sheet.pending" label="Vyřídit žádosti" outlined @click="showPendingRequests" />
-                    <PvButton v-if="!approvalBlockers.length" label="Schválit výkaz" icon="pi pi-check" :disabled="busy" @click="approveSheet" />
-                </template>
-            </PvCard>
+
         </template>
 
         <template v-if="tab === 'Žádosti' && sheet">

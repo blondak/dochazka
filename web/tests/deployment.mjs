@@ -71,7 +71,8 @@ try {
     await decision.getByRole('button', {name:'Schválit žádost'}).click()
     await expect(manager.getByText('Čeká na propustku')).toBeVisible()
     await navigate(manager, 'Výkaz')
-    await expect(manager.getByText('Zaměstnanec musí přiložit povinné doklady.')).toBeVisible()
+    await manager.getByRole('button', {name:'K doplnění'}).click()
+    await expect(manager.getByRole('region', {name:'Co brání schválení'})).toContainText('Zaměstnanec musí přiložit povinné doklady.')
     await expect(manager.getByRole('button', {name:'Schválit výkaz'})).toHaveCount(0)
 
     const payroll = await login('payroll')
@@ -109,7 +110,7 @@ try {
     await expect(manager.getByRole('status')).toContainText('Výkaz byl schválen.')
 
     await payroll.getByRole('button', {name:'Zobrazit výkaz · ' + credentials.employee.name}).click()
-    await expect(payroll.getByRole('toolbar',{name:'Nástroje výkazu'}).getByText('Výkaz schválen', {exact:true})).toBeVisible()
+    await expect(payroll.getByRole('toolbar',{name:'Nástroje výkazu'}).getByText('Schváleno', {exact:true})).toBeVisible()
     await navigate(payroll, 'Uzávěrka')
     await payroll.getByRole('button', {name:'Uzavřít měsíc'}).click()
     const close = payroll.getByRole('dialog', {name:'Uzavřít měsíc'})

@@ -17,7 +17,7 @@ interface RequestRow {needs_actual?:boolean;actual_from?:string|null;actual_to?:
 interface AttendanceInterval {day:string;from:string;to:string;source:string}
 interface DayIssue {status:'missing'|'review';reasons:string[]}
 interface Sheet {
-    approval_blockers:string[];approval_note_required:boolean;presence?:AttendanceInterval[];breaks?:AttendanceInterval[];
+    approval_tasks?:{code:string;reason:string;owner:string}[];approval_blockers:string[];approval_note_required:boolean;presence?:AttendanceInterval[];breaks?:AttendanceInterval[];
     day_issues?:Record<string,DayIssue>;unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
 interface Device {id:number;name:string;seen:string|null;agent_version:string|null;revoked:boolean;registered:boolean;warnings:string|null}
 interface Payroll {people:{id:number;name:string;approved:boolean}[];versions:{version:number;created:string}[];changed:boolean}
@@ -334,6 +334,10 @@ export function setupAttendance() {
             dayHeading.value?.scrollIntoView({block:'nearest'})
         }
     }
+    async function selectDayFromTask(key:string) {
+        await selectDay(key)
+        dayHeading.value?.focus()
+    }
     function selectDayFromRow(event: MouseEvent) {
         const button = (event.target as HTMLElement).closest('tr')?.querySelector<HTMLButtonElement>('button[data-sheet-day]')
         if (button?.dataset.sheetDay) void selectDay(button.dataset.sheetDay)
@@ -455,6 +459,7 @@ export function setupAttendance() {
     const inActionDialog = computed(() =>
         settingsVisible.value || photoVisible.value || confirmationVisible.value || editor.value,
     )
+    const showApprovalTasks = ref(false)
     const approvalBlockers = computed(() => sheet.value?.approval_blockers ?? ['Pro schválení výkazu aktualizujte centrálu.'])
     const adminTabs = ['Zaměstnanci', 'Organizační struktura', 'Zařízení', 'Konta docházky', 'Pracovní modely', 'Svátky a dny volna', 'Nastavení docházky']
     const mainTabs = computed(() => [
@@ -687,6 +692,7 @@ export function setupAttendance() {
         payroll.value = null
         daily.value = null
         mergeRows.value = []
+        showApprovalTasks.value = false
         chosenDay.value = ''
     }
     function view(): AttendanceView {
@@ -1442,7 +1448,7 @@ export function setupAttendance() {
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
         daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
         gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
-        monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
+        monthDays, pendingOnly, setPendingOnly, visibleRequests, selectedDay, selectDayFromTask, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,
         accounts, models, accountPanel, accountForm, modelForm, expandedModels, selectedModelVersions, displayModelVersion, activeModelVersion,
@@ -1451,7 +1457,7 @@ export function setupAttendance() {
         editAssignment, submitEmployee, pendingModelImpact, today, behaviors, behaviorOptions,
         weekdays, modelSeconds, defaultShift, saveAttendanceAccount, saveWorkModel, accountName, fullShiftRequest, proofRequest,
         requestEstimate, requestEstimateError,
-        ownSheet, canReview, selectedPerson, inActionDialog, approvalBlockers, selectPerson, selectMonth, moveMonth,
+        ownSheet, canReview, selectedPerson, inActionDialog, showApprovalTasks, approvalBlockers, selectPerson, selectMonth, moveMonth,
         managesPerson, canSubmitRequest, selectablePeople, canShowAllPeople, showAllPeople, setShowAllPeople,
         editor, dismissEditor, showArchived, setShowArchived, directoryPeople, openUnitDirectory, unitFilter, filteredUnit,
         changeTab, submit, download, editPerson, addDevice, archivePerson, confirmationVisible, confirmation, decisionReason,

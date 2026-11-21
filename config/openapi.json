@@ -656,6 +656,13 @@
             "items": { "type": "string" },
             "description": "Důvody, které je třeba vyřešit před schválením výkazu."
           },
+          "approval_tasks": {
+            "type": "array",
+            "items": {
+              "type": "object", "required": ["code", "reason", "owner"],
+              "properties": {"code": {"type": "string"}, "reason": {"type": "string"}, "owner": {"type": "string"}}
+            }
+          },
           "approval_note_required": {
             "type": "boolean",
             "description": "Schválení vyžaduje poznámku k vyřešení nesrovnalostí."

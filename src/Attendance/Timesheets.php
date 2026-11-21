@@ -221,7 +221,7 @@ final class Timesheets
         }
         unset($request);
         $sheet['missing_proofs'] = $missingProofs;
-        $blockers = self::approvalBlockers($sheet);
+        $tasks = self::approvalTasks($sheet);
         return $sheet + [
             'planned_shifts' => (object) $planned,
             'calendar_days' => (object) $plan['calendarDays'],
@@ -231,26 +231,31 @@ final class Timesheets
             'sessions' => $sessions,
             'requests' => $requests,
             'internal_by_day' => (object) $internal,
-            'approval_blockers' => $blockers,
+            'approval_blockers' => array_column($tasks, 'reason'),
+            'approval_tasks' => $tasks,
             'approval_note_required' => $sheet['issues'] !== [],
             'fingerprint' => $hash,
             'approval' => $approval,
-            'approved' => !$blockers && $approval && $approval['fingerprint'] === $hash,
+            'approved' => !$tasks && $approval && $approval['fingerprint'] === $hash,
         ];
     }
 
-    private static function approvalBlockers(array $sheet): array
+    private static function approvalTasks(array $sheet): array
     {
-        $reasons = [
-            'pending' => 'Vyřiďte čekající žádosti.',
-            'missing_proofs' => 'Zaměstnanec musí přiložit povinné doklady.',
-            'missing_actual' => 'Doplňte skutečný čas žádostí, doklad nebo rozvrh.',
-            'absence_conflict' => 'Opravte překryv skutečných nepřítomností.',
-            'unresolved_breaks' => 'Prověřte přestávky.',
-            'unresolved_adjustments' => 'Prověřte dřívější úpravy uznané doby.',
-            'vacation_conflict' => 'Opravte překryv evidence s dovolenou.',
+        $rules = [
+            'pending' => ['Vyřiďte čekající žádosti.', 'Vedoucí'],
+            'missing_proofs' => ['Zaměstnanec musí přiložit povinné doklady.', 'Zaměstnanec'],
+            'missing_actual' => ['Doplňte skutečný čas žádostí, doklad nebo rozvrh.', 'Čas a doklad doplňuje zaměstnanec, chybějící rozvrh správce'],
+            'absence_conflict' => ['Opravte překryv skutečných nepřítomností.', 'Zaměstnanec nebo vedoucí'],
+            'unresolved_breaks' => ['Prověřte přestávky.', 'Vedoucí'],
+            'unresolved_adjustments' => ['Prověřte dřívější úpravy uznané doby.', 'Vedoucí'],
+            'vacation_conflict' => ['Opravte překryv evidence s dovolenou.', 'Vedoucí'],
         ];
-        return array_values(array_filter($reasons, static fn(string $key): bool => !empty($sheet[$key]), ARRAY_FILTER_USE_KEY));
+        $tasks = [];
+        foreach ($rules as $code => [$reason, $owner]) {
+            if (!empty($sheet[$code])) $tasks[] = compact('code', 'reason', 'owner');
+        }
+        return $tasks;
     }
 
     private function approve(array $actor,array $person,array $input): void
