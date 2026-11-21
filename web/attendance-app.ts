@@ -77,13 +77,12 @@ const validMonth = /^(?!0000)\d{4}-(0[1-9]|1[0-2])$/
 const local = new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Prague',year:'numeric',month:'2-digit',day:'2-digit'})
 const calendarDay = new Intl.DateTimeFormat('cs-CZ', {timeZone:'UTC', weekday:'short', day:'numeric', month:'numeric'})
 const workClock = new Intl.DateTimeFormat('cs-CZ', {timeZone:'Europe/Prague',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'})
-const today=local.format(new Date())
+const pragueToday = () => local.format(new Date())
 function validDay(value: string) {
     if (!/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(value)) return false
     const parsed = new Date(value+'T00:00:00Z')
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0,10) === value
 }
-const freshPerson=()=>({id:0,name:'',number:'',login:'',roles:['employee'],attendance_enabled:true,org_unit_id:null,sid:'',starts:today,ends:''})
 const labels:Record<string,string>={employee:'Zaměstnanec',manager:'Vedoucí',admin:'Správce',payroll:'Mzdová účetní',PRACE:'Práce',PRESTAVKA:'Přestávka',DOVOLENA:'Dovolená',LEKAR:'Lékař',pending:'Čeká na schválení',approved:'Schváleno',rejected:'Zamítnuto'}
 const options = (values: string[]) => values.map(value => ({ value, label: labels[value] }))
 const roles = options(['employee', 'manager', 'payroll', 'admin'])
@@ -137,11 +136,13 @@ async function api<T>(op:string,data:object={}):Promise<T>{
     return body
 }
 export function setupAttendance() {
+    const today = ref(pragueToday())
+    const freshPerson=()=>({id:0,name:'',number:'',login:'',roles:['employee'],attendance_enabled:true,org_unit_id:null,sid:'',starts:today.value,ends:''})
     const user=ref<Person|null>(null), people=ref<Person[]>([]), devices=ref<Device[]>([]), payroll=ref<Payroll|null>(null)
-    const person=ref(0), month=ref(today.slice(0,7)),sheet=ref<Sheet|null>(null),tab=ref('Výkaz')
+    const person=ref(0), month=ref(today.value.slice(0,7)),sheet=ref<Sheet|null>(null),tab=ref('Výkaz')
     const daily = ref<DailyAttendance|null>(null)
-    const dailyDay = ref<string|null>(null), dailyToday = ref(today)
-    const selectedDailyDay = computed(() => dailyDay.value ?? dailyToday.value)
+    const dailyDay = ref<string|null>(null)
+    const selectedDailyDay = computed(() => dailyDay.value ?? today.value)
     const gapMinutes = ref<string|null>(null)
     const mergeRows = ref<number[]>([])
     const durationEdit = ref({value:'', maximum:0, from:'', to:'', reason:'', reset:false})
@@ -151,21 +152,20 @@ export function setupAttendance() {
         {from:'',to:'',latest:'',checkHolidays:true,token:'',added:0,removed:0,changed:0},
     )
     const holidayControlHasChanges = computed(() => holidayControl.value.added + holidayControl.value.changed + holidayControl.value.removed > 0)
-    const roundingEdit = ref({change:false, mode:'down', minutes:30, effective_on:today})
-    const breakRuleEdit = ref({change:false, enabled:true, minutes:30, preferred:240, deadline:360, effective_on:today})
+    const roundingEdit = ref({change:false, mode:'down', minutes:30, effective_on:today.value})
+    const breakRuleEdit = ref({change:false, enabled:true, minutes:30, preferred:240, deadline:360, effective_on:today.value})
     const workEdit = ref({kind:'PRACE', day:'', from:'', to:'', untilMidnight:false, reason:''})
     const chosenDay = ref('')
-    const sheetToday = ref(today)
     const dayHeading = ref<HTMLElement|null>(null)
     const accounts = ref<AttendanceAccount[]>([])
     const models = ref<WorkModel[]>([])
     const accountPanel = ref('general')
     const accountForm = ref<AttendanceAccount & {payroll_code:string;effective_on:string}>({
         code:'', name:'', description:'', behavior:'timed_absence', position:50, active:true, requires_proof:false,
-        payroll_code:'', effective_on:today,
+        payroll_code:'', effective_on:today.value,
     })
     const modelForm = ref<{id?:number;name:string;effective_on:string;week:(Shift|null)[];reason?:string}>({
-        name:'',effective_on:today,week:[],
+        name:'',effective_on:today.value,week:[],
     })
     const modelWeek = computed(() => modelForm.value.week.map((shift, index) => ({
         shift, index, day:weekdays[index], next:(index + 1) % weekdays.length,
@@ -185,17 +185,17 @@ export function setupAttendance() {
     const employeeAssignments = ref<WorkAssignment[]>([])
     const employeeModelsLoading = ref(false)
     const employeeModelEdit = ref<{model:number|null;effective_on:string;original_effective_on?:string;reason:string}>({
-        model:null, effective_on:today, reason:'',
+        model:null, effective_on:today.value, reason:'',
     })
     const employeeAssignmentReason = computed(() => !!employeeModelEdit.value.original_effective_on ||
-        (!!edit.value.id && employeeModelEdit.value.model !== null && employeeModelEdit.value.effective_on < today))
+        (!!edit.value.id && employeeModelEdit.value.model !== null && employeeModelEdit.value.effective_on < today.value))
     const expandedModels = ref<Record<number,boolean>>({})
     const selectedModelVersions = ref<Record<number,string>>({})
     const pendingModelImpact = ref('')
 
     const calendar = ref<CalendarSettings>({holidays:[],holiday_accounts:[], days:[]})
     const defaultHolidayAccount = {code:'default',name:'Výchozí podle data'}
-    const newHolidayRule = () => ({code:'',name:'',account:defaultHolidayAccount.code,valid_from:today,valid_to:'',type:'fixed',month:'1',day:'1',offset:'0'})
+    const newHolidayRule = () => ({code:'',name:'',account:defaultHolidayAccount.code,valid_from:today.value,valid_to:'',type:'fixed',month:'1',day:'1',offset:'0'})
     const holidayRuleForm = ref(newHolidayRule())
     const ruleTypes = [{value:'fixed',label:'Pevné datum'}, {value:'easter',label:'Podle Velikonoc'}]
     function holidayDate(rule:HolidayRule) {
@@ -220,7 +220,7 @@ export function setupAttendance() {
             action:() => save('calendar-holiday-remove', {id:rule.id}, future
                 ? 'Budoucí pravidlo bylo odstraněno.' : 'Platnost pravidla byla ukončena.')})
     }
-    const holidayForm = ref({effective_on:today, account:''})
+    const holidayForm = ref({effective_on:today.value, account:''})
     const calendarDayForm = ref({day:'',name:'',account:''})
     const calendarAccounts = computed(() => accounts.value.filter(account => account.active))
     const holidayRuleAccounts = computed(() => [defaultHolidayAccount, ...calendarAccounts.value])
@@ -234,7 +234,7 @@ export function setupAttendance() {
             action:() => save('calendar-day', {day:entry.day, remove:true}, 'Den volna byl odebrán.')})
     }
     function activeModelVersion(model:WorkModel) {
-        return model.versions.find(version => version.effective_on <= today) ?? model.versions.at(-1)!
+        return model.versions.find(version => version.effective_on <= today.value) ?? model.versions.at(-1)!
     }
     function displayModelVersion(model:WorkModel) {
         return model.versions.find(version => version.effective_on === selectedModelVersions.value[model.id]) ?? activeModelVersion(model)
@@ -257,7 +257,7 @@ export function setupAttendance() {
             const calendarDate = new Date(key + 'T00:00:00Z')
             const weekday = calendarDate.getUTCDay()
             return {
-                key, label:calendarDay.format(calendarDate), weekend:weekday === 0 || weekday === 6, today:key === sheetToday.value,
+                key, label:calendarDay.format(calendarDate), weekend:weekday === 0 || weekday === 6, today:key === today.value,
                 holiday:sheet.value?.calendar_days?.[key], holidaySeconds:0,
                 seconds:0, internal:null as number|null, rows:[] as (Row & {sheetIndex:number})[], sessions:[] as ComputerSession[], requests:[] as RequestRow[],
             }
@@ -503,6 +503,7 @@ export function setupAttendance() {
         units.value = catalog
     }
     async function refresh(){
+        today.value = pragueToday()
         if(!user.value)return
         try {
             if (tab.value === 'Konta docházky') accounts.value = await api('attendance-accounts')
@@ -510,7 +511,6 @@ export function setupAttendance() {
             else if (tab.value === 'Pracovní modely') models.value = await api('work-models')
             else if(tab.value==='Zařízení')devices.value=await api('devices')
             else if (tab.value === 'Denní přehled') {
-                dailyToday.value = local.format(new Date())
                 daily.value = await api('daily-attendance', dailyDay.value ? {day:dailyDay.value} : {})
             }
             else if(tab.value==='Nastavení docházky') {
@@ -522,7 +522,6 @@ export function setupAttendance() {
                 if (hasRole('manager')) people.value = await api('people')
                 person.value = personInScope(person.value)
                 if (!person.value) { sheet.value = null; return }
-                sheetToday.value = local.format(new Date())
                 const next = await api<Sheet>('sheet', scope())
                 if (next.fingerprint !== sheet.value?.fingerprint) mergeRows.value = []
                 sheet.value = next
@@ -547,7 +546,7 @@ export function setupAttendance() {
         showAllPeople.value = false
         form.value = freshRequest()
         tab.value = hasRole('admin') && people.value.every(p => !p.attendance_enabled) ? 'První kroky' : tabs.value[0] ?? 'Účet'
-        month.value = today.slice(0,7)
+        month.value = today.value.slice(0,7)
         const previous = history.state?.attendance as AttendanceView | undefined
         const available = previous?.account === u.id && tabs.value.includes(previous.tab) ? previous : view()
         applyView(viewFromUrl(available))
@@ -724,8 +723,8 @@ export function setupAttendance() {
     function applyView(next: AttendanceView) {
         if (tabs.value.includes(next.tab)) tab.value = next.tab
         if (validMonth.test(next.month)) month.value = next.month
-        dailyToday.value = local.format(new Date())
-        dailyDay.value = next.dailyDay && validDay(next.dailyDay) && next.dailyDay < dailyToday.value ? next.dailyDay : null
+        today.value = pragueToday()
+        dailyDay.value = next.dailyDay && validDay(next.dailyDay) && next.dailyDay < today.value ? next.dailyDay : null
         showAllPeople.value = next.showAllPeople ?? false
         person.value = personInScope(next.person)
         unitFilter.value = tab.value === 'Zaměstnanci' ? next.unitFilter ?? null : null
@@ -742,7 +741,7 @@ export function setupAttendance() {
             }
             edit.value = data ? {...data, roles:[...data.roles]} : freshPerson()
             employeePanel.value = 'general'
-            employeeModelEdit.value = {model:null, effective_on:today, reason:''}
+            employeeModelEdit.value = {model:null, effective_on:today.value, reason:''}
             pendingModelImpact.value = ''
             employeeModels.value = []
             employeeAssignments.value = []
@@ -756,10 +755,10 @@ export function setupAttendance() {
             const existing = accounts.value.find(account => account.code === code)
             if (code && !existing) { editor.value = null; return }
             accountPanel.value = 'general'
-            roundingEdit.value = {change:false, mode:'down', minutes:30, ...existing?.rounding_rules?.find(rule => rule.effective_on <= today), effective_on:today}
-            breakRuleEdit.value = {change:false, enabled:true, minutes:30, preferred:240, deadline:360, ...existing?.break_rules?.find(rule => rule.effective_on <= today), effective_on:today}
+            roundingEdit.value = {change:false, mode:'down', minutes:30, ...existing?.rounding_rules?.find(rule => rule.effective_on <= today.value), effective_on:today.value}
+            breakRuleEdit.value = {change:false, enabled:true, minutes:30, preferred:240, deadline:360, ...existing?.break_rules?.find(rule => rule.effective_on <= today.value), effective_on:today.value}
             accountForm.value = {...(existing ?? {code:'',name:'',description:'',behavior:'timed_absence',position:50,active:true,requires_proof:false}),
-                payroll_code:'',effective_on:today}
+                payroll_code:'',effective_on:today.value}
         } else if (next?.kind === 'holiday-rule' && tab.value === 'Svátky a dny volna') {
             const {id} = next
             const rule = calendar.value.holidays?.find(row => row.id === id)
@@ -768,19 +767,19 @@ export function setupAttendance() {
                 type:rule.easter_offset === null ? 'fixed' : 'easter', month:String(rule.month ?? 1), day:String(rule.day ?? 1),
                 offset:String(rule.easter_offset ?? 0)} : newHolidayRule()
         } else if (next?.kind === 'holiday-account' && tab.value === 'Svátky a dny volna') {
-            holidayForm.value = {effective_on:today, account:holidayAccount(today)}
+            holidayForm.value = {effective_on:today.value, account:holidayAccount(today.value)}
         } else if (next?.kind === 'calendar-day' && tab.value === 'Svátky a dny volna') {
             const {day} = next
             const existing = calendar.value.days.find(entry => entry.day === day)
             if (next.day && !existing) { editor.value = null; return }
-            calendarDayForm.value = existing ? {...existing} : {day:today, name:'', account:holidayAccount(today)}
+            calendarDayForm.value = existing ? {...existing} : {day:today.value, name:'', account:holidayAccount(today.value)}
         } else if (next?.kind === 'model' && tab.value === 'Pracovní modely') {
             const {id, version:originalVersion} = next
             const existing = models.value.find(model => model.id === id)
             const version = originalVersion ? existing?.versions.find(item => item.effective_on === originalVersion) : undefined
             if ((next.id !== undefined && !existing) || (next.version && !version)) { editor.value = null; return }
             const week = (version ?? (existing && activeModelVersion(existing)))?.week ?? weekdays.map((_, index) => index < 5 ? defaultShift() : null)
-            modelForm.value = {id:existing?.id,name:existing?.name ?? '',effective_on:version?.effective_on ?? today,
+            modelForm.value = {id:existing?.id,name:existing?.name ?? '',effective_on:version?.effective_on ?? today.value,
                 week:week.map(shift => shift ? {...shift,break_mode:shift.break_mode ?? 'fixed'} : null), reason:''}
             pendingModelImpact.value = ''
         } else if (next?.kind === 'duration' && canReview.value) {
@@ -901,7 +900,7 @@ export function setupAttendance() {
         const next = new Date(selectedDailyDay.value+'T00:00:00Z')
         next.setUTCDate(next.getUTCDate() + offset)
         const value = next.toISOString().slice(0,10)
-        if (validDay(value) && value <= dailyToday.value) return navigate({dailyDay:value})
+        if (validDay(value) && value <= today.value) return navigate({dailyDay:value})
     }
     function goToDailyToday() {
         return navigate({dailyDay:null})
@@ -1268,7 +1267,7 @@ export function setupAttendance() {
                 ...shift, break_start:shift.break_start || null, break_end:shift.break_end || null,
             } : null)}
             const apply = async (token?:string) => save('work-model', {...data, preview_token:token}, 'Pracovní model byl uložen.')
-            if (original || (model.id && model.effective_on < today)) await previewModelChange(data, apply)
+            if (original || (model.id && model.effective_on < today.value)) await previewModelChange(data, apply)
             else await apply()
         })
     }
@@ -1371,13 +1370,20 @@ export function setupAttendance() {
         const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}))
         a.download='dochazka-'+month.value+'-v'+version+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)
     })}
+    function updateDate() {
+        const next = pragueToday()
+        if (today.value === next) return
+        today.value = next
+        if (['Výkaz', 'Žádosti'].includes(tab.value)) void run(refresh)
+    }
+
     onMounted(async()=>{
         window.addEventListener('popstate', restoreView)
+        document.addEventListener('visibilitychange', updateDate)
         dailyTimer = window.setInterval(() => {
-            if (tab.value === 'Denní přehled' && document.visibilityState === 'visible') {
-                dailyToday.value = local.format(new Date())
-                if (dailyDay.value === null) void run(refresh)
-            }
+            if (document.visibilityState !== 'visible') return
+            updateDate()
+            if (tab.value === 'Denní přehled' && dailyDay.value === null) void run(refresh)
         }, 30_000)
         if (serviceCode) history.replaceState(history.state, '', location.pathname + location.search)
         try {
@@ -1402,6 +1408,7 @@ export function setupAttendance() {
         }
     })
     onUnmounted(() => {
+        document.removeEventListener('visibilitychange', updateDate)
         window.removeEventListener('popstate', restoreView)
         window.clearInterval(dailyTimer)
     })
@@ -1421,7 +1428,7 @@ export function setupAttendance() {
         tabIcons, time, moment, day, hours, requestPeriod, canUploadProof, scope, run, refresh, signIn, signOut, roleNames, hasRole,
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
-        daily, dailyStatuses, dailyToday, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
+        daily, dailyStatuses, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
         gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
         monthDays, selectedDay, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,

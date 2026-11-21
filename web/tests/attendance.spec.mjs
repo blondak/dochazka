@@ -757,6 +757,19 @@ test('a technical administrator opens employee records from the directory withou
     expect(calls).toEqual([employee.id, employee.id])
 })
 
+test('the selected day and break action advance together after Prague midnight', async ({page}) => {
+    const lead = {...manager, attendance_enabled:false}
+    await openApp(page, lead, {people:() => [lead,employee], sheet:() => sheet()})
+    const nextDay = page.getByRole('table', {name:'Dny v měsíci'}).getByRole('button', {name:/18\. 11\./})
+    await nextDay.click()
+    const editBreak = page.getByRole('button', {name:'Upravit přestávku'})
+    await expect(editBreak).toHaveCount(0)
+    await page.clock.setFixedTime(new Date('2026-11-18T00:01:00+01:00'))
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await expect(nextDay).toHaveAttribute('aria-current', 'date')
+    await expect(editBreak).toBeVisible()
+})
+
 test('person search includes technical accounts only when the filter is enabled', async ({page}) => {
     const teamLead = {...manager, attendance_enabled:false}
     const technical = {...accountant, managed:true}

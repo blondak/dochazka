@@ -160,9 +160,9 @@
                             :disabled="busy || selectedDailyDay === '0001-01-01'" @click="moveDailyDay(-1)" />
                         <time :datetime="selectedDailyDay" aria-live="polite">{{ day(selectedDailyDay) }}</time>
                         <PvButton aria-label="Následující den" icon="pi pi-chevron-right" size="small" outlined
-                            :disabled="busy || selectedDailyDay >= dailyToday" @click="moveDailyDay(1)" />
+                            :disabled="busy || selectedDailyDay >= today" @click="moveDailyDay(1)" />
                         <PvButton label="Dnes" size="small" severity="secondary" outlined
-                            :disabled="busy || selectedDailyDay === dailyToday" @click="goToDailyToday" />
+                            :disabled="busy || selectedDailyDay === today" @click="goToDailyToday" />
                     </div>
                 </template>
                 <template #end>
@@ -180,7 +180,7 @@
                             <PvColumn field="name" header="Zaměstnanec" />
                             <PvColumn header="Stav">
                                 <template #body="{ data }"><PvTag
-                                    :value="data.status === 'present' && daily.day !== dailyToday ? 'Otevřená relace' : dailyStatuses[data.status].label"
+                                    :value="data.status === 'present' && daily.day !== today ? 'Otevřená relace' : dailyStatuses[data.status].label"
                                     :severity="dailyStatuses[data.status].severity" /></template>
                             </PvColumn>
                             <PvColumn header="Od">
