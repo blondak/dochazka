@@ -44,6 +44,7 @@ async function openApp(page, user, endpoints = {}, path = '/', now = fixedTime) 
         devices: () => [],
         'employee-model-choices': () => ({models:[],assignments:[]}),
         'attendance-accounts': () => [],
+        'team-coverage': () => [],
         'request-preview': () => ({seconds:14400,days:['2026-11-23']}),
         'org-units': () => [{id:3, name:'IT', path:'IT', parent_id:null}],
         ...endpoints,

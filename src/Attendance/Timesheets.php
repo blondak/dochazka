@@ -285,6 +285,64 @@ final class Timesheets
         $this->audit->audit($actor['id'],'approve',['employee'=>$person['id'],'month'=>$input['month'],'fingerprint'=>$sheet['fingerprint'],'note'=>$note]);
     }
 
+    public function teamCoverage(array $input): array
+    {
+        $actor = $this->accounts->actor('manager');
+        $request = $this->db->fetchAssociative('SELECT * FROM request WHERE id=?', [(int) ($input['id'] ?? 0)]);
+        if (!$request) throw new Problem('Žádost nenalezena.', 404);
+        $person = $this->directory->person($actor, $request['employee'], true);
+        if ($person['id'] === $actor['id']) throw new Problem('Vlastní žádost posuzuje jiný vedoucí.', 403);
+        $from = new DateTimeImmutable($request['begins']);
+        $to = new DateTimeImmutable($request['ends']);
+        $start = $from->setTimezone(new \DateTimeZone('Europe/Prague'))->setTime(0,0);
+        $end = $to->setTimezone($start->getTimezone())->modify('-1 microsecond')->setTime(0,0)->modify('+1 day');
+        $windows = self::requestWindows($request);
+        $scope = ['units'=>$this->directory->managedUnits($actor), 'self'=>$person['id'], 'first'=>$start->format('Y-m-d'), 'end'=>$end->format('Y-m-d')];
+        $team = $this->db->createQueryBuilder()->select('id','name','starts','LEAST(ends,archived_on) AS last')
+            ->from('employee')->where('org_unit_id IN (:units)', 'id <> :self', 'attendance_enabled',
+                'starts < :end', '(LEAST(ends,archived_on) IS NULL OR LEAST(ends,archived_on) >= :first)')
+            ->setParameters($scope, ['units'=>\Doctrine\DBAL\ArrayParameterType::INTEGER])->orderBy('name')->fetchAllAssociative();
+        if (!$team) return [];
+        $others = $this->db->createQueryBuilder()->select('r.employee','r.begins','r.ends','r.status','r.vacation_estimate','a.behavior')
+            ->from('request','r')->innerJoin('r','attendance_account','a','a.code=r.kind')
+            ->where('r.employee IN (:ids)', "r.status IN ('approved','pending')", "a.behavior IN ('shift_absence','timed_absence')",
+                'r.begins < :end','r.ends > :start','NOT r.generated_holiday')
+            ->setParameter('ids', array_column($team,'id'), \Doctrine\DBAL\ArrayParameterType::INTEGER)
+            ->setParameter('start',$from->format(DATE_ATOM))->setParameter('end',$to->format(DATE_ATOM))
+            ->orderBy('r.begins')->fetchAllAssociative();
+        $absences = [];
+        foreach ($others as $r) {
+            foreach (self::requestWindows($r) as [$a,$b]) {
+                foreach ($windows as [$x,$y]) {
+                    if ($a >= $y || $b <= $x) continue;
+                    $absences[$r['employee']][] = ['status'=>$r['status'], 'from'=>$start->setTimestamp(max($a,$x))->format(DATE_ATOM),
+                        'to'=>$start->setTimestamp(min($b,$y))->format(DATE_ATOM), 'whole_day'=>$r['behavior'] === 'shift_absence' && !$r['vacation_estimate'] && !$request['vacation_estimate']];
+                }
+            }
+        }
+        $result = [];
+        foreach ($team as $member) {
+            $begin = max($start, WorkModels::day($member['starts']));
+            $until = $member['last'] ? min($end, WorkModels::day($member['last'])->modify('+1 day')) : $end;
+            $plan = $this->models->schedule($member['id'], $begin, $until);
+            $seconds = 0;
+            foreach ($plan as $ranges) foreach ($ranges as [$a,$b]) foreach ($windows as [$x,$y]) {
+                $seconds += max(0,min($b,$y) - max($a,$x));
+            }
+            $result[] = ['name'=>$member['name'], 'planned'=>$plan ? $seconds : null, 'absences'=>$absences[$member['id']] ?? []];
+        }
+        return $result;
+    }
+
+    private static function requestWindows(array $request): array
+    {
+        if ($request['vacation_estimate']) {
+            $ranges = json_decode($request['vacation_estimate'], true, flags: JSON_THROW_ON_ERROR);
+            return array_map(static fn($r) => [strtotime($r['from']), strtotime($r['to'])], $ranges);
+        }
+        return [[strtotime($request['begins']), strtotime($request['ends'])]];
+    }
+
     public function overview(array $input): array
     {
         $team = ($input['team'] ?? true) === true;

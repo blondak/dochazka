@@ -331,4 +331,29 @@ NEON)]
         return $this->json->respond($request, $response, fn(array $input) => $this->service->overview($input), readOnly: true);
     }
 
+    #[Path('/team-coverage'), Method('POST'), LoggedIn, Role('manager')]
+    #[OpenApi(<<<'NEON'
+operationId: teamCoverage
+summary: "Plánované směny a souběžné absence při rozhodování žádosti"
+tags: [Evidence]
+security: [{session: []}]
+parameters: [{$ref: '#/components/parameters/WebHeader'}]
+requestBody:
+    content:
+        application/json:
+            schema: {type: object, required: [id], properties: {id: {type: integer}}}
+responses:
+    '200':
+        description: "Plánované směny a souběžné absence při rozhodování žádosti"
+        content:
+            application/json:
+                schema: {type: array, items: {type: object}}
+    '403': {$ref: '#/components/responses/Error403'}
+    '422': {$ref: '#/components/responses/Error422'}
+NEON)]
+    public function teamCoverage(ApiRequest $request, ApiResponse $response): ApiResponse
+    {
+        return $this->json->respond($request, $response, fn(array $input) => $this->service->teamCoverage($input), readOnly: true);
+    }
+
 }

@@ -28,6 +28,7 @@ interface Passkey {id:string;label:string;created:string}
 interface Confirmation {
     title: string
     description: string
+    coverage?:{name:string;planned:number|null;absences:{status:string;from:string;to:string;whole_day:boolean}[]}[]
     details?: string
     label: string
     destructive?: boolean
@@ -1193,15 +1194,19 @@ export function setupAttendance() {
     function decide(request: RequestRow, status: 'approved' | 'rejected') {
         const label = status === 'approved' ? 'Schválit žádost'
             : request.status === 'approved' ? 'Odvolat schválení' : 'Zamítnout žádost'
-        openConfirmation({
-            title: label,
-            label,
-            description: [selectedPerson.value?.name, requestTitle(request), requestPeriod(request),
-                request.scheduled_seconds == null ? '' : 'Čerpání ' + hours(request.scheduled_seconds)].filter(Boolean).join(' · '),
-            details:request.note && !request.merged_work ? request.note : undefined,
-            destructive: status === 'rejected',
-            reasonRequired: status === 'rejected',
-            action: reason => save('decide', {id:request.id, status, reason}, 'Rozhodnutí bylo uloženo.'),
+        return run(async () => {
+            const absence = ['timed_absence','shift_absence'].includes(request.behavior ?? '') || ['DOVOLENA','LEKAR'].includes(request.kind)
+            const coverage = status === 'approved' && absence ? await api<Confirmation['coverage']>('team-coverage',{id:request.id}) : undefined
+            openConfirmation({
+                coverage, title: label,
+                label,
+                description: [selectedPerson.value?.name, requestTitle(request), requestPeriod(request),
+                    request.scheduled_seconds == null ? '' : 'Čerpání ' + hours(request.scheduled_seconds)].filter(Boolean).join(' · '),
+                details:request.note && !request.merged_work ? request.note : undefined,
+                destructive: status === 'rejected',
+                reasonRequired: status === 'rejected',
+                action: reason => save('decide', {id:request.id, status, reason}, 'Rozhodnutí bylo uloženo.'),
+            })
         })
     }
     function invite(data:Person) {

@@ -1453,6 +1453,17 @@
     <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
     <form v-if="confirmation" class="stack confirmation-form" @submit.prevent="confirmAction">
         <p>{{ confirmation.description }}</p>
+        <div v-if="confirmation.coverage">
+            <h2>Ve stejném termínu</h2>
+            <p v-if="!confirmation.coverage.length">Ve spravovaném týmu nejsou další zaměstnanci.</p>
+            <ul v-else><li v-for="(member, index) in confirmation.coverage" :key="index">
+                {{ member.name }} · {{ member.planned === null ? 'Chybí model' : 'Plán ' + hours(member.planned) }}
+                <small v-for="part in member.absences" :key="part.from + part.status" class="muted-block">
+                    {{ part.status === 'approved' ? 'Schválená absence' : 'Čekající absence' }} ·
+                    {{ requestPeriod({begins:part.from, ends:part.to, behavior:part.whole_day ? 'shift_absence' : 'timed_absence'}) }}
+                </small>
+            </li></ul>
+        </div>
         <p v-if="confirmation.details">{{ confirmation.details }}</p>
         <div v-if="confirmation.reasonRequired || confirmation.reasonLabel" class="field">
             <label for="decision-reason">{{ confirmation.reasonLabel ?? 'Důvod rozhodnutí' }}</label>
