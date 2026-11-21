@@ -265,31 +265,31 @@ test('a stale approval refreshes the sheet before a manager can retry', async ({
     await expect(page.getByRole('status')).toContainText('Výkaz byl schválen.')
 })
 
-test('a manager sees the current day and recorded worked time for the team', async ({page}) => {
+test('a manager browses the team attendance by day and opens the matching timesheet', async ({page}) => {
     await page.setViewportSize({width:320,height:720})
-    let loads = 0
+    let todayLoads = 0
     const holidayInputs = []
     let openedSheet
     await openApp(page, manager, {
-        people:() => loads ? [manager,employee] : [manager],
+        people:() => todayLoads ? [manager,employee] : [manager],
         sheet:data => { openedSheet = data; return sheet() },
         'holiday-control':data => {
             holidayInputs.push(data)
             return {token:'preview',added:0,changed:0,removed:0,skipped:{missing_model:1,without_shift:0,occupied:1,unchanged:0}}
         },
-        'daily-attendance':() => ({
-            day:'2026-11-17', updated:'2026-11-17T12:00:00+01:00',
-            people:[
-                {id:employee.id, name:employee.name, status:++loads === 1 ? 'present' : 'finished',
-                    from:'2026-11-17T08:00:00+01:00', to:loads === 1 ? null : '2026-11-17T16:00:00+01:00',
-                    worked_seconds:loads === 1 ? null : 27000},
+        'daily-attendance':({day = '2026-11-17'}) => {
+            const closed = day === '2026-11-17' && ++todayLoads > 1
+            return {day, updated:'2026-11-17T12:00:00+01:00', people:[
+                {id:employee.id, name:employee.name, status:closed ? 'finished' : 'present',
+                    from:`${day}T08:00:00+01:00`, to:closed ? `${day}T16:00:00+01:00` : null,
+                    worked_seconds:closed ? 27000 : null},
                 {id:manager.id, name:manager.name, status:'absent', from:null, to:null, worked_seconds:null},
-            ],
-        }),
+            ]}
+        },
     }, '/?mesic=2026-10')
     await navigate(page, 'Denní přehled')
     await assertFits(page)
-    const holidayIcon = page.getByRole('button', {name:'Kontrola svátků', exact:true}).locator('.p-button-icon')
+    const holidayIcon = page.getByRole('button', {name:'Kontrolní chod', exact:true}).locator('.p-button-icon')
     expect(await holidayIcon.evaluate(icon => getComputedStyle(icon, '::before').content)).not.toBe('none')
     await expect(page.getByText('17. 11. 2026', {exact:true})).toBeVisible()
     const employeeRow = page.getByRole('row').filter({hasText:employee.name})
@@ -302,23 +302,45 @@ test('a manager sees the current day and recorded worked time for the team', asy
     await expect(employeeRow.getByRole('cell', {name:'16:00', exact:true})).toBeVisible()
     await expect(employeeRow).toContainText('7:30')
     await expect(page).toHaveURL(/sekce=denni-prehled/)
-    await page.getByRole('button', {name:'Kontrola svátků', exact:true}).click()
-    const dialog = page.getByRole('dialog', {name:'Kontrola svátků a firemního volna'})
+    const previous = page.getByRole('button', {name:'Předchozí den'})
+    const next = page.getByRole('button', {name:'Následující den'})
+    await expect(next).toBeDisabled()
+    await previous.click()
+    await expect(page).toHaveURL(/den=2026-11-16/)
+    await expect(employeeRow).toContainText('Otevřená relace')
+    await next.click()
+    await expect(employeeRow).toContainText('Odpracováno')
+    await page.goBack()
+    await expect(employeeRow).toContainText('Otevřená relace')
+    await page.goForward()
+    await expect(employeeRow).toContainText('Odpracováno')
+    await previous.click()
+    await page.getByRole('button', {name:'Dnes',exact:true}).click()
+    await expect(page).not.toHaveURL(/den=/)
+    await page.goto('/?sekce=denni-prehled&den=2026-10-31')
+    await expect(employeeRow).toContainText('Otevřená relace')
+    await expect(page.getByText('31. 10. 2026', {exact:true})).toBeVisible()
+    await page.getByRole('button', {name:'Kontrolní chod', exact:true}).click()
+    const dialog = page.getByRole('dialog', {name:'Kontrolní chod'})
+    await expect(dialog.getByText('Vaše organizační větev')).toBeVisible()
+    await expect(dialog.getByLabel('Od', {exact:true})).toHaveValue('2026-10-31')
+    await expect(dialog.getByLabel('Do včetně')).toHaveValue('2026-10-31')
     await dialog.getByLabel('Od', {exact:true}).fill('2026-11-16')
     await dialog.getByLabel('Do včetně').fill('2026-11-16')
     await dialog.getByRole('button', {name:'Zobrazit náhled'}).click()
     await expect(dialog.getByRole('status')).toContainText('Bez platného pracovního modelu · 1')
     await expect(dialog.getByRole('status')).toContainText('Existující docházka nebo žádost · 1')
-    await expect(dialog.getByRole('button', {name:'Potvrdit kontrolní běh'})).toHaveCount(0)
+    await expect(dialog.getByRole('button', {name:'Potvrdit kontrolní chod'})).toHaveCount(0)
     await dialog.getByRole('button', {name:'Obnovit náhled'}).click()
     const expectedRange = {from:'2026-11-16', to:'2026-11-16'}
     await expect.poll(() => holidayInputs).toEqual([expectedRange, expectedRange])
     await page.keyboard.press('Escape')
     await employeeRow.getByRole('button', {name:'Otevřít výkaz · ' + employee.name}).click()
-    await expect.poll(() => openedSheet).toEqual({employee:employee.id,month:'2026-11'})
+    await expect.poll(() => openedSheet).toEqual({employee:employee.id,month:'2026-10'})
     await expect(page).toHaveURL(/sekce=vykaz/)
     await page.goBack()
-    await expect(employeeRow).toBeVisible()
+    await expect(page).toHaveURL(/den=2026-10-31/)
+    await expect(employeeRow).toContainText('Otevřená relace')
 })
 
 test('the monthly table hides empty weekends and shows the selected day at desktop and mobile widths', async ({page}) => {
@@ -336,6 +358,7 @@ test('the monthly table hides empty weekends and shows the selected day at deskt
     const sunday = month.getByRole('row', {name:/25\. 10\./})
     await expect(sunday).toContainText('2:00')
     await expect(sunday).toHaveClass(/weekend-day/)
+    await expect(sunday.getByRole('cell').first()).toHaveCSS('box-shadow', /4px 0px 0px 0px inset/)
     const totals = page.getByRole('table', {name:'Souhrn za měsíc'})
     await expect(totals.getByRole('row', {name:/Přítomnost/})).toContainText('2:00')
     await expect(totals.getByRole('row', {name:/Dovolená/})).toContainText('1')
@@ -373,6 +396,8 @@ test('the monthly table hides empty weekends and shows the selected day at deskt
     await vacationCell.scrollIntoViewIfNeeded()
     await vacationCell.click()
     await expect(page.getByRole('heading', {name:/Detail dne.*26\. 10\./})).toBeFocused()
+    await expect(month.getByRole('row', {name:/26\. 10\./}).getByRole('cell').first()).toHaveCSS('box-shadow', /4px 0px 0px 0px inset/)
+    await expect(sunday).not.toHaveClass(/selected-day/)
     await expect(detail).toContainText('Dovolená')
     await expect(detail).not.toContainText('Práce')
     const monthBox = await month.boundingBox()
@@ -732,6 +757,50 @@ test('a technical administrator opens employee records from the directory withou
     expect(calls).toEqual([employee.id, employee.id])
 })
 
+test('person search includes technical accounts only when the filter is enabled', async ({page}) => {
+    const teamLead = {...manager, attendance_enabled:false}
+    const technical = {...accountant, managed:true}
+    let attendanceEnabled = true
+    await openApp(page, teamLead, {
+        people:() => [teamLead,{...employee,attendance_enabled:attendanceEnabled},technical,administrator],
+        sheet:() => sheet(),
+    })
+    const selector = page.getByRole('combobox', {name:'Osoba'})
+    const search = page.getByRole('searchbox', {name:'Vyhledat osobu'})
+    const all = page.getByRole('checkbox', {name:'Všechny osoby'})
+    const account = page.getByRole('option', {name:technical.name})
+    await selector.click()
+    await expect(all).not.toBeChecked()
+    await expect(page.getByRole('option', {name:employee.name})).toBeVisible()
+    await search.fill('Klára')
+    await expect(account).toHaveCount(0)
+    await search.press('Tab')
+    await expect(all).toBeFocused()
+    await all.press('Space')
+    await expect(search).toHaveValue('Klára')
+    await expect(account).toBeVisible()
+    await search.clear()
+    await expect(page.getByRole('option', {name:administrator.name})).toHaveCount(0)
+    await account.click()
+    await expect(page.getByText('Tomuto účtu se docházka nezpracovává.')).toBeVisible()
+    await navigate(page, 'Žádosti')
+    await selector.click()
+    await expect(all).toBeChecked()
+    await all.uncheck()
+    await expect(account).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(selector).toContainText(employee.name)
+    await expect(page.getByRole('heading', {name:'Žádosti za období'})).toBeVisible()
+
+    attendanceEnabled = false
+    await page.reload()
+    await expect(selector).toContainText('Vyberte osobu')
+    await selector.click()
+    await expect(all).not.toBeChecked()
+    await all.check()
+    await expect(account).toBeVisible()
+})
+
 test('administrator creates a unit and confirms the destination before moving it', async ({page}) => {
     const units = [{id:1, parent_id:null, name:'Provoz', path:'Provoz'}]
     await openApp(page, administrator, {
@@ -857,6 +926,31 @@ test('the day detail lists request status and the month marks pending and reject
     await expect(requests.getByRole('row', {name:/Lékař/})).toContainText('Zamítnuto')
     await month.getByRole('button', {name:/17\. 11\./}).click()
     await expect(requests.getByRole('row', {name:/Lékař/})).toContainText('Schváleno')
+})
+
+test('a planned weekend with missing attendance is visible and review icons explain each day', async ({page}) => {
+    await openApp(page, employee, {sheet:() => sheet({
+        planned_shifts:{'2026-11-14':[{from:'2026-11-14T08:00:00+01:00',to:'2026-11-14T16:00:00+01:00'}]},
+        day_issues:{
+            '2026-11-14':{status:'missing', reasons:['Plánovaná směna bez záznamu o práci.']},
+            '2026-11-16':{status:'review', reasons:['Chybí odhlášení.', 'Chybí povinný doklad.']},
+        },
+    })})
+    const month = page.getByRole('table', {name:'Dny v měsíci'})
+    const saturday = month.getByRole('row', {name:/14\. 11\./})
+    const missing = saturday.getByRole('img', {name:'Plánovaná směna bez záznamu o práci.'})
+    await expect(missing).toHaveClass(/day-attention-missing/)
+    await missing.hover()
+    await expect(page.getByRole('tooltip')).toHaveText('Plánovaná směna bez záznamu o práci.')
+    await saturday.getByRole('button').click()
+    const detail = page.getByRole('region', {name:/Detail dne/})
+    await expect(detail).toContainText('Chybí docházka')
+    const monday = month.getByRole('row', {name:/16\. 11\./})
+    await expect(monday.getByRole('img', {name:/Chybí odhlášení/})).toHaveClass(/day-attention-review/)
+    await monday.getByRole('button').click()
+    await expect(detail).toContainText('Chybí odhlášení.')
+    await expect(detail).toContainText('Chybí povinný doklad.')
+    await expect(month.getByRole('row', {name:/17\. 11\./}).getByRole('img')).toHaveCount(0)
 })
 
 test('administrator creates a custom account and assigns a four-hour work model', async ({page}) => {
@@ -1187,8 +1281,6 @@ test('a manager changes recognized duration, keeping the interval and internal r
     })
     await page.getByRole('combobox',{name:'Osoba'}).click()
     await page.getByRole('option',{name:employee.name}).click()
-    const holidayIcon = page.getByRole('button', {name:'Kontrola svátků zaměstnance'}).locator('.p-button-icon')
-    expect(await holidayIcon.evaluate(icon => getComputedStyle(icon, '::before').content)).not.toBe('none')
     await page.getByRole('button',{name:/Upravit uznanou dobu 08:00/}).click()
     const dialog = page.getByRole('dialog',{name:'Upravit uznanou dobu'})
     await expect(dialog.getByLabel('Uznaná doba (H:MM)')).toHaveValue('4:00')
@@ -1201,4 +1293,51 @@ test('a manager changes recognized duration, keeping the interval and internal r
     await expect(table.getByRole('cell',{name:'3:45 Upraveno z 4:00'})).toBeVisible()
     await expect(page.getByText('Práce · Interně započteno 3:30')).toBeVisible()
     expect(update).toMatchObject({employee:employee.id, row:0, seconds:13500, fingerprint:'test-fingerprint'})
+})
+
+test('the timesheet toolbar opens a control run for the selected person and period', async ({page}) => {
+    const runs = []
+    await openApp(page, manager, {
+        people:() => [manager,employee], sheet:() => sheet(),
+        'holiday-control':data => {
+            runs.push(data)
+            return {token:'preview',added:1,changed:0,removed:0}
+        },
+    })
+    const toolbar = page.getByRole('toolbar', {name:'Nástroje výkazu'})
+    const controlRun = toolbar.getByRole('button', {name:'Kontrolní chod'})
+    await expect(controlRun).toHaveCount(0)
+    await toolbar.getByRole('combobox', {name:'Osoba'}).click()
+    await page.getByRole('option', {name:employee.name}).click()
+    await expect(toolbar.getByRole('button', {name:'Přidat konto'})).toBeVisible()
+    await expect(controlRun).toHaveText('')
+    await expect(controlRun).toHaveAttribute('title', 'Kontrolní chod')
+    await controlRun.focus()
+    await expect(page.getByRole('tooltip')).toHaveText('Kontrolní chod')
+    await controlRun.press('Enter')
+    const dialog = page.getByRole('dialog', {name:'Kontrolní chod'})
+    const holidays = dialog.getByRole('checkbox', {name:'Kontrola svátků a firemního volna'})
+    const preview = dialog.getByRole('button', {name:'Zobrazit náhled'})
+    const confirm = dialog.getByRole('button', {name:'Potvrdit kontrolní chod'})
+    await expect(dialog.getByText(employee.name, {exact:true})).toBeVisible()
+    await expect(dialog.getByLabel('Od', {exact:true})).toHaveValue('2026-11-01')
+    const end = dialog.getByLabel('Do včetně')
+    await expect(end).toHaveValue('2026-11-16')
+    await expect(holidays).toBeChecked()
+    await preview.click()
+    await expect(confirm).toBeVisible()
+    await holidays.uncheck()
+    await expect(confirm).toHaveCount(0)
+    await expect(preview).toBeDisabled()
+    await holidays.check()
+    await end.fill('2026-11-15')
+    await preview.click()
+    await confirm.click()
+    await expect(dialog).toBeHidden()
+    const scope = {employee:employee.id,from:'2026-11-01'}
+    expect(runs).toEqual([
+        {...scope,to:'2026-11-16'},
+        {...scope,to:'2026-11-15'},
+        {...scope,to:'2026-11-15',token:'preview'},
+    ])
 })

@@ -160,11 +160,22 @@ def exercise(connect, php_command):
     now = datetime.now(zone).replace(microsecond=0)
     day_start = now.replace(hour=0, minute=0, second=0)
     logout = min(now, day_start + timedelta(minutes=45))
+    return_at = min(now, day_start + timedelta(hours=1))
     today_seconds = int((logout - day_start).total_seconds())
     anonymous.call("daily-attendance", status=401)
     emp.call("daily-attendance", status=403)
     admin.call("daily-attendance", status=403)
     assert clients["managerB"][0].call("daily-attendance")["people"] == []
+    past_day = month+"-03"
+    past_daily = manager.call("daily-attendance", {"day": past_day})
+    assert past_daily["day"] == past_day
+    assert past_daily["people"] == [{"id": uid, "name":"employeeA", "status":"finished", "worked_seconds":8*3600,
+        "from": datetime.fromisoformat(past_day+"T08:00:00").replace(tzinfo=zone).isoformat(),
+        "to": datetime.fromisoformat(past_day+"T16:00:00").replace(tzinfo=zone).isoformat()}]
+    service_daily = manager.call("daily-attendance", {"day": month+"-04"})
+    assert service_daily["people"][0]["status"] == "absent"
+    for invalid in (None, "2026-02-30", (day_start.date()+timedelta(days=1)).isoformat()):
+        manager.call("daily-attendance", {"day": invalid}, 422)
 
     def employee_today(status, seconds=None, begins=None, ends=None):
         daily = manager.call("daily-attendance")
@@ -176,10 +187,15 @@ def exercise(connect, php_command):
     current_events = [
         {"id":"day-login", "kind":"login", "session":"day.1", "sid":sid, "at":max(day_start-timedelta(hours=1), day_start.replace(day=1)).isoformat()},
         {"id":"day-logout", "kind":"logout", "session":"day.1", "sid":sid, "at":logout.isoformat()},
-        {"id":"day-return", "kind":"login", "session":"day.2", "sid":sid, "at":now.isoformat()},
+        {"id":"day-return", "kind":"login", "session":"day.2", "sid":sid, "at":return_at.isoformat()},
     ]
     anonymous.call("events", {"events": current_events[:2]}, token=token, web=False)
     employee_today("finished", today_seconds, day_start.isoformat(), logout.isoformat())
+    overnight_login = current_events[0]["at"]
+    if overnight_login[:10] != day_start.date().isoformat():
+        overnight = manager.call("daily-attendance", {"day": overnight_login[:10]})
+        assert overnight["people"] == [{"id":uid, "name":"employeeA", "status":"present", "worked_seconds":None,
+                                       "from":overnight_login, "to":None}]
     anonymous.call("events", {"events": current_events[2:]}, token=token, web=False)
     employee_today("present", today_seconds, day_start.isoformat())
     admin.call("service-session-change", dict(change, session="day.2", service=True))

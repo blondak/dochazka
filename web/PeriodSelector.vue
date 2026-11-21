@@ -1,22 +1,35 @@
 <script setup lang="ts">
 defineProps<{
     person:number; month:string; people:{id:number;name:string}[]; selectedName?:string;
-    showPerson:boolean; editablePerson:boolean; busy:boolean
+    showPerson:boolean; editablePerson:boolean; busy:boolean; canShowAllPeople:boolean; showAllPeople:boolean
 }>()
 defineEmits<{
-    'select-person':[id:number]; 'edit-person':[]; 'select-month':[month:string]; 'move-month':[offset:number]
+    'select-person':[id:number]; 'show-all-people':[value:boolean]; 'edit-person':[]; 'select-month':[month:string]; 'move-month':[offset:number]
 }>()
+
+function allowTabToPersonFilter(event: KeyboardEvent) {
+    // PrimeVue handles Tab in the search field. Let the browser move to the checkbox in the footer.
+    if (event.key === 'Tab' && !event.shiftKey) event.stopImmediatePropagation()
+}
 </script>
 
 <template>
     <div class="fields period-selector">
-        <div v-if="showPerson && (people.length > 1 || selectedName)" class="person-controls">
+        <div v-if="showPerson && (people.length || canShowAllPeople)" class="person-controls">
             <div class="field">
                 <span id="scope-person-label" class="field-label scope-caption">Osoba</span>
-                <PvSelect v-if="people.length > 1" :model-value="person" input-id="scope-person" :options="people"
+                <PvSelect v-if="people.length > 1 || canShowAllPeople" :model-value="person || null" input-id="scope-person" :options="people"
                     option-label="name" option-value="id" :disabled="busy" aria-labelledby="scope-person-label"
-                    filter filter-placeholder="Vyhledat osobu" :pt="{pcFilter:{root:{'aria-label':'Vyhledat osobu'}}}"
-                    @update:model-value="$emit('select-person', $event)" />
+                    placeholder="Vyberte osobu" filter filter-placeholder="Vyhledat osobu"
+                    :pt="{pcFilter:{root:{'aria-label':'Vyhledat osobu',onKeydownCapture:canShowAllPeople ? allowTabToPersonFilter : undefined}}}"
+                    @update:model-value="$emit('select-person', $event)">
+                    <template v-if="canShowAllPeople" #footer>
+                        <label class="check-field person-filter">
+                            <PvCheckbox :model-value="showAllPeople" binary @update:model-value="$emit('show-all-people', $event)" />
+                            Všechny osoby
+                        </label>
+                    </template>
+                </PvSelect>
                 <span v-else>{{ selectedName }}</span>
             </div>
             <PvButton v-if="editablePerson && selectedName" icon="pi pi-user-edit" outlined

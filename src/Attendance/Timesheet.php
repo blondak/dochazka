@@ -43,16 +43,26 @@ final class Timesheet
     }
 
     public static function build(string $month, array $signals, array $requests, ?Date $from = null, ?Date $until = null,
-        array $mergeLimits = [], array $serviceRanges = [], array $accounts = [], array $schedule = [], array $calendarEntries = [], array $policies = []): array
+        array $mergeLimits = [], array $serviceRanges = [], array $accounts = [], array $schedule = [], array $calendarEntries = [],
+        array $policies = [], ?Date $reviewAt = null): array
     {
         $first = self::month($month);
         $limit = ($until ?? $first->modify('+1 month'))->getTimestamp();
         $start = ($from ?? $first)->getTimestamp();
+        $reviewAt = ($reviewAt ?? new Date('now'))->setTimezone($first->getTimezone());
+        $today = $reviewAt->setTime(0, 0);
         $open = $sleeping = $work = $breaks = $absences = $allDay = $legacy = $customWork = $issues = [];
+        $dayIssues = [];
         $freshLogins = $completeLogins = [];
         $autoMerge = array_any($mergeLimits, static fn(int $minutes) => $minutes > 0);
-        $flag = static function(int $ts, string $why) use (&$issues,$first,$start,$limit) {
-            if ($ts >= $start && $ts < $limit) $issues[] = $first->setTimestamp($ts)->format('d.m. H:i').' '.$why;
+        $flag = static function(int $ts, string $why, bool $forReview = true) use (&$issues, &$dayIssues, $first, $start, $limit) {
+            if ($ts < $start || $ts >= $limit) return;
+            $date = $first->setTimestamp($ts);
+            $issues[] = $date->format('d.m. H:i').' '.$why;
+            if ($forReview) $dayIssues[$date->format('Y-m-d')][] = $why;
+        };
+        $noteDays = static function(array $range, string $why) use (&$dayIssues, $first, $start, $limit) {
+            foreach (self::days($range, $first, $start, $limit) as [$date]) $dayIssues[$date->format('Y-m-d')][] = $why;
         };
         foreach ($signals as $s) {
             $ts = strtotime($s['happened']);
@@ -105,8 +115,8 @@ final class Timesheet
                     break;
             }
         }
-        foreach ($open as $ts) $flag($ts,'Chybí odhlášení.');
-        foreach ($sleeping as $ts) $flag($ts, 'Chybí probuzení po uspání.');
+        foreach ($open as $ts) $flag($ts, 'Chybí odhlášení.', $ts < $today->getTimestamp());
+        foreach ($sleeping as $ts) $flag($ts, 'Chybí probuzení po uspání.', $ts < $today->getTimestamp());
         $pending = 0;
         $adjustments = $partialVacation = [];
         $missingActual = 0;
@@ -116,8 +126,16 @@ final class Timesheet
             if ($r['status'] !== 'approved') continue;
             $range = [strtotime($r['begins']),strtotime($r['ends'])];
             $kind = $r['kind'];
+            $missingProof = ($r['requires_proof'] ?? false) && empty($r['has_proof']);
+            if ($missingProof && strtotime($r['actual_to'] ?? $r['ends']) <= $reviewAt->getTimestamp()) {
+                $noteDays($range, 'Chybí povinný doklad.');
+            }
             if ($r['needs_actual'] ?? false) {
-                if (empty($r['actual_from']) || !empty($r['actual_returned']) || (($r['requires_proof'] ?? false) && empty($r['has_proof']))) {
+                $missingTime = empty($r['actual_from']) || !empty($r['actual_returned']);
+                if ($missingTime && $range[1] <= $reviewAt->getTimestamp()) {
+                    $noteDays($range, 'Doplňte skutečný čas nepřítomnosti.');
+                }
+                if ($missingTime || $missingProof) {
                     $missingActual++;
                     continue;
                 }
@@ -126,6 +144,7 @@ final class Timesheet
                     $key = $date->format('Y-m-d');
                     if (!isset($schedule[$key])) {
                         $missingActual++;
+                        $dayIssues[$key][] = 'Pro skutečnou nepřítomnost chybí rozvrh.';
                         continue;
                     }
                     foreach ($schedule[$key] as [$x, $y]) {
@@ -228,7 +247,7 @@ final class Timesheet
                 $exception = $policies['break_exceptions'][$day] ?? null;
                 if ($exception !== null) {
                     $flag($ranges[0][0], $exception === 'ack' ? 'Přestávka je doložená s nesrovnalostí.'
-                        : 'Přestávka se nečerpala. Skutečná práce zůstala započtená.');
+                        : 'Přestávka se nečerpala. Skutečná práce zůstala započtená.', forReview: false);
                     continue;
                 }
                 $last = array_key_last($groups);
@@ -366,6 +385,22 @@ final class Timesheet
         if ($missingActual) $result['missing_actual'] = $missingActual;
         if ($unresolvedBreaks) $result['unresolved_breaks'] = $unresolvedBreaks;
         if ($unresolvedAdjustments) $result['unresolved_adjustments'] = array_values($unresolvedAdjustments);
+        foreach ($unresolvedAdjustments as $row) $dayIssues[$row['day']][] = 'Prověřte dřívější úpravu uznané doby.';
+        $attention = array_map(static fn(array $reasons) => ['status' => 'review', 'reasons' => array_values(array_unique($reasons))], $dayIssues);
+        $workedDays = [];
+        foreach ($rows as $row) {
+            if (!($row['generated_holiday'] ?? false) && Catalog::behavior($row['kind'], $accounts) === 'work') $workedDays[$row['day']] = true;
+        }
+        $coverage = array_merge($shiftCuts, ...array_values($absences));
+        $todayKey = $today->format('Y-m-d');
+        foreach ($schedule as $day => $shift) {
+            if (!$shift || $day >= $todayKey || isset($workedDays[$day]) || isset($attention[$day]) || isset($calendarEntries[$day])) continue;
+            $uncovered = self::subtract($shift, $coverage);
+            if (array_sum(array_map(static fn(array $range) => $range[1] - $range[0], $uncovered)) > ($partialVacation[$day] ?? 0)) {
+                $attention[$day] = ['status' => 'missing', 'reasons' => ['Plánovaná směna bez záznamu o práci.']];
+            }
+        }
+        if ($attention) $result['day_issues'] = $attention;
         return $result;
     }
 

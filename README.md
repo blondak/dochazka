@@ -60,7 +60,7 @@ Nette DI konfiguruje **nettrine/dbal** a **nettrine/orm**. Entity jsou v jednotl
 
 ### Denní přehled a spojování úseků
 
-**Denní přehled** ukazuje první přihlášení v daném dni a po skončení přítomnosti poslední doložené odhlášení. Ikona kalendáře otevře výkaz daného zaměstnance za měsíc zobrazeného dne.
+**Denní přehled** ukazuje první přihlášení v daném dni a po skončení přítomnosti poslední doložené odhlášení. Šipky přepínají dny a tlačítko **Dnes** vrací živý stav. U minulých dnů odpovídá stav konci vybraného dne. Ikona kalendáře otevře výkaz daného zaměstnance za měsíc zobrazeného dne.
 
 **Výkaz** zobrazuje pracovní dny v době evidence zaměstnance a víkendy s evidovanými záznamy. Podrobnosti dne obsahují plán směny, pracovní úseky, žádosti se stavem a dostupné relace počítače. Ikony v měsíčním přehledu označují čekající a zamítnuté žádosti. Vedoucí žádost vyřídí v dialogu přímo z detailu dne.
 
@@ -75,6 +75,8 @@ Pracovní modely mají rozbalovací verze rozvrhu. Konkrétní model s účinnos
 U pracovního konta lze zapnout návrh pauzy podle skutečného příchodu. Vedoucí ji posoudí při schválení výkazu. Po schválení odhadu časového volna zaměstnanec doplní skutečné časy a doloží případnou přílohu. Částečná dovolená se vykazuje jako datum a schválená délka. Vedoucí může kontrolu svátků spustit v detailu dne pro jednotlivce nebo v Denním přehledu pro svou organizační větev.
 
 V **Nastavení → Svátky a dny volna** správce zvolí konto pro české svátky s datem účinnosti. Každý svátek má platnost od–do a pevné datum nebo posun ve dnech od velikonoční neděle. Každé pravidlo může převzít výchozí konto nebo určit své vlastní. Odebrání platného pravidla ukončí jeho platnost dneškem včetně. Pravidlo s budoucím začátkem se odstraní celé. Pro konkrétní firemní den volna lze zadat vlastní název a vybrat libovolné aktivní konto. Při celozávodní dovolené zvolte **Dovolená**, aby hodiny směny vstoupily přímo do souhrnu dovolené a mzdového exportu. Konto s povinným dokladem vyžaduje přílohu také u automatického zápisu. Kontrolní běh zapíše do prázdného svátku nebo firemního volna celou plánovanou směnu po odečtení neplacené přestávky. Pozdější pracovní záznam za stejný den vyřadí celý automatický zápis z výkazu i další uzávěrky, i když se odpracovala jen část směny. Servisní přihlášení doplnění svátku neblokuje. Po zpětném označení jediné relace za servisní může další běh svátek doplnit. Za volný den bez plánované směny se hodiny nepřipisují.
+
+**Kontrolní chod** v horní liště Výkazu platí pro vybraného zaměstnance. V Denním přehledu platí pro celou spravovanou organizační větev. Vedoucí zvolí období a úkon, zobrazí náhled a potvrdí případné změny.
 
 V místním testovacím prostředí spusťte `bash bin/test-environment.sh fill-holidays --dry-run`. V nasazené centrále pro náhled použijte `docker compose exec -T app php bin/console attendance:fill-holidays --dry-run`. Bez `--dry-run` se zapíší změny. Standardně se zpracuje posledních 31 dokončených dnů podle pražského času. Jiné období lze určit pomocí `--from=2026-10-01 --to=2026-10-31` (oba dny včetně). Běh lze bezpečně opakovat. Pro každodenní doplnění lze na hostiteli centrály naplánovat například tento řádek cronu se skutečnou cestou k projektu.
 

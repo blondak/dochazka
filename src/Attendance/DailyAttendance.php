@@ -7,25 +7,35 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Dochazka\Http\Problem;
 use Dochazka\Identity\Accounts;
 
 final class DailyAttendance
 {
     public function __construct(private Connection $db, private Accounts $accounts, private \Dochazka\Staff\OrgUnits $units, private MergePolicy $mergePolicy, private Catalog $catalog, private WorkModels $models) {}
 
-    public function view(): array
+    public function view(array $input): array
     {
         $actor = $this->accounts->actor('manager');
         $now = new DateTimeImmutable('now', new DateTimeZone('Europe/Prague'));
-        $start = $now->setTime(0, 0);
+        $today = $now->setTime(0, 0);
+        $start = $today;
+        if (array_key_exists('day', $input)) {
+            $day = $input['day'];
+            if (!is_string($day) || !preg_match('/^\d{4}-\d{2}-\d{2}$/D', $day)) throw new Problem('Zadejte platné datum.');
+            $start = WorkModels::day($day);
+            if ($start > $today) throw new Problem('Denní přehled je dostupný nejvýše do dneška.');
+        }
+        $day = $start->format('Y-m-d');
         $end = $start->modify('+1 day');
+        $cutoff = min($end, $now)->format('Y-m-d\TH:i:s.uP');
         $roster = $this->db->createQueryBuilder()
             ->select('id', 'name', 'sid')
             ->from('employee')
-            ->where('org_unit_id IN (:units)', 'attendance_enabled = true', 'archived_on IS NULL', 'starts <= :day')
-            ->andWhere('(ends IS NULL OR ends >= :day)')
+            ->where('org_unit_id IN (:units)', 'attendance_enabled = true', 'starts <= :day')
+            ->andWhere('(ends IS NULL OR ends >= :day)', '(archived_on IS NULL OR archived_on > :day)')
             ->setParameter('units', array_keys($this->units->managed($actor)), ArrayParameterType::INTEGER)
-            ->setParameter('day', $start->format('Y-m-d'))
+            ->setParameter('day', $day)
             ->orderBy('name')->addOrderBy('id')
             ->fetchAllAssociative();
         $sids = array_values(array_filter(array_column($roster, 'sid')));
@@ -34,12 +44,13 @@ final class DailyAttendance
             ->from('signal_session', 'ss')
             ->innerJoin('ss', 'signal', 's', 's.sid = ss.sid AND s.device = ss.device AND s.session_key = ss.session_key')
             ->innerJoin('ss', 'device', 'd', 'd.id = ss.device')
-            ->where('ss.sid IN (:sids)', 's.happened <= :now')
+            ->where('ss.sid IN (:sids)', 's.happened <= :cutoff')
+            ->andWhere("(s.happened < :end OR s.kind = 'logout')")
             ->andWhere("tstzrange(ss.first_event, ss.last_event, '[]') && tstzrange(:start, :end, '[)')")
             ->setParameter('sids', $sids, ArrayParameterType::STRING)
             ->setParameter('start', $start->format(DATE_ATOM))
             ->setParameter('end', $end->format(DATE_ATOM))
-            ->setParameter('now', $now->format(DATE_ATOM))
+            ->setParameter('cutoff', $cutoff)
             ->orderBy('s.happened')->addOrderBy('s.device')->addOrderBy('s.event_id')
             ->fetchAllAssociative();
 
@@ -52,10 +63,10 @@ final class DailyAttendance
             $approved = $this->db->createQueryBuilder()
                 ->select('r.*', 'EXISTS(SELECT 1 FROM medical_proof p WHERE p.request_id = r.id) AS has_proof')
                 ->from('request', 'r')
-                ->where('employee IN (:ids)', 'NOT generated_holiday', "status = 'approved'", 'begins < :now', 'ends > :start')
-                ->andWhere("(kind <> 'PRACE' OR ((merged_work OR replaces_from IS NOT NULL) AND ends <= :now))")
+                ->where('employee IN (:ids)', 'NOT generated_holiday', "status = 'approved'", 'begins < :cutoff', 'ends > :start')
+                ->andWhere("(kind <> 'PRACE' OR ((merged_work OR replaces_from IS NOT NULL) AND ends <= :cutoff))")
                 ->setParameter('ids', array_column($roster, 'id'), ArrayParameterType::INTEGER)
-                ->setParameter('now', $now->format(DATE_ATOM))
+                ->setParameter('cutoff', $cutoff)
                 ->setParameter('start', $start->format(DATE_ATOM))
                 ->fetchAllAssociative();
             foreach ($approved as $request) {
@@ -68,7 +79,7 @@ final class DailyAttendance
         $breakRules = $this->catalog->durationRules('break');
         $corrections = $exceptions = [];
         if ($roster) {
-            $scope = ['ids' => array_column($roster, 'id'), 'day' => $start->format('Y-m-d')];
+            $scope = ['ids' => array_column($roster, 'id'), 'day' => $day];
             $rows = $this->db->createQueryBuilder()->select('employee', 'day', 'account AS kind', 'begins AS "from"', 'ends AS "to"', 'seconds')
                 ->from('recognized_work')->where('employee IN (:ids)', 'day = :day')
                 ->setParameters($scope, ['ids' => ArrayParameterType::INTEGER])->fetchAllAssociative();
@@ -80,14 +91,14 @@ final class DailyAttendance
         foreach ($roster as $person) {
             $exception = $exceptions[$person['id']] ?? null;
             $policy = ['break_rules' => $breakRules, 'adjustments' => $corrections[$person['id']] ?? [],
-                'break_exceptions' => $exception ? [$start->format('Y-m-d') => $exception] : []];
+                'break_exceptions' => $exception ? [$day => $exception] : []];
             $people[] = ['id' => (int) $person['id'], 'name' => $person['name']] + (
                 $person['sid'] === null
                     ? ['status' => 'untracked', 'worked_seconds' => null, 'from' => null, 'to' => null]
                     : self::summarize($bySid[$person['sid']] ?? [], $requests[$person['id']] ?? [], $start, $end, $limits, $accounts, $this->models->schedule($person['id'], $start, $end), $policy)
             );
         }
-        return ['day' => $start->format('Y-m-d'), 'updated' => $now->format(DATE_ATOM), 'people' => $people];
+        return ['day' => $day, 'updated' => $now->format(DATE_ATOM), 'people' => $people];
     }
 
     private static function summarize(array $events, array $requests, DateTimeImmutable $start, DateTimeImmutable $end, array $limits, array $accounts, array $schedule, array $policy): array

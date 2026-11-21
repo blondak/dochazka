@@ -690,13 +690,29 @@
                 "tags": [
                     "Evidence"
                 ],
-                "summary": "Vedoucí zobrazí dnešní stav docházky svého týmu",
+                "summary": "Vedoucí zobrazí stav docházky svého týmu pro vybraný den",
                 "operationId": "dailyAttendance",
                 "parameters": [
                     {
                         "$ref": "#/components/parameters/WebHeader"
                     }
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "day": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "description": "Den v časovém pásmu Europe/Prague. Při vynechání se použije dnešek."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "security": [
                     {
                         "session": []
@@ -711,6 +727,9 @@
                     },
                     "403": {
                         "$ref": "#/components/responses/Error403"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Error422"
                     }
                 }
             }
@@ -3728,6 +3747,32 @@
                         "type": "array",
                         "items": {
                             "type": "string"
+                        }
+                    },
+                    "day_issues": {
+                        "type": "object",
+                        "description": "Důvody ke kontrole podle data ve formátu RRRR-MM-DD.",
+                        "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                                "status",
+                                "reasons"
+                            ],
+                            "properties": {
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "missing",
+                                        "review"
+                                    ]
+                                },
+                                "reasons": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
                         }
                     },
                     "requests": {

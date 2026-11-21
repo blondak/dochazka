@@ -69,14 +69,22 @@ NEON)]
     #[Path('/daily-attendance'), Method('POST')]
     #[OpenApi(<<<'NEON'
 operationId: dailyAttendance
-summary: "Vedoucí zobrazí dnešní stav docházky svého týmu"
+summary: "Vedoucí zobrazí stav docházky svého týmu pro vybraný den"
 tags: [Evidence]
 parameters: [{$ref: '#/components/parameters/WebHeader'}]
 security: [{session: []}]
+requestBody:
+    content:
+        application/json:
+            schema:
+                type: object
+                properties:
+                    day: {type: string, format: date, description: "Den v časovém pásmu Europe/Prague. Při vynechání se použije dnešek."}
 responses:
     '200': {$ref: '#/components/responses/DailyAttendance'}
     '401': {$ref: '#/components/responses/Error401'}
     '403': {$ref: '#/components/responses/Error403'}
+    '422': {$ref: '#/components/responses/Error422'}
 NEON)]
     #[LoggedIn, Role('manager')]
     public function dailyAttendance(ApiRequest $request, ApiResponse $response): ApiResponse

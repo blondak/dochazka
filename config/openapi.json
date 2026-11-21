@@ -659,6 +659,18 @@
               "type": "string"
             }
           },
+          "day_issues": {
+            "type": "object",
+            "description": "Důvody ke kontrole podle data ve formátu RRRR-MM-DD.",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["status", "reasons"],
+              "properties": {
+                "status": { "type": "string", "enum": ["missing", "review"] },
+                "reasons": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
           "requests": {
             "type": "array",
             "items": {

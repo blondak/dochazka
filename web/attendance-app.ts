@@ -15,8 +15,9 @@ interface HolidayControlPreview {
 }
 interface RequestRow {needs_actual?:boolean;actual_from?:string|null;actual_to?:string|null;actual_returned?:boolean;vacation_seconds?:number;vacation_estimate?:{from:string;to:string}[];vacation_consent?:boolean;generated_holiday?:boolean;id:number;kind:string;begins:string;ends:string;note:string;status:string;reason:string;has_proof:boolean;merged_work?:boolean;replaces_from?:string;replaces_to?:string;account_name?:string;behavior?:Behavior;requires_proof?:boolean;scheduled_seconds?:number|null}
 interface AttendanceInterval {day:string;from:string;to:string;source:string}
+interface DayIssue {status:'missing'|'review';reasons:string[]}
 interface Sheet {presence?:AttendanceInterval[];breaks?:AttendanceInterval[];missing_actual?:number;unresolved_breaks?:number;absence_conflict?:boolean;
-    unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];vacation_conflict?:boolean;requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
+    day_issues?:Record<string,DayIssue>;unresolved_adjustments?:Row[]; internal_by_day?:Record<string,Record<string,{seconds:number;recognized_seconds:number}>>;rows:Row[];sessions:ComputerSession[];seconds:number;pending:number;missing_proofs:number;approved:boolean;issues:string[];vacation_conflict?:boolean;requests:RequestRow[];fingerprint:string;attendance_start?:string;attendance_end?:string|null;planned_shifts?:Record<string, {from:string;to:string}[]>;account_totals?:AccountTotal[];calendar_days?:Record<string, CalendarDay>}
 interface Device {id:number;name:string;seen:string|null;agent_version:string|null;revoked:boolean;registered:boolean;warnings:string|null}
 interface Payroll {people:{id:number;name:string;approved:boolean}[];versions:{version:number;created:string}[];changed:boolean}
 interface Passkey {id:string;label:string;created:string}
@@ -66,6 +67,8 @@ interface AttendanceView {
     tab: string
     person: number
     month: string
+    dailyDay: string|null
+    showAllPeople: boolean
     unitFilter: number|null
     showArchived: boolean
     editor: Editor | null
@@ -75,6 +78,11 @@ const local = new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Prague',year:'nu
 const calendarDay = new Intl.DateTimeFormat('cs-CZ', {timeZone:'UTC', weekday:'short', day:'numeric', month:'numeric'})
 const workClock = new Intl.DateTimeFormat('cs-CZ', {timeZone:'Europe/Prague',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'})
 const today=local.format(new Date())
+function validDay(value: string) {
+    if (!/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const parsed = new Date(value+'T00:00:00Z')
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0,10) === value
+}
 const freshPerson=()=>({id:0,name:'',number:'',login:'',roles:['employee'],attendance_enabled:true,org_unit_id:null,sid:'',starts:today,ends:''})
 const labels:Record<string,string>={employee:'Zaměstnanec',manager:'Vedoucí',admin:'Správce',payroll:'Mzdová účetní',PRACE:'Práce',PRESTAVKA:'Přestávka',DOVOLENA:'Dovolená',LEKAR:'Lékař',pending:'Čeká na schválení',approved:'Schváleno',rejected:'Zamítnuto'}
 const options = (values: string[]) => values.map(value => ({ value, label: labels[value] }))
@@ -96,6 +104,11 @@ const tabSlugs: Record<string, string> = {
 }
 const monthlyTabs = ['Výkaz', 'Žádosti', 'Uzávěrka']
 const requestSeverities: Record<string, string> = {pending:'warn', approved:'success', rejected:'danger'}
+const pendingDayReason = 'Čekající žádost'
+const dayIssueStyles = {
+    missing: {icon:'pi pi-exclamation-circle', label:'Chybí docházka', severity:'error'},
+    review: {icon:'pi pi-exclamation-triangle', label:'Ke kontrole', severity:'warn'},
+}
 const dailyStatuses = {
     present: {label:'Přítomen', severity:'success'},
     finished: {label:'Odpracováno', severity:'info'},
@@ -127,12 +140,16 @@ export function setupAttendance() {
     const user=ref<Person|null>(null), people=ref<Person[]>([]), devices=ref<Device[]>([]), payroll=ref<Payroll|null>(null)
     const person=ref(0), month=ref(today.slice(0,7)),sheet=ref<Sheet|null>(null),tab=ref('Výkaz')
     const daily = ref<DailyAttendance|null>(null)
+    const dailyDay = ref<string|null>(null), dailyToday = ref(today)
+    const selectedDailyDay = computed(() => dailyDay.value ?? dailyToday.value)
     const gapMinutes = ref<string|null>(null)
     const mergeRows = ref<number[]>([])
     const durationEdit = ref({value:'', maximum:0, from:'', to:'', reason:'', reset:false})
     const breakEdit = ref({day:'',from:'',to:'',reason:'',mode:'record',id:undefined as number|undefined})
     const actualEdit = ref({from:'',to:'',reason:'',photo:''})
-    const holidayControl = ref<HolidayControlPreview & {from:string;to:string}>({from:'',to:'',token:'',added:0,removed:0,changed:0})
+    const holidayControl = ref<HolidayControlPreview & {from:string;to:string;latest:string;checkHolidays:boolean}>(
+        {from:'',to:'',latest:'',checkHolidays:true,token:'',added:0,removed:0,changed:0},
+    )
     const holidayControlHasChanges = computed(() => holidayControl.value.added + holidayControl.value.changed + holidayControl.value.removed > 0)
     const roundingEdit = ref({change:false, mode:'down', minutes:30, effective_on:today})
     const breakRuleEdit = ref({change:false, enabled:true, minutes:30, preferred:240, deadline:360, effective_on:today})
@@ -276,8 +293,16 @@ export function setupAttendance() {
         const lastDay = sheet.value?.attendance_end === undefined
             ? [selectedPerson.value?.ends, selectedPerson.value?.archived_on].filter(Boolean).sort()[0]
             : sheet.value.attendance_end
-        return days.filter(entry => (!first || entry.key >= first) && (!lastDay || entry.key <= lastDay)
-            && (!entry.weekend || entry.today || entry.holiday || entry.rows.length > 0 || entry.sessions.length > 0 || entry.requests.length > 0))
+        return days.map(entry => {
+            const issue = sheet.value?.day_issues?.[entry.key]
+            const pending = entry.requests.some(request => request.status === 'pending')
+            const attention: DayIssue|undefined = pending
+                ? {status:'review', reasons:[pendingDayReason, ...(issue?.reasons ?? [])]}
+                : issue
+            return {...entry, attention, planned: sheet.value?.planned_shifts?.[entry.key] ?? []}
+        }).filter(entry => (!first || entry.key >= first) && (!lastDay || entry.key <= lastDay)
+            && (!entry.weekend || entry.today || entry.holiday || entry.attention || entry.planned.length > 0
+                || entry.rows.length > 0 || entry.sessions.length > 0 || entry.requests.length > 0))
     })
     const selectedDay = computed(() => {
         const days = monthDays.value
@@ -386,7 +411,7 @@ export function setupAttendance() {
         openConfirmation({title:'Smazat jednotku', label:'Smazat', destructive:true, description:unit.path,
             action:() => save('org-unit-delete', {id:unit.id}, 'Jednotka byla smazána.')})
     }
-    const editor = ref<Editor|null>(null), showArchived = ref(false)
+    const editor = ref<Editor|null>(null), showArchived = ref(false), showAllPeople = ref(false)
     let popPending = false
     const unitFilter = ref<number|null>(null)
     const filteredUnit = computed(() => units.value.find(unit => unit.id === unitFilter.value))
@@ -419,6 +444,12 @@ export function setupAttendance() {
         return hasRole('admin') || (hasRole('payroll') && tab.value === 'Výkaz')
             || (hasRole('manager') && p.managed)
     }))
+    const attendancePeople = computed(() => scopePeople.value.filter(p => p.attendance_enabled))
+    const selectablePeople = computed(() => showAllPeople.value ? scopePeople.value : attendancePeople.value)
+    const canShowAllPeople = computed(() => scopePeople.value.length > attendancePeople.value.length)
+    function personInScope(id: number) {
+        return selectablePeople.value.some(p => p.id === id) ? id : attendancePeople.value[0]?.id ?? 0
+    }
     const inActionDialog = computed(() =>
         settingsVisible.value || photoVisible.value || confirmationVisible.value || editor.value,
     )
@@ -478,7 +509,10 @@ export function setupAttendance() {
             else if (tab.value === 'Svátky a dny volna') calendar.value = await api('calendar-settings')
             else if (tab.value === 'Pracovní modely') models.value = await api('work-models')
             else if(tab.value==='Zařízení')devices.value=await api('devices')
-            else if(tab.value==='Denní přehled') daily.value=await api('daily-attendance')
+            else if (tab.value === 'Denní přehled') {
+                dailyToday.value = local.format(new Date())
+                daily.value = await api('daily-attendance', dailyDay.value ? {day:dailyDay.value} : {})
+            }
             else if(tab.value==='Nastavení docházky') {
                 gapMinutes.value = String((await api<{gap_minutes:number}>('attendance-merge-settings')).gap_minutes)
             }
@@ -486,7 +520,7 @@ export function setupAttendance() {
             else if(tab.value==='Zaměstnanci' || tab.value==='Organizační struktura') await loadDirectory()
             else if (['Výkaz', 'Žádosti'].includes(tab.value)) {
                 if (hasRole('manager')) people.value = await api('people')
-                if (!person.value) person.value = scopePeople.value[0]?.id ?? 0
+                person.value = personInScope(person.value)
                 if (!person.value) { sheet.value = null; return }
                 sheetToday.value = local.format(new Date())
                 const next = await api<Sheet>('sheet', scope())
@@ -510,6 +544,7 @@ export function setupAttendance() {
             people.value = await api('people')
         }
         person.value=u.id
+        showAllPeople.value = false
         form.value = freshRequest()
         tab.value = hasRole('admin') && people.value.every(p => !p.attendance_enabled) ? 'První kroky' : tabs.value[0] ?? 'Účet'
         month.value = today.slice(0,7)
@@ -644,12 +679,14 @@ export function setupAttendance() {
     function clearScope() {
         sheet.value = null
         payroll.value = null
+        daily.value = null
         mergeRows.value = []
         chosenDay.value = ''
     }
     function view(): AttendanceView {
         return {
             account: user.value?.id ?? 0, tab: tab.value, person: person.value, month: month.value,
+            dailyDay:dailyDay.value, showAllPeople:showAllPeople.value,
             unitFilter:unitFilter.value, showArchived: showArchived.value, editor: editor.value ? {...editor.value} : null,
         }
     }
@@ -658,10 +695,12 @@ export function setupAttendance() {
         const slug = parameters.get('sekce')
         const section = tabs.value.find(name => tabSlugs[name] === slug)
         const period = parameters.get('mesic')
+        const day = parameters.get('den')
         return {
             ...fallback, tab: section ?? fallback.tab,
             unitFilter:Number(parameters.get('jednotka')) || null,
             month: period && validMonth.test(period) ? period : fallback.month,
+            dailyDay: (section ?? fallback.tab) === 'Denní přehled' ? day : fallback.dailyDay,
         }
     }
     function recordView(replace = false) {
@@ -675,6 +714,8 @@ export function setupAttendance() {
         else url.searchParams.delete('jednotka')
         if (monthlyTabs.includes(attendance.tab)) url.searchParams.set('mesic', attendance.month)
         else url.searchParams.delete('mesic')
+        if (attendance.tab === 'Denní přehled' && attendance.dailyDay) url.searchParams.set('den', attendance.dailyDay)
+        else url.searchParams.delete('den')
         if (url.href === location.href && JSON.stringify(history.state?.attendance) === JSON.stringify(attendance)) return
         const state = {...history.state, attendance}
         if (replace) history.replaceState(state, '', url)
@@ -683,8 +724,10 @@ export function setupAttendance() {
     function applyView(next: AttendanceView) {
         if (tabs.value.includes(next.tab)) tab.value = next.tab
         if (validMonth.test(next.month)) month.value = next.month
-        person.value = scopePeople.value.some(p => p.id === next.person) ? next.person
-            : scopePeople.value.find(p => p.attendance_enabled)?.id ?? scopePeople.value[0]?.id ?? 0
+        dailyToday.value = local.format(new Date())
+        dailyDay.value = next.dailyDay && validDay(next.dailyDay) && next.dailyDay < dailyToday.value ? next.dailyDay : null
+        showAllPeople.value = next.showAllPeople ?? false
+        person.value = personInScope(next.person)
         unitFilter.value = tab.value === 'Zaměstnanci' ? next.unitFilter ?? null : null
         showArchived.value = next.showArchived
     }
@@ -762,9 +805,17 @@ export function setupAttendance() {
             const dayBefore = new Date(local.format(new Date()) + 'T12:00:00Z')
             dayBefore.setUTCDate(dayBefore.getUTCDate() - 1)
             const yesterday = dayBefore.toISOString().slice(0,10)
-            const selected = selectedDay.value?.key
-            const from = next.employee && selected && selected <= yesterday ? selected : yesterday
-            holidayControl.value = {from,to:from,token:'',added:0,removed:0,changed:0}
+            let from = selectedDailyDay.value < yesterday ? selectedDailyDay.value : yesterday
+            let to = from
+            if (next.employee) {
+                const first = month.value + '-01'
+                const lastDay = new Date(first+'T00:00:00Z')
+                lastDay.setUTCMonth(lastDay.getUTCMonth() + 1, 0)
+                const last = lastDay.toISOString().slice(0,10)
+                from = first <= yesterday ? first : ''
+                to = from ? (last <= yesterday ? last : yesterday) : ''
+            }
+            holidayControl.value = {from,to,latest:yesterday,checkHolidays:true,token:'',added:0,removed:0,changed:0}
         } else if (next?.kind === 'work' && tab.value === 'Výkaz' && canReview.value && sheet.value?.fingerprint === next.fingerprint) {
             if (next.row === undefined) {
                 const active = selectedDay.value?.key ?? ''
@@ -802,6 +853,7 @@ export function setupAttendance() {
         const before = view()
         applyView(next)
         const scopeChanged = before.tab !== tab.value || before.person !== person.value || before.month !== month.value
+            || before.dailyDay !== dailyDay.value
         if (scopeChanged) {
             editor.value = null
             settingsVisible.value = false
@@ -827,14 +879,14 @@ export function setupAttendance() {
             popPending = true
             return
         }
-        if (entry.tab === tab.value && entry.person === person.value && entry.month === month.value) {
+        if (entry.tab === tab.value && entry.person === person.value && entry.month === month.value && (entry.dailyDay ?? null) === dailyDay.value) {
             applyView(entry)
             showEditor(entry.editor)
             return
         }
         return run(() => renderView(entry, false))
     }
-    function navigate(next: Partial<Pick<AttendanceView,'tab'|'person'|'month'|'showArchived'|'unitFilter'>>) {
+    function navigate(next: Partial<Pick<AttendanceView,'tab'|'person'|'month'|'dailyDay'|'showAllPeople'|'showArchived'|'unitFilter'>>) {
         return run(() => renderView({...view(), ...next, editor:null}, true))
     }
     function moveMonth(offset: number) {
@@ -845,15 +897,28 @@ export function setupAttendance() {
     function selectMonth(value: string) {
         if (validMonth.test(value)) return navigate({month:value})
     }
+    function moveDailyDay(offset: number) {
+        const next = new Date(selectedDailyDay.value+'T00:00:00Z')
+        next.setUTCDate(next.getUTCDate() + offset)
+        const value = next.toISOString().slice(0,10)
+        if (validDay(value) && value <= dailyToday.value) return navigate({dailyDay:value})
+    }
+    function goToDailyToday() {
+        return navigate({dailyDay:null})
+    }
     function openUnitDirectory(id:number|null) {
         return navigate({tab:'Zaměstnanci', unitFilter:id})
     }
     function selectPerson(id: number) {
         return navigate({person:id})
     }
+    function setShowAllPeople(value: boolean) {
+        return navigate({showAllPeople:value})
+    }
     function changeTab(t:string, employee?:number) {
         navigationVisible.value = false
-        return navigate({tab:t, person:employee ?? person.value, unitFilter:null})
+        const includedFromDirectory = employee !== undefined && people.value.some(p => p.id === employee && !p.attendance_enabled)
+        return navigate({tab:t, person:employee ?? person.value, showAllPeople:showAllPeople.value || includedFromDirectory, unitFilter:null})
     }
     function openDailySheet(employee: number) {
         const day = daily.value?.day
@@ -865,6 +930,7 @@ export function setupAttendance() {
                 if (!scopePeople.value.some(p => p.id === employee)) throw new Error('Výkaz vybrané osoby už není dostupný.')
             }
             await renderView(next, true)
+            chosenDay.value = day
         })
     }
     function setShowArchived(value: boolean) {
@@ -1178,13 +1244,13 @@ export function setupAttendance() {
         openConfirmation({title:'Vrátit skutečnou dobu', label:'Vrátit', description:requestTitle(request), reasonRequired:true,
             action:reason => save('request-actual', {id:request.id, return:true, reason}, 'Žádost byla vrácena k doplnění.')})
     }
-    watch(() => [holidayControl.value.from,holidayControl.value.to], () => { holidayControl.value.token = '' })
+    watch(() => [holidayControl.value.from,holidayControl.value.to,holidayControl.value.checkHolidays], () => { holidayControl.value.token = '' })
     function submitHolidayControl() {
         return run(async () => {
-            if (editor.value?.kind !== 'holiday-control') return
+            if (editor.value?.kind !== 'holiday-control' || !holidayControl.value.checkHolidays) return
             const {from,to,token} = holidayControl.value
             const input = {employee:editor.value.employee,from,to}
-            if (token && holidayControlHasChanges.value) await save('holiday-control', {...input,token}, 'Kontrolní běh byl dokončen.')
+            if (token && holidayControlHasChanges.value) await save('holiday-control', {...input,token}, 'Kontrolní chod byl dokončen.')
             else Object.assign(holidayControl.value, await api<HolidayControlPreview>('holiday-control', input))
         })
     }
@@ -1308,7 +1374,10 @@ export function setupAttendance() {
     onMounted(async()=>{
         window.addEventListener('popstate', restoreView)
         dailyTimer = window.setInterval(() => {
-            if (tab.value === 'Denní přehled' && document.visibilityState === 'visible') void run(refresh)
+            if (tab.value === 'Denní přehled' && document.visibilityState === 'visible') {
+                dailyToday.value = local.format(new Date())
+                if (dailyDay.value === null) void run(refresh)
+            }
         }, 30_000)
         if (serviceCode) history.replaceState(history.state, '', location.pathname + location.search)
         try {
@@ -1352,9 +1421,9 @@ export function setupAttendance() {
         tabIcons, time, moment, day, hours, requestPeriod, canUploadProof, scope, run, refresh, signIn, signOut, roleNames, hasRole,
         serviceCode, serviceContext, serviceDone, serviceCredentials, verifyServiceSession, openAttendance,
         sessionsLabel, showServiceSessions, visibleSessions, changeServiceSession,
-        daily, dailyStatuses, openDailySheet,
+        daily, dailyStatuses, dailyToday, selectedDailyDay, moveDailyDay, goToDailyToday, openDailySheet,
         gapMinutes, saveMergeLimit, mergeRows, toggleMergeRow, confirmMergeRows,
-        monthDays, selectedDay, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences,
+        monthDays, selectedDay, selectDayFromRow, showPendingRequests, dayHeading, canMergeDay, monthAbsences, dayIssueStyles, pendingDayReason,
         workEdit, editWork, submitWorkCorrection, requestTitle, fullShiftEntry, proofEntry,
         calendar, calendarAccounts, defaultHolidayAccount, holidayRuleAccounts, calendarDayForm, holidayForm, removeCalendarDay, holidayRuleForm, ruleTypes, holidayDate, saveHolidayRule, removeHolidayRule,
         accounts, models, accountPanel, accountForm, modelForm, expandedModels, selectedModelVersions, displayModelVersion, activeModelVersion,
@@ -1364,7 +1433,8 @@ export function setupAttendance() {
         weekdays, modelSeconds, defaultShift, saveAttendanceAccount, saveWorkModel, accountName, fullShiftRequest, proofRequest,
         requestEstimate, requestEstimateError,
         ownSheet, canReview, selectedPerson, inActionDialog, approvalBlockers, selectPerson, selectMonth, moveMonth,
-        managesPerson, canSubmitRequest, scopePeople, editor, dismissEditor, showArchived, setShowArchived, directoryPeople, openUnitDirectory, unitFilter, filteredUnit,
+        managesPerson, canSubmitRequest, selectablePeople, canShowAllPeople, showAllPeople, setShowAllPeople,
+        editor, dismissEditor, showArchived, setShowArchived, directoryPeople, openUnitDirectory, unitFilter, filteredUnit,
         changeTab, submit, download, editPerson, addDevice, archivePerson, confirmationVisible, confirmation, decisionReason,
         decide, confirmAction, clearConfirmation, invite, revoke, closeMonth, newRequest, approveSheet,
     }

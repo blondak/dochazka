@@ -117,12 +117,15 @@
         <ToolbarCard v-if="['Výkaz', 'Žádosti', 'Uzávěrka'].includes(tab)"
             :label="tab === 'Výkaz' ? 'Nástroje výkazu' : tab === 'Žádosti' ? 'Nástroje žádostí' : 'Nástroje uzávěrky'" toolbar-class="sheet-toolbar">
             <template #start>
-                <PeriodSelector :person="person" :month="month" :people="scopePeople" :selected-name="selectedPerson?.name"
+                <PeriodSelector :person="person" :month="month" :people="selectablePeople" :selected-name="selectedPerson?.name"
                     :show-person="tab !== 'Uzávěrka'" :editable-person="tab === 'Výkaz' && hasRole('admin')" :busy="busy"
+                    :can-show-all-people="canShowAllPeople" :show-all-people="showAllPeople" @show-all-people="setShowAllPeople"
                     @select-person="selectPerson" @edit-person="editPerson(selectedPerson)" @select-month="selectMonth" @move-month="moveMonth" />
                 <div v-if="tab === 'Výkaz' && sheet && canReview" class="sheet-actions">
                     <PvButton icon="pi pi-plus" aria-label="Přidat konto" title="Přidat konto" v-tooltip.focus.bottom="'Přidat konto'"
                         size="small" :disabled="busy" @click="editWork()" />
+                    <PvButton icon="pi pi-list-check" aria-label="Kontrolní chod" title="Kontrolní chod" v-tooltip.focus.bottom="'Kontrolní chod'"
+                        size="small" severity="secondary" outlined :disabled="busy" @click="openEditor({kind:'holiday-control',employee:person})" />
                 </div>
                 <div v-else-if="tab === 'Žádosti' && sheet && canSubmitRequest" class="sheet-actions">
                     <PvButton icon="pi pi-plus" aria-label="Nová žádost nebo oprava" title="Nová žádost nebo oprava"
@@ -150,17 +153,25 @@
             class="reload-button" label="Načíst znovu" icon="pi pi-refresh" outlined @click="run(refresh)" />
 
         <template v-if="tab === 'Denní přehled'">
-            <ToolbarCard label="Nástroje denního přehledu" toolbar-class="daily-toolbar">
+            <ToolbarCard label="Nástroje denního přehledu">
                 <template #start>
-                    <time v-if="daily" :datetime="daily.day">{{ day(daily.day) }}</time>
+                    <div class="day-controls" role="group" aria-label="Výběr dne">
+                        <PvButton aria-label="Předchozí den" icon="pi pi-chevron-left" size="small" outlined
+                            :disabled="busy || selectedDailyDay === '0001-01-01'" @click="moveDailyDay(-1)" />
+                        <time :datetime="selectedDailyDay" aria-live="polite">{{ day(selectedDailyDay) }}</time>
+                        <PvButton aria-label="Následující den" icon="pi pi-chevron-right" size="small" outlined
+                            :disabled="busy || selectedDailyDay >= dailyToday" @click="moveDailyDay(1)" />
+                        <PvButton label="Dnes" size="small" severity="secondary" outlined
+                            :disabled="busy || selectedDailyDay === dailyToday" @click="goToDailyToday" />
+                    </div>
                 </template>
                 <template #end>
-                    <PvButton label="Kontrola svátků" icon="pi pi-calendar" size="small" severity="secondary" outlined
-                        @click="openEditor({kind:'holiday-control'})" />
+                    <PvButton icon="pi pi-list-check" aria-label="Kontrolní chod" title="Kontrolní chod" v-tooltip.focus.bottom="'Kontrolní chod'"
+                        size="small" severity="secondary" outlined :disabled="busy" @click="openEditor({kind:'holiday-control'})" />
                     <PvButton label="Obnovit" icon="pi pi-refresh" size="small" outlined :loading="busy" @click="run(refresh)" />
                 </template>
             </ToolbarCard>
-            <PvCard v-if="daily">
+            <PvCard v-if="daily && daily.day === selectedDailyDay">
                 <template #title><h2 id="team-attendance">Docházka týmu</h2></template>
                 <template #content>
                     <p>Stav podle evidence Windows. Aktualizováno v {{ time(daily.updated) }}.</p>
@@ -168,7 +179,9 @@
                         <PvDataTable :value="daily.people" data-key="id" size="small" striped-rows :table-props="{'aria-labelledby':'team-attendance'}">
                             <PvColumn field="name" header="Zaměstnanec" />
                             <PvColumn header="Stav">
-                                <template #body="{ data }"><PvTag :value="dailyStatuses[data.status].label" :severity="dailyStatuses[data.status].severity" /></template>
+                                <template #body="{ data }"><PvTag
+                                    :value="data.status === 'present' && daily.day !== dailyToday ? 'Otevřená relace' : dailyStatuses[data.status].label"
+                                    :severity="dailyStatuses[data.status].severity" /></template>
                             </PvColumn>
                             <PvColumn header="Od">
                                 <template #body="{ data }"><time v-if="data.from" :datetime="data.from">{{ time(data.from) }}</time><span v-else>—</span></template>
@@ -348,7 +361,7 @@
             Tomuto účtu se docházka nezpracovává.
         </PvMessage>
         <PvMessage v-if="tab === 'Účet'" severity="info">Tomuto účtu se docházka nezpracovává.</PvMessage>
-        <PvMessage v-else-if="['Výkaz', 'Žádosti'].includes(tab) && !scopePeople.length" severity="info">
+        <PvMessage v-else-if="['Výkaz', 'Žádosti'].includes(tab) && !selectablePeople.length" severity="info">
             Žádná osoba k zobrazení.
         </PvMessage>
         <template v-if="tab === 'Výkaz' && sheet">
@@ -373,8 +386,11 @@
                                             <i v-if="data.holiday" class="pi pi-calendar" role="img" :aria-label="data.holiday.name"
                                                 v-tooltip.top="data.holiday.name"></i>
                                             <PvTag v-if="data.today" value="Dnes" severity="info" class="today-tag" />
-                                            <i v-if="data.requests.some(request => request.status === 'pending')" class="pi pi-clock day-request-pending"
-                                                role="img" aria-label="Čekající žádost" v-tooltip.top="'Čekající žádost'"></i>
+                                            <i v-if="data.attention" class="day-attention" :class="[
+                                                data.attention.reasons.length === 1 && data.attention.reasons[0] === pendingDayReason
+                                                    ? 'pi pi-clock' : dayIssueStyles[data.attention.status].icon,
+                                                data.attention.status === 'missing' ? 'day-attention-missing' : 'day-attention-review']"
+                                                role="img" :aria-label="data.attention.reasons.join(' ')" v-tooltip.top="data.attention.reasons[0]"></i>
                                             <i v-if="data.requests.some(request => request.status === 'rejected')" class="pi pi-times-circle day-request-rejected"
                                                 role="img" aria-label="Zamítnutá žádost" v-tooltip.top="'Zamítnutá žádost'"></i>
                                         </template>
@@ -395,6 +411,13 @@
                             <h2 id="day-detail-title" ref="dayHeading" tabindex="-1">
                                 Detail dne<span v-if="selectedDay"> · {{ day(selectedDay.key) }}</span>
                             </h2>
+                            <PvMessage v-if="selectedDay?.attention" :severity="dayIssueStyles[selectedDay.attention.status].severity"
+                                class="day-attention-message" :pt="{root:{role:'note','aria-live':'polite'}}">
+                                <strong>{{ dayIssueStyles[selectedDay.attention.status].label }}</strong>
+                                <ul>
+                                    <li v-for="reason in selectedDay.attention.reasons" :key="reason">{{ reason }}</li>
+                                </ul>
+                            </PvMessage>
                             <div v-if="selectedDay?.holiday" class="day-holiday">
                                 <PvTag severity="warn" icon="pi pi-calendar" :value="selectedDay.holiday.name" />
                                 <small>Konto · {{ accountName(selectedDay.holiday.account) }}</small>
@@ -425,11 +448,9 @@
                                             @click="openEditor({kind:'duration',row:index,stale:true,fingerprint:sheet.fingerprint})" />
                                     </p>
                                 </template>
-                                <div v-if="canReview" class="record-actions">
-                                    <PvButton v-if="selectedDay.key <= today && !sheet.breaks?.some(item => item.day === selectedDay.key)" icon="pi pi-pause" aria-label="Upravit přestávku" text size="small"
+                                <div v-if="canReview && selectedDay.key <= today && !sheet.breaks?.some(item => item.day === selectedDay.key)" class="record-actions">
+                                    <PvButton icon="pi pi-pause" aria-label="Upravit přestávku" text size="small"
                                         v-tooltip.top="'Upravit přestávku'" @click="openEditor({kind:'break',day:selectedDay.key})" />
-                                    <PvButton icon="pi pi-calendar" aria-label="Kontrola svátků zaměstnance" text size="small"
-                                        v-tooltip.top="'Kontrola svátků'" @click="openEditor({kind:'holiday-control',employee:person})" />
                                 </div>
                             </div>
                             <div v-if="selectedDay" class="table-region" role="region" aria-label="Úseky vybraného dne" tabindex="0">
@@ -1123,12 +1144,23 @@
     </form>
 </PvDialog>
 
-<PvDialog :visible="editor?.kind === 'holiday-control'" @update:visible="dismissEditor" modal header="Kontrola svátků a firemního volna" class="editor-dialog">
+<PvDialog :visible="editor?.kind === 'holiday-control'" @update:visible="dismissEditor" modal header="Kontrolní chod" class="editor-dialog">
     <PvMessage v-if="error" severity="error">{{ error }}</PvMessage>
     <form class="stack" @submit.prevent="submitHolidayControl">
         <p>{{ editor?.employee ? selectedPerson?.name : 'Vaše organizační větev' }}</p>
-        <label class="field">Od<PvInputText v-model="holidayControl.from" type="date" required :disabled="busy" /></label>
-        <label class="field">Do včetně<PvInputText v-model="holidayControl.to" type="date" required :disabled="busy" /></label>
+        <fieldset class="control-run-options stack">
+            <legend>Období</legend>
+            <div class="control-run-dates">
+                <label class="field">Od<PvInputText v-model="holidayControl.from" type="date" required :max="holidayControl.latest" :disabled="busy" /></label>
+                <label class="field">Do včetně<PvInputText v-model="holidayControl.to" type="date" required
+                    :min="holidayControl.from || undefined" :max="holidayControl.latest" :disabled="busy" /></label>
+            </div>
+            <small>Nejvýše 31 dokončených dnů.</small>
+        </fieldset>
+        <fieldset class="control-run-options">
+            <legend>Úkony</legend>
+            <label class="check-field"><PvCheckbox v-model="holidayControl.checkHolidays" binary :disabled="busy" /> Kontrola svátků a firemního volna</label>
+        </fieldset>
         <div v-if="holidayControl.token" role="status" class="stack">
             <p>Přidáno {{ holidayControl.added }} · Změněno {{ holidayControl.changed }} · Odebráno {{ holidayControl.removed }}</p>
             <ul v-if="holidayControl.skipped && Object.values(holidayControl.skipped).some(count => count > 0)">
@@ -1141,7 +1173,8 @@
             <p v-if="holidayControl.skipped?.occupied && (holidayControl.skipped.missing_model || holidayControl.skipped.without_shift)">Jeden den zaměstnance může mít více důvodů.</p>
             <p v-if="holidayControl.skipped?.missing_model">Správce přiřadí model na záložce Docházka v dialogu zaměstnance.</p>
         </div>
-        <PvButton type="submit" :label="holidayControl.token && holidayControlHasChanges ? 'Potvrdit kontrolní běh' : holidayControl.token ? 'Obnovit náhled' : 'Zobrazit náhled'" :loading="busy" />
+        <PvButton type="submit" :label="holidayControl.token && holidayControlHasChanges ? 'Potvrdit kontrolní chod' : holidayControl.token ? 'Obnovit náhled' : 'Zobrazit náhled'"
+            :disabled="!holidayControl.checkHolidays" :loading="busy" />
     </form>
 </PvDialog>
 

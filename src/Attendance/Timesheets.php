@@ -138,7 +138,7 @@ final class Timesheets
             }
         }
         $fingerprintSheet = $sheet;
-        unset($fingerprintSheet['presence']);
+        unset($fingerprintSheet['presence'], $fingerprintSheet['day_issues']);
         if (isset($fingerprintSheet['breaks'])) {
             $proposals = array_values(array_filter($fingerprintSheet['breaks'], static fn(array $item): bool => $item['source'] === 'proposed'));
             if ($proposals) $fingerprintSheet['breaks'] = $proposals;

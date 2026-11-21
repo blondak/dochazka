@@ -73,7 +73,7 @@ p, small {
     min-width: 0;
 }
 
-.header-brand, .month-controls {
+.header-brand, .month-controls, .day-controls {
     display: flex;
     align-items: center;
     gap: .35rem;
@@ -154,6 +154,11 @@ p, small {
     min-width: 0;
 }
 
+.person-filter {
+    border-block-start: 1px solid var(--p-content-border-color);
+    padding: var(--p-select-list-header-padding, .5rem 1rem);
+}
+
 .navigation-group {
     margin-top: .65rem;
     padding: .65rem .75rem 0;
@@ -217,7 +222,9 @@ p, small {
     margin-bottom: .75rem;
 }
 
-.daily-toolbar time {
+.day-controls time {
+    min-width: 7rem;
+    text-align: center;
     white-space: nowrap;
     font-weight: 600;
 }
@@ -341,16 +348,29 @@ p, small {
     padding-block: 0;
 }
 
-.day-request-pending, .day-request-rejected {
+.day-attention, .day-request-rejected {
     margin-inline-start: .4rem;
 }
 
-.day-request-pending {
+.day-attention-review {
     color: var(--p-amber-700);
 }
 
-.day-request-rejected {
+.day-attention-missing, .day-request-rejected {
     color: var(--p-red-700);
+}
+
+.day-attention-message {
+    margin-block: 0 .75rem;
+}
+
+.day-attention-message .p-message-text {
+    color: var(--p-text-color);
+}
+
+.day-attention-message ul {
+    margin-block: .25rem 0;
+    padding-inline-start: 1.2rem;
 }
 
 #day-detail {
@@ -366,8 +386,16 @@ p, small {
     box-shadow: inset 3px 0 var(--p-amber-500);
 }
 
-.month-days .p-datatable-tbody > .selected-day {
-    background: var(--p-primary-50);
+.month-days .p-datatable-tbody > tr.selected-day {
+    background: var(--p-green-100);
+}
+
+.month-days .selected-day > td:first-child {
+    box-shadow: inset 4px 0 var(--p-green-700);
+}
+
+.month-days .selected-day [data-sheet-day] {
+    font-weight: 700;
 }
 
 .month-days tbody > tr {
@@ -614,12 +642,18 @@ code {
     gap: .15rem;
 }
 
-.model-copy-targets {
+.model-copy-targets, .control-run-options {
     margin: .35rem 0;
     padding: .45rem .65rem;
     min-width: 0;
     border: 1px solid var(--p-content-border-color);
     border-radius: .35rem;
+}
+
+.control-run-dates {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    gap: .65rem;
 }
 
 .weekly-model {

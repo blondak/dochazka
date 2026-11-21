@@ -38,6 +38,22 @@ check($november['seconds'] === 14400 && !$november['issues'], 'work after resume
 $r = Timesheet::build('2026-11', [signal('login', '2026-11-01 09:00'), signal('gap', '2026-11-01 10:00'),
     signal('logout', '2026-11-01 17:00')], []);
 check(!$r['seconds'] && $r['issues'] !== [], 'uncertain interval crossing journal gap');
+$reviewSchedule = [];
+foreach (['07', '09', '10', '11', '12', '13', '14'] as $day) {
+    $key = '2026-11-'.$day;
+    $reviewSchedule[$key] = [[strtotime($key.' 08:00'), strtotime($key.' 16:00')]];
+}
+$r = Timesheet::build('2026-11', [signal('login', '2026-11-10 08:00'), signal('login', '2026-11-13 08:00', 2)], [
+    absence('DOVOLENA', '2026-11-09', '2026-11-10'),
+    absence('LEKAR', '2026-11-11 08:00', '2026-11-11 16:00'),
+    absence('LEKAR', '2026-11-10 09:00', '2026-11-10 10:00') + ['needs_actual' => true, 'requires_proof' => true],
+    absence('LEKAR', '2026-11-12 08:00', '2026-11-12 12:00'),
+], schedule: $reviewSchedule, reviewAt: new DateTimeImmutable('2026-11-13 12:00'));
+check(array_column($r['day_issues'], 'status', null) === ['review', 'missing', 'missing'], 'only past uncovered shifts and actionable issues are marked');
+check($r['day_issues']['2026-11-07']['status'] === 'missing' && $r['day_issues']['2026-11-12']['status'] === 'missing', 'missing weekend shift and partially covered shift');
+check($r['day_issues']['2026-11-10'] === ['status' => 'review', 'reasons' => [
+    'Chybí odhlášení.', 'Chybí povinný doklad.', 'Doplňte skutečný čas nepřítomnosti.',
+]], 'day includes all review reasons');
 $r = Timesheet::build('2026-11', [signal('login', '2026-11-01 22:00'), signal('logout', '2026-11-02 05:00')], [],
     new DateTimeImmutable('2026-11-02 00:00'), new DateTimeImmutable('2026-12-01 00:00'));
 check($r['seconds'] === 18000 && count($r['rows']) === 1, 'night shift clipped to employment start');
