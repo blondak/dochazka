@@ -94,7 +94,7 @@ Pro vlastní sestavení ze zdrojového kódu použijte ve stejném projektu `doc
 ~~~powershell
 $ErrorActionPreference = 'Stop'
 
-$package = '\\server\dochazka\agent-v0.0.7'
+$package = '\\server\dochazka\agent-v0.0.8'
 $logDirectory = Join-Path $env:ProgramFiles 'DochazkaAgent\Logs'
 $log = Join-Path $logDirectory 'startup.log'
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
@@ -104,7 +104,7 @@ $installParams = @{
     Server           = 'https://dochazka.example.cz'
     EnrollmentServer = 'https://enroll.example.cz'
     PackagePath      = $package
-    Release          = '0.0.7'
+    Release          = '0.0.8'
 }
 
 try {
@@ -123,9 +123,13 @@ Průběh instalace najdete v souboru `%ProgramFiles%\DochazkaAgent\Logs\startup.
 
 Služba dostává oznámení o přihlášení a odhlášení místní relace přímo od Windows. Zámek obrazovky, přepnutí uživatele ani odpojení vzdálené plochy relaci neukončuje. Agent uloží události do SQLite a pokusí se je hned odeslat. Pokud stanice nemá spojení, odešle je dodatečně. Přihlášení `4624` a odhlášení `4634` z protokolu `Security` slouží k dočtení. Přímé oznámení i auditní záznam používají stejný klíč relace, včetně spojených tokenů správce. Protokol `System` slouží k rozlišení startů systému a čtení událostí spánku a probuzení `42`/`107`.
 
-Čtení protokolů a opakování doručení běží zhruba po 30 sekundách. Bez událostí a hlášení se agent centrále ozve při startu a pak zhruba jednou za pět minut.
+Agent sleduje místní odhlášení `4634` i průběžně. Jakmile jej Windows zapíší do protokolu, služba spustí sběr. Pravidelná kontrola protokolů a opakování doručení běží zhruba po 30 sekundách. Bez událostí a hlášení se agent centrále ozve při startu a pak zhruba jednou za pět minut.
 
-Při řízeném vypnutí Windows se služba pokusí načíst poslední události včetně odhlášení a odeslat čekající dávky. Na ukončení služby je vyhrazeno nejvýše pět sekund a jeden požadavek má limit dvě sekundy. Nepotvrzené dávky zůstanou ve frontě. Události zapsané později načte agent při dalším startu z protokolu Windows.
+Při řízeném vypnutí nebo restartu služba přijímá předběžné oznámení Windows (`SERVICE_CONTROL_PRESHUTDOWN`) a ukládá čas vypnutí do SQLite. Nejprve zpracuje dostupná odhlášení. Pokud odhlášení chybí, použije čas oznámení jako konec otevřené místní relace, kterou na stanici ověřila v posledních dvou minutách stejného běhu Windows. Ve zdrojových událostech agenta má takový odchod identifikátor začínající `shutdown.logout.`.
+
+Na dokončení má služba nejvýše 12 sekund, jednotlivý HTTPS požadavek má limit čtyři sekundy. Po potvrzení poslední dávky může vypnutí ihned pokračovat. Při výpadku spojení zůstane událost v místní frontě a po obnovení připojení se odešle s původním časem. Při náhlé ztrátě napájení nemusí žádné oznámení vzniknout.
+
+Na pilotní stanici použijte obvyklé **Start → Vypnout**, včetně běžného nastavení rychlého spuštění a firemní proxy. Ještě před dalším zapnutím zkontrolujte výkaz z jiné stanice. Pak test zopakujte s odpojenou sítí a po novém spuštění a připojení ověřte, že výkaz obsahuje právě jeden odchod s večerním časem. Samostatně ověřte, že restart samotné služby ponechá přihlášenému uživateli relaci otevřenou.
 
 ## Servisní přihlášení
 

@@ -30,6 +30,7 @@ internal sealed class Journal(SqliteConnection db)
                 boot TEXT NOT NULL, id INTEGER NOT NULL, sid TEXT NOT NULL, session_key TEXT NOT NULL, observed_at TEXT NOT NULL,
                 PRIMARY KEY(boot,id));
             CREATE TABLE IF NOT EXISTS desktop_notice(id INTEGER PRIMARY KEY, windows_id INTEGER NOT NULL, at TEXT NOT NULL, logon INTEGER NOT NULL, account TEXT);
+            CREATE TABLE IF NOT EXISTS shutdown_notice(at TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS health(message TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS deferred(event_id TEXT PRIMARY KEY, sid TEXT, first_seen INTEGER, retry_at INTEGER);
             CREATE INDEX IF NOT EXISTS deferred_sid ON deferred(sid);
@@ -309,6 +310,44 @@ internal sealed class Journal(SqliteConnection db)
         }
         if (sessionKey != null && sid != null)
             CloseSession(sessionKey, sid, "wts.logout." + sessionKey, at, tx);
+    }
+
+    internal void SaveShutdown(string at)
+    {
+        using var insert = Command("INSERT OR IGNORE INTO shutdown_notice VALUES($p0)", null, at);
+        insert.ExecuteNonQuery();
+    }
+
+    internal void ReplayShutdowns(Func<string, string> resolveBoot, CancellationToken cancel)
+    {
+        var notices = new List<string>();
+        using (var command = Command("SELECT at FROM shutdown_notice ORDER BY at"))
+        using (var reader = command.ExecuteReader())
+            while (reader.Read()) notices.Add(reader.GetString(0));
+
+        foreach (string at in notices)
+        {
+            if (cancel.IsCancellationRequested) return;
+            string boot = resolveBoot(at);
+            if (boot == "unknown") continue;
+            using var tx = db.BeginTransaction();
+            var sessions = new List<(string Key, string Sid)>();
+            // A missed logoff can leave an old session open in the journal. Only infer an
+            // end for consoles observed during the last two minutes of this boot.
+            var recent = DateTime.ParseExact(at, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
+                .AddMinutes(-2).ToString("O", CultureInfo.InvariantCulture);
+            using (var command = Command("""
+                SELECT session_key,sid FROM windows_session
+                WHERE boot=$p0 AND observed_at BETWEEN $p1 AND $p2
+                """, tx, boot, recent, at))
+            using (var reader = command.ExecuteReader())
+                while (reader.Read()) sessions.Add((reader.GetString(0), reader.GetString(1)));
+            foreach (var (key, sid) in sessions)
+                CloseSession(key, sid, "shutdown.logout." + key, at, tx);
+            using var done = Command("DELETE FROM shutdown_notice WHERE at=$p0", tx, at);
+            done.ExecuteNonQuery();
+            tx.Commit();
+        }
     }
 
     private void CloseSession(string sessionKey, string sid, string id, string at, SqliteTransaction tx)

@@ -71,6 +71,21 @@ try {
     if (!(Get-Service $name).CanShutdown) {
         throw 'The installed service does not accept system shutdown notifications.'
     }
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class ServiceStatusCheck {
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool QueryServiceStatus(System.IntPtr handle, [Out] uint[] status);
+}
+'@
+    $controller = Get-Service $name
+    try {
+        $status = New-Object 'uint32[]' 7
+        if (![ServiceStatusCheck]::QueryServiceStatus($controller.ServiceHandle.DangerousGetHandle(), $status) -or
+            ($status[2] -band 0x100) -eq 0) {
+            throw 'SCM has not registered the agent for preshutdown.'
+        }
+    } finally { $controller.Dispose() }
     Write-Output 'Windows executable, SQLite, and LocalSystem service OK.'
 } finally {
     Remove-ItemProperty -Path $runKey -Name $name -ErrorAction SilentlyContinue

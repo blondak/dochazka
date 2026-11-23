@@ -5,7 +5,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Reflection;
-using System.ServiceProcess;
 using System.Text.Json;
 using System.Threading.Channels;
 using System.Xml.Linq;
@@ -42,14 +41,14 @@ record Signal(string Id, string Kind, string At, string Sid, string Session);
 record Receipt(string Id, string Status);
 record Reply(Receipt[] Results);
 
-internal sealed class AttendanceService : ServiceBase
+internal sealed class AttendanceService
 {
     private static readonly TimeSpan CollectionInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
     private static readonly string AgentVersion = typeof(AttendanceService).Assembly
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+', 2)[0];
     private readonly CancellationTokenSource stop = new();
-    private readonly TaskCompletionSource<CancellationToken> shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<(CancellationToken Deadline, string? UnsavedNotice)> shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Channel<bool> desktopChanges = Channel.CreateBounded<bool>(1);
     private Task? worker;
     private Task? serviceSessions;
@@ -103,10 +102,10 @@ internal sealed class AttendanceService : ServiceBase
             if (journal.Batch().Count != 0 || journal.Warning() != null) throw new InvalidDataException("Ignored signal retained.");
             VerifyBatchDelivery(journal, insert).GetAwaiter().GetResult();
             VerifyServiceSessionConfirmation().GetAwaiter().GetResult();
-            VerifyShutdownDelivery(journal, insert);
+            VerifyShutdownDelivery();
             return;
         }
-        Run(new AttendanceService { ServiceName = "DochazkaAgent", CanShutdown = true, CanHandleSessionChangeEvent = true });
+        new WindowsServiceHost(new AttendanceService()).Run();
     }
 
     private static void VerifyDesktopLogons()
@@ -256,54 +255,49 @@ internal sealed class AttendanceService : ServiceBase
             throw new InvalidDataException("Startup association invented a login or accepted a stale logoff.");
     }
 
-    protected override void OnStart(string[] args)
+    internal Task Start()
     {
         using var db = OpenJournal();
         new Journal(db).Initialize();
         worker = Task.Run(() => Loop(stop.Token));
         serviceSessions = Task.Run(() => ServiceSessionPipe.Listen(LoadSettings, JournalPath, stop.Token));
         _ = serviceSessions.ContinueWith(failed =>
-            EventLog.WriteEntry(ServiceName, failed.Exception!.GetBaseException().Message, EventLogEntryType.Warning),
+            EventLog.WriteEntry(WindowsServiceHost.Name, failed.Exception!.GetBaseException().Message, EventLogEntryType.Warning),
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
-        _ = worker.ContinueWith(failed =>
-        {
-            try { EventLog.WriteEntry(ServiceName, failed.Exception!.GetBaseException().Message, EventLogEntryType.Error); }
-            finally
-            {
-                // SCM must reflect a stopped collector if local configuration or storage fails.
-                ExitCode = 1064;
-                Stop();
-            }
-        }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
-    }
-    protected override void OnStop()
-    {
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        StopAndWait(deadline.Token);
+        return worker;
     }
 
-    protected override void OnShutdown()
+    internal void SessionChanged(int sessionId, bool isLogon)
     {
-        using var deadline = new CancellationTokenSource(ShutdownDelivery.Budget);
-        shutdown.TrySetResult(deadline.Token);
-        StopAndWait(deadline.Token);
-    }
-
-    protected override void OnSessionChange(SessionChangeDescription change)
-    {
-        if (change.SessionId <= 0 || change.Reason is not (SessionChangeReason.SessionLogon or SessionChangeReason.SessionLogoff))
-            return;
+        if (sessionId <= 0) return;
         string at = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-        bool isLogon = change.Reason == SessionChangeReason.SessionLogon;
         // Capture the logon token while it exists; the delivery loop may be waiting for HTTPS.
-        var account = isLogon ? WindowsSessions.ReadConsoleUser(change.SessionId) : null;
+        var account = isLogon ? WindowsSessions.ReadConsoleUser(sessionId) : null;
         using var db = OpenJournal();
-        new Journal(db).SaveNotice(change.SessionId, at, isLogon, account);
+        new Journal(db).SaveNotice(sessionId, at, isLogon, account);
         desktopChanges.Writer.TryWrite(true);
     }
 
-    private void StopAndWait(CancellationToken deadline)
+    internal void StopAndWait(bool systemShutdown)
     {
+        using var budget = new CancellationTokenSource(systemShutdown ? ShutdownDelivery.Budget : TimeSpan.FromSeconds(15));
+        var deadline = budget.Token;
+        if (systemShutdown)
+        {
+            string? at = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+            try
+            {
+                // Persist the cutoff even if the worker is still reading history or waiting for HTTPS.
+                using var db = OpenJournal(timeout: 1);
+                new Journal(db).SaveShutdown(at);
+                at = null;
+            }
+            catch (SqliteException error) when (error.SqliteErrorCode is 5 or 6)
+            {
+                // The collecting transaction holds the writer lock. Let its owner save the notice.
+            }
+            shutdown.TrySetResult((deadline, at));
+        }
         _ = stop.CancelAsync();
         if (worker != null && serviceSessions != null)
             Task.WhenAny(Task.WhenAll(worker, serviceSessions), Task.Delay(Timeout.InfiniteTimeSpan, deadline)).GetAwaiter().GetResult();
@@ -315,9 +309,9 @@ internal sealed class AttendanceService : ServiceBase
     private static Settings LoadSettings() =>
         JsonSerializer.Deserialize<Settings>(File.ReadAllText(Path.Combine(DataPath, "config.json"))) ?? throw new InvalidDataException();
 
-    private static SqliteConnection OpenJournal()
+    private static SqliteConnection OpenJournal(int timeout = 30)
     {
-        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = JournalPath }.ToString());
+        var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = JournalPath, DefaultTimeout = timeout }.ToString());
         db.Open();
         return db;
     }
@@ -336,12 +330,27 @@ internal sealed class AttendanceService : ServiceBase
         var store = new Journal(db);
 
         string? boot = null;
-        bool bound = false;
         long? lastPoll = null;
+        int auditLogoff = 0;
+        // Fast Startup can suspend services after signing users out. Wake the worker as soon
+        // as Security records a local logoff, even if no service shutdown control follows.
+        using var watcher = new EventLogWatcher(new EventLogQuery("Security", PathType.LogName,
+            "*[System[EventID=4634] and EventData[Data[@Name='LogonType']='2' or Data[@Name='LogonType']='11']]"));
+        watcher.EventRecordWritten += (_, change) =>
+        {
+            using var record = change.EventRecord;
+            if (record == null) return;
+            Interlocked.Exchange(ref auditLogoff, 1);
+            desktopChanges.Writer.TryWrite(true);
+        };
+        try { watcher.Enabled = true; }
+        catch (Exception error) when (error is EventLogException or UnauthorizedAccessException)
+        {
+            store.Warn("Výpadek sledování odhlášení: " + error.Message);
+        }
 
         string? Collect(CancellationToken token, bool history)
         {
-            desktopChanges.Reader.TryRead(out _);
             try
             {
                 store.ReplayNotices(Journal.Boot, token);
@@ -358,9 +367,9 @@ internal sealed class AttendanceService : ServiceBase
             if (!history) return null;
 
             string? fault = CollectEvents(store, installed, token);
-            if (boot != null && !bound && !token.IsCancellationRequested && WindowsSessions.SessionIds() is { } sessions)
+            if (boot != null && !shutdown.Task.IsCompleted && !token.IsCancellationRequested && WindowsSessions.SessionIds() is { } sessions)
             {
-                // An upgrade or restart can happen while users are logged on.
+                // Keep evidence of which console sessions were present before shutdown.
                 string observedAt = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
                 foreach (int sessionId in sessions)
                 {
@@ -371,7 +380,12 @@ internal sealed class AttendanceService : ServiceBase
                         tx.Commit();
                     }
                 }
-                bound = fault == null;
+            }
+            if (!token.IsCancellationRequested)
+            {
+                try { store.ReplayShutdowns(Journal.Boot, token); }
+                catch (EventLogException error) { fault = error.Message; }
+                catch (UnauthorizedAccessException error) { fault = error.Message; }
             }
             return fault;
         }
@@ -379,7 +393,8 @@ internal sealed class AttendanceService : ServiceBase
         long? lastContact = null;
         while (!cancel.IsCancellationRequested)
         {
-            bool historyDue = lastPoll is null || Stopwatch.GetElapsedTime(lastPoll.Value) >= CollectionInterval;
+            desktopChanges.Reader.TryRead(out _);
+            bool historyDue = Interlocked.Exchange(ref auditLogoff, 0) != 0 || lastPoll is null || Stopwatch.GetElapsedTime(lastPoll.Value) >= CollectionInterval;
             if (historyDue) lastPoll = Stopwatch.GetTimestamp();
             var fault = Collect(cancel, historyDue);
             try
@@ -392,7 +407,7 @@ internal sealed class AttendanceService : ServiceBase
             catch (Exception e) { fault = e.Message; }
             if (fault != null)
             {
-                try { EventLog.WriteEntry(ServiceName, fault, EventLogEntryType.Warning); }
+                try { EventLog.WriteEntry(WindowsServiceHost.Name, fault, EventLogEntryType.Warning); }
                 catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException
                     or UnauthorizedAccessException or System.Security.SecurityException)
                 {
@@ -411,9 +426,10 @@ internal sealed class AttendanceService : ServiceBase
 
         if (shutdown.Task.IsCompletedSuccessfully)
         {
-            var deadline = shutdown.Task.Result;
+            var (deadline, unsavedNotice) = shutdown.Task.Result;
             try
             {
+                if (unsavedNotice != null) store.SaveShutdown(unsavedNotice);
                 await ShutdownDelivery.Run(
                     token => Collect(token, history: true),
                     token => SendBatch(store, http, uri, sendHeartbeat: false, token),
@@ -534,20 +550,78 @@ internal sealed class AttendanceService : ServiceBase
         }
     }
 
-    private static void VerifyShutdownDelivery(Journal journal, SqliteCommand insert)
+    private static void VerifyShutdownDelivery()
     {
-        var collections = 0;
-        var requests = 0;
-        using var deadline = new CancellationTokenSource(ShutdownDelivery.Budget);
-        ShutdownDelivery.Run(_ =>
+        const string at = "2026-01-05T16:00:00.0000000Z";
+        var file = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".db");
+        var connection = new SqliteConnectionStringBuilder { DataSource = file, Pooling = false }.ToString();
+        var desktop = new Journal.DesktopAccount("S-1-5-21-44", "0xa", null, false);
+        var departure = new Signal("shutdown.logout.123.0xa", "logout", at, desktop.Sid, "123.0xa");
+        try
         {
-            if (++collections == 2) insert.ExecuteNonQuery();
-        }, async request =>
-        {
-            ++requests;
-            await Task.Delay(Timeout.InfiniteTimeSpan, request);
-        }, deadline.Token).GetAwaiter().GetResult();
-        if (collections != 2 || requests != 1 || journal.Batch().Count != 1)
-            throw new InvalidDataException("Shutdown did not retain the late event after a request timeout.");
+            using (var db = new SqliteConnection(connection))
+            {
+                db.Open();
+                var journal = new Journal(db);
+                journal.Initialize();
+                void Login(int windowsId, string boot, string logon, string start, string seen)
+                {
+                    using var tx = db.BeginTransaction();
+                    var account = desktop with { LogonId = logon };
+                    journal.RecordSecurity(4624, account, boot, "login." + logon, start, tx);
+                    journal.RecordWindowsLogon(windowsId, account, boot, seen, tx, observed: false);
+                    tx.Commit();
+                }
+                Login(1, "123", "0xa", "2026-01-05T08:00:00.0000000Z", "2026-01-05T15:59:30.0000000Z");
+                Login(1, "12", "0xb", "2026-01-04T08:00:00.0000000Z", at);
+                Login(2, "123", "0xc", "2026-01-05T17:00:00.0000000Z", "2026-01-05T17:01:00.0000000Z");
+                Login(3, "123", "0xd", "2026-01-05T07:00:00.0000000Z", "2026-01-05T09:00:00.0000000Z");
+                var logins = journal.Batch();
+                journal.Confirm(logins, logins.Select(e => new Receipt(e.Id, "accepted")).ToArray(), null);
+                journal.SaveShutdown(at);
+                // A deadline can expire before the System log can be read.
+                journal.ReplayShutdowns(_ => "unknown", CancellationToken.None);
+            }
+            using (var db = new SqliteConnection(connection))
+            {
+                db.Open();
+                var journal = new Journal(db);
+                using var offline = new CancellationTokenSource();
+                try
+                {
+                    ShutdownDelivery.Run(token => journal.ReplayShutdowns(_ => "123", token), _ =>
+                    {
+                        offline.Cancel();
+                        throw new HttpRequestException();
+                    }, offline.Token).GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException) when (offline.IsCancellationRequested) { }
+            }
+            using (var db = new SqliteConnection(connection))
+            {
+                db.Open();
+                var journal = new Journal(db);
+                using (var tx = db.BeginTransaction())
+                {
+                    journal.RecordSecurity(4634, desktop, "123", "late-audit", at, tx);
+                    tx.Commit();
+                }
+                int requests = 0;
+                using var deadline = new CancellationTokenSource(ShutdownDelivery.Budget);
+                ShutdownDelivery.Run(token => journal.ReplayShutdowns(_ => "123", token), _ =>
+                {
+                    var batch = journal.Batch();
+                    if (batch.Count == 0) return Task.FromResult(false);
+                    if (!batch.SequenceEqual(new[] { departure }))
+                        throw new Exception("Shutdown did not preserve exactly the expected departure.");
+                    if (++requests == 1) throw new HttpRequestException();
+                    journal.Confirm(batch, [new Receipt(departure.Id, "accepted")], null);
+                    return Task.FromResult(true);
+                }, deadline.Token).GetAwaiter().GetResult();
+                if (requests != 2 || journal.Batch().Count != 0)
+                    throw new InvalidDataException("Shutdown did not retry the unconfirmed departure.");
+            }
+        }
+        finally { File.Delete(file); }
     }
 }
